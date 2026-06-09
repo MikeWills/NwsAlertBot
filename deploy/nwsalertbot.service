@@ -1,0 +1,21 @@
+[Unit]
+Description=NWS Alert Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nwsalertbot
+WorkingDirectory=/opt/nwsalertbot
+ExecStart=/opt/nwsalertbot/NwsAlertBot
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+
+# Write logs to the system journal (view with: journalctl -u nwsalertbot -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nwsalertbot
+
+[Install]
+WantedBy=multi-user.target

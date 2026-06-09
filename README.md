@@ -541,6 +541,69 @@ Uses the same Meta Developer app as Facebook.
 
 ---
 
+## Deploying to Ubuntu (GitHub Actions)
+
+Every push to `master` builds a self-contained `linux-x64` binary and deploys it to your server
+via SSH, then restarts the systemd service automatically.
+
+### One-time server setup
+
+Run these commands on your Ubuntu server:
+
+```bash
+# Create a dedicated user (no login shell, no home directory)
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin nwsalertbot
+
+# Create the deploy directory and give the service user ownership
+sudo mkdir -p /opt/nwsalertbot
+sudo chown nwsalertbot:nwsalertbot /opt/nwsalertbot
+
+# Place your credentials file — this is never deployed by GitHub Actions
+sudo nano /opt/nwsalertbot/appsettings.Local.json
+sudo chown nwsalertbot:nwsalertbot /opt/nwsalertbot/appsettings.Local.json
+sudo chmod 600 /opt/nwsalertbot/appsettings.Local.json
+
+# Install the systemd service
+sudo cp /path/to/deploy/nwsalertbot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable nwsalertbot
+```
+
+Allow your SSH user to start/stop the service without a password prompt:
+
+```bash
+sudo visudo
+# Add this line (replace YOUR_SSH_USER):
+YOUR_SSH_USER ALL=(ALL) NOPASSWD: /bin/systemctl start nwsalertbot, /bin/systemctl stop nwsalertbot, /bin/systemctl status nwsalertbot
+```
+
+### GitHub secrets
+
+Add these in your repo under **Settings → Secrets and variables → Actions**:
+
+| Secret | Description |
+|---|---|
+| `SSH_HOST` | Server hostname or IP address |
+| `SSH_USER` | SSH username |
+| `SSH_KEY` | Private SSH key (contents of `~/.ssh/id_rsa`) |
+| `SSH_PORT` | SSH port — omit to default to `22` |
+| `DEPLOY_PATH` | Deploy directory on server, e.g. `/opt/nwsalertbot` |
+
+### Viewing logs on the server
+
+```bash
+# Follow live log output
+journalctl -u nwsalertbot -f
+
+# Last 100 lines
+journalctl -u nwsalertbot -n 100
+
+# Check service status
+sudo systemctl status nwsalertbot
+```
+
+---
+
 ## Running the Bot
 
 ### Development (Visual Studio)

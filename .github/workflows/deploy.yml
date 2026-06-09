@@ -1,0 +1,52 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish
+        run: |
+          dotnet publish -c Release -r linux-x64 --self-contained \
+            -p:PublishSingleFile=true \
+            -p:DebugType=none \
+            -o ./publish
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Copy binary to server
+        run: |
+          scp -i ~/.ssh/deploy_key \
+              -P "${{ secrets.SSH_PORT || '22' }}" \
+              ./publish/NwsAlertBot \
+              "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/NwsAlertBot.new"
+
+      - name: Swap binary and restart service
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -p "${{ secrets.SSH_PORT || '22' }}" \
+              "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" << 'EOF'
+            set -e
+            sudo systemctl stop nwsalertbot
+            mv ${{ secrets.DEPLOY_PATH }}/NwsAlertBot.new ${{ secrets.DEPLOY_PATH }}/NwsAlertBot
+            chmod +x ${{ secrets.DEPLOY_PATH }}/NwsAlertBot
+            sudo systemctl start nwsalertbot
+            echo "Deploy complete. Service status:"
+            sudo systemctl status nwsalertbot --no-pager
+          EOF
