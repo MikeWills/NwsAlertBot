@@ -546,7 +546,7 @@ Uses the same Meta Developer app as Facebook.
 
 Every push to `master` builds a self-contained `linux-x64` binary and deploys it to your server
 via SSH over Tailscale, then restarts the systemd service automatically.
-
+ 
 ### One-time server setup
 
 Run these commands on your Ubuntu server (replace `YOUR_SSH_USER` with the username you will
@@ -570,8 +570,29 @@ sudo nano /opt/nwsalertbot/appsettings.Local.json
 sudo chown nwsalertbot:nwsalertbot /opt/nwsalertbot/appsettings.Local.json
 sudo chmod 600 /opt/nwsalertbot/appsettings.Local.json
 
-# Install the systemd service
-sudo cp /path/to/deploy/nwsalertbot.service /etc/systemd/system/
+# Install the systemd service (copy-paste this file content)
+sudo tee /etc/systemd/system/nwsalertbot.service > /dev/null <<'EOF'
+[Unit]
+Description=NWS Alert Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nwsalertbot
+WorkingDirectory=/opt/nwsalertbot
+ExecStart=/opt/nwsalertbot/NwsAlertBot
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nwsalertbot
+
+[Install]
+WantedBy=multi-user.target
+EOF
 sudo systemctl daemon-reload
 sudo systemctl enable nwsalertbot
 ```
