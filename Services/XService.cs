@@ -1,0 +1,104 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using NwsAlertBot.Config;
+using NwsAlertBot.Models;
+
+namespace NwsAlertBot.Services;
+
+/// <summary>
+/// Posts to X (Twitter) via API v2 using OAuth 1.0a with HMAC-SHA1.
+/// API docs: https://developer.twitter.com/en/docs/twitter-api/tweets/manage-tweets/api-reference/post-tweets
+/// Rate limits: Free tier = 500 posts/month. Basic tier ($100/mo) = 3,000/month.
+/// Character limit: 280
+/// </summary>
+public class XService
+{
+    private readonly HttpClient _http;
+    private readonly XSettings _settings;
+    private readonly ILogger<XService> _logger;
+
+    private const string PostTweetUrl = "https://api.twitter.com/2/tweets";
+
+    public XService(HttpClient http, XSettings settings, ILogger<XService> logger)
+    {
+        _http = http;
+        _settings = settings;
+        _logger = logger;
+    }
+
+    public bool IsEnabled => _settings.Enabled;
+    public string MinSeverity => _settings.MinSeverity;
+    public string EventTypes => _settings.EventTypes;
+
+    public Task<bool> SendConfirmationAsync(string message) =>
+        PostTextAsync(message.Length > 280 ? message[..277] + "..." : message, "confirmation");
+
+    public async Task<bool> PostAlertAsync(NwsAlert alert)
+    {
+        if (!_settings.Enabled) return false;
+        return await PostTextAsync(alert.FormatPost(maxLength: 280), alert.Event);
+    }
+
+    private async Task<bool> PostTextAsync(string text, string label)
+    {
+        if (!_settings.Enabled) return false;
+
+        try
+        {
+            var authHeader = BuildOAuth1Header("POST", PostTweetUrl);
+            var payload = JsonSerializer.Serialize(new { text });
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, PostTweetUrl);
+            request.Headers.Add("Authorization", authHeader);
+            request.Content = content;
+
+            var response = await _http.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("X: Posted {Label}.", label);
+                return true;
+            }
+
+            _logger.LogError("X: Post failed. Status={Status} Body={Body}", response.StatusCode, body);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "X: Exception posting {Label}.", label);
+            return false;
+        }
+    }
+
+    private string BuildOAuth1Header(string method, string url)
+    {
+        string nonce = Convert.ToBase64String(Encoding.ASCII.GetBytes(Guid.NewGuid().ToString("N")));
+        string timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+
+        var oauthParams = new SortedDictionary<string, string>
+        {
+            ["oauth_consumer_key"]     = _settings.ApiKey,
+            ["oauth_nonce"]            = nonce,
+            ["oauth_signature_method"] = "HMAC-SHA1",
+            ["oauth_timestamp"]        = timestamp,
+            ["oauth_token"]            = _settings.AccessToken,
+            ["oauth_version"]          = "1.0"
+        };
+
+        string paramString = string.Join("&",
+            oauthParams.Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}"));
+        string signatureBase = $"{method}&{Uri.EscapeDataString(url)}&{Uri.EscapeDataString(paramString)}";
+        string signingKey = $"{Uri.EscapeDataString(_settings.ApiSecret)}&{Uri.EscapeDataString(_settings.AccessTokenSecret)}";
+
+        using var hmac = new HMACSHA1(Encoding.ASCII.GetBytes(signingKey));
+        string signature = Convert.ToBase64String(hmac.ComputeHash(Encoding.ASCII.GetBytes(signatureBase)));
+        oauthParams["oauth_signature"] = signature;
+
+        return "OAuth " + string.Join(", ",
+            oauthParams.Select(kv => $"{Uri.EscapeDataString(kv.Key)}=\"{Uri.EscapeDataString(kv.Value)}\""));
+    }
+}

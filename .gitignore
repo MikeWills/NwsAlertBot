@@ -1,0 +1,15 @@
+# Secret config override — never commit real credentials
+appsettings.Local.json
+
+# Build output
+bin/
+obj/
+
+# Alert deduplication state (runtime data, not source)
+posted_alerts.txt
+
+# IDE / OS
+.vs/
+*.user
+.DS_Store
+Thumbs.db
