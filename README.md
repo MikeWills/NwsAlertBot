@@ -16,6 +16,7 @@ real-time push notifications and SMS via Pushover, ntfy, and Twilio.
 6. [API Credentials — Social Media](#api-credentials)
 7. [Push / SMS Notifications](#push--sms-notifications)
 8. [Running the Bot](#running-the-bot)
+9. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
 
 ---
 
