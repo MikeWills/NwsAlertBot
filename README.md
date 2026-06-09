@@ -20,7 +20,7 @@ real-time push notifications and SMS via Pushover, ntfy, and Twilio.
 
 ---
 
-## Setup
+## Setup 
 
 ### Requirements
 - .NET 8 SDK
