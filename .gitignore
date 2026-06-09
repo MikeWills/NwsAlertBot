@@ -8,6 +8,9 @@ obj/
 # Alert deduplication state (runtime data, not source)
 posted_alerts.txt
 
+# Local setup notes
+tailscale-setup.md
+
 # IDE / OS
 .vs/
 *.user
