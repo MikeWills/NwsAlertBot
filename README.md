@@ -545,19 +545,25 @@ Uses the same Meta Developer app as Facebook.
 ## Deploying to Ubuntu (GitHub Actions)
 
 Every push to `master` builds a self-contained `linux-x64` binary and deploys it to your server
-via SSH, then restarts the systemd service automatically.
+via SSH over Tailscale, then restarts the systemd service automatically.
 
 ### One-time server setup
 
-Run these commands on your Ubuntu server:
+Run these commands on your Ubuntu server (replace `YOUR_SSH_USER` with the username you will
+use for SSH deployments):
 
 ```bash
-# Create a dedicated user (no login shell, no home directory)
+# Create a dedicated service user (no login shell, no home directory)
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin nwsalertbot
 
-# Create the deploy directory and give the service user ownership
+# Create the deploy directory
 sudo mkdir -p /opt/nwsalertbot
+
+# Give the service user ownership, and add your SSH user to the group
+# so GitHub Actions can write files to the directory
 sudo chown nwsalertbot:nwsalertbot /opt/nwsalertbot
+sudo chmod 775 /opt/nwsalertbot
+sudo usermod -aG nwsalertbot YOUR_SSH_USER
 
 # Place your credentials file — this is never deployed by GitHub Actions
 sudo nano /opt/nwsalertbot/appsettings.Local.json
@@ -578,17 +584,40 @@ sudo visudo
 YOUR_SSH_USER ALL=(ALL) NOPASSWD: /bin/systemctl start nwsalertbot, /bin/systemctl stop nwsalertbot, /bin/systemctl status nwsalertbot
 ```
 
+### Tailscale setup
+
+The deploy workflow connects to your server via Tailscale, so no public SSH exposure is needed.
+
+1. **Create a tag** — in the [Tailscale ACL editor](https://login.tailscale.com/admin/acls), add:
+   ```jsonc
+   "tagOwners": {
+     "tag:ci": ["autogroup:admin"]
+   }
+   ```
+   Then add an ACL rule allowing `tag:ci` to reach your server on port 22:
+   ```jsonc
+   {
+     "action": "accept",
+     "src":    ["tag:ci"],
+     "dst":    ["your-server:22"]
+   }
+   ```
+
+2. **Create an OAuth credential** — go to [Trust credentials](https://login.tailscale.com/admin/settings/trust-credentials), click **Credential → OAuth**. On the Settings step, assign the `tag:ci` tag. On the Scopes step, check **Write** on both **Devices → Core** and **Keys → Auth Keys**. Click **Generate credential** and copy the Client ID and Client Secret.
+
 ### GitHub secrets
 
 Add these in your repo under **Settings → Secrets and variables → Actions**:
 
 | Secret | Description |
 |---|---|
-| `SSH_HOST` | Server hostname or IP address |
+| `SSH_HOST` | Server's Tailscale IP (`tailscale ip -4`) or MagicDNS name |
 | `SSH_USER` | SSH username |
 | `SSH_KEY` | Private SSH key (contents of `~/.ssh/id_rsa`) |
 | `SSH_PORT` | SSH port — omit to default to `22` |
 | `DEPLOY_PATH` | Deploy directory on server, e.g. `/opt/nwsalertbot` |
+| `TS_OAUTH_CLIENT_ID` | Tailscale OAuth Client ID |
+| `TS_OAUTH_SECRET` | Tailscale OAuth Client Secret |
 
 ### Viewing logs on the server
 
