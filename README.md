@@ -23,7 +23,7 @@ real-time push notifications and SMS via Pushover, ntfy, and Twilio.
 ## Setup 
 
 ### Requirements
-- .NET 8 SDK 
+- .NET 8 SDK  
 - Visual Studio 2022 (recommended) or VS Code
 
 ### Steps

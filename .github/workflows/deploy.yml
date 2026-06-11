@@ -37,23 +37,27 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "${{ secrets.SSH_PORT || '22' }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Copy binary to server
+      - name: Copy files to server
         run: |
           scp -i ~/.ssh/deploy_key \
               -P "${{ secrets.SSH_PORT || '22' }}" \
               ./publish/NwsAlertBot \
               "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/NwsAlertBot.new"
+          scp -i ~/.ssh/deploy_key \
+              -P "${{ secrets.SSH_PORT || '22' }}" \
+              appsettings.json \
+              "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/appsettings.json"
 
       - name: Swap binary and restart service
         run: |
           ssh -i ~/.ssh/deploy_key \
               -p "${{ secrets.SSH_PORT || '22' }}" \
               "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" << 'EOF'
-            set -e
-            sudo systemctl stop nwsalertbot
-            mv ${{ secrets.DEPLOY_PATH }}/NwsAlertBot.new ${{ secrets.DEPLOY_PATH }}/NwsAlertBot
-            chmod +x ${{ secrets.DEPLOY_PATH }}/NwsAlertBot
-            sudo systemctl start nwsalertbot
-            echo "Deploy complete. Service status:"
-            sudo systemctl status nwsalertbot --no-pager
+          set -e
+          sudo systemctl stop nwsalertbot
+          mv ${{ secrets.DEPLOY_PATH }}/NwsAlertBot.new ${{ secrets.DEPLOY_PATH }}/NwsAlertBot
+          chmod +x ${{ secrets.DEPLOY_PATH }}/NwsAlertBot
+          sudo systemctl start nwsalertbot
+          echo "Deploy complete. Service status:"
+          sudo systemctl status nwsalertbot --no-pager || true
           EOF
