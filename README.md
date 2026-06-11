@@ -2,7 +2,7 @@
 
 A .NET 8 C# console application that polls the National Weather Service API for active weather
 alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, Mastodon, and Discord — and
-sends real-time push notifications and SMS via Pushover, ntfy, and Twilio.
+sends real-time push notifications and SMS via Pushover, ntfy, Twilio, and VoIP.ms.
 
 ---
 
@@ -704,8 +704,8 @@ automatically when it exceeds 10,000 entries.
 
 ## Push / SMS Notifications
 
-The bot supports three notification providers simultaneously. Enable any combination in
-`appsettings.json` by setting `"Enabled": true`. All three send at the same time as social
+The bot supports several notification providers simultaneously. Enable any combination in
+`appsettings.json` by setting `"Enabled": true`. All of them send at the same time as social
 media posts, running concurrently.
 
 ---
@@ -787,6 +787,41 @@ Each recipient receives a separate SMS. Each message is billed individually.
 At $0.0079/segment × 3 recipients = ~$0.047 per alert event for 3 people.
 
 API docs: https://www.twilio.com/docs/messaging/api/message-resource
+
+---
+
+### VoIP.ms (SMS)
+
+**Cost:** SMS sending is free with a VoIP.ms DID that supports SMS; standard per-minute/DID
+fees apply for the underlying number.
+**Latency:** Typically a few seconds
+
+An alternative to Twilio for users who already have a VoIP.ms account and a DID with SMS
+enabled. Uses the VoIP.ms REST API directly — no SDK required.
+
+**Setup:**
+1. Make sure your DID has SMS enabled: VoIP.ms portal → DID Management → edit your DID →
+   enable SMS
+2. Enable API access and set an API password: Main Menu → SOAP and REST/JSON API
+   (https://voip.ms/m/api.php) — note this is a separate password from your account login
+3. Add your server's public IP address to the API allow list on the same page
+4. Fill in `ApiUsername`, `ApiPassword`, `Did` (digits only, no `+` or punctuation), and
+   `ToNumbers` in `appsettings.json`
+
+**Multiple recipients:**
+```json
+"VoipMs": {
+  "Enabled": true,
+  "Did": "5551234567",
+  "ToNumbers": ["5559876543", "5557654321"]
+}
+```
+
+Each recipient receives a separate SMS.
+
+**SMS length:** Messages are kept to 160 characters (1 SMS segment).
+
+API docs: https://voip.ms/m/apidocs.php (method: `sendSMS`)
 
 ---
 
@@ -905,5 +940,6 @@ To re-confirm all platforms, delete `confirmed_platforms.txt` entirely and resta
 | Mastodon | Normal post | |
 | Pushover | Priority 0 (normal, no DND bypass) | Intentionally lower priority for test |
 | Twilio | SMS to all `ToNumbers` | Each recipient billed separately |
+| VoIP.ms | SMS to all `ToNumbers` | Sent from your DID |
 | ntfy | Priority 3 (default) | Shows with ✅ tag |
 | Discord | Plain text message | No embed for the confirmation message |

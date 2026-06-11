@@ -31,6 +31,7 @@ var host = Host.CreateDefaultBuilder(args)
         var twilioSettings    = cfg.GetSection("Twilio").Get<TwilioSettings>()       ?? new TwilioSettings();
         var ntfySettings      = cfg.GetSection("Ntfy").Get<NtfySettings>()           ?? new NtfySettings();
         var discordSettings   = cfg.GetSection("Discord").Get<DiscordSettings>()     ?? new DiscordSettings();
+        var voipMsSettings    = cfg.GetSection("VoipMs").Get<VoipMsSettings>()       ?? new VoipMsSettings();
 
         // Register settings as singletons
         services.AddSingleton(nwsSettings);
@@ -43,6 +44,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton(twilioSettings);
         services.AddSingleton(ntfySettings);
         services.AddSingleton(discordSettings);
+        services.AddSingleton(voipMsSettings);
 
         // HttpClients — each service gets its own typed client
         services.AddHttpClient<NwsAlertService>(client =>
@@ -61,6 +63,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddHttpClient<TwilioService>();
         services.AddHttpClient<NtfyService>();
         services.AddHttpClient<DiscordService>();
+        services.AddHttpClient<VoipMsService>();
 
         // Core services
         services.AddSingleton<AlertTrackerService>();

@@ -10,6 +10,7 @@ public class AppSettings
     public MastodonSettings Mastodon { get; set; } = new();
     public PushoverSettings Pushover { get; set; } = new();
     public TwilioSettings Twilio { get; set; } = new();
+    public VoipMsSettings VoipMs { get; set; } = new();
     public NtfySettings Ntfy { get; set; } = new();
     public DiscordSettings Discord { get; set; } = new();
 }
@@ -243,6 +244,40 @@ public class DiscordSettings
     /// Leave empty to use the webhook's configured name.
     /// </summary>
     public string Username { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.MinSeverity"/>
+    public string MinSeverity { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.EventTypes"/>
+    public string EventTypes { get; set; } = "";
+}
+
+public class VoipMsSettings
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// VoIP.ms API username. Enable API access and set this at:
+    /// https://voip.ms/m/api.php (Main Menu → SOAP and REST/JSON API)
+    /// </summary>
+    public string ApiUsername { get; set; } = "";
+
+    /// <summary>
+    /// VoIP.ms API password. This is separate from your account password and is set on the
+    /// same API settings page. You must also allow your server's IP address there.
+    /// </summary>
+    public string ApiPassword { get; set; } = "";
+
+    /// <summary>
+    /// Your VoIP.ms DID (phone number) to send from, digits only, e.g. "5551234567".
+    /// </summary>
+    public string Did { get; set; } = "";
+
+    /// <summary>
+    /// One or more recipient phone numbers, digits only, e.g. ["5559876543"].
+    /// All numbers receive each alert.
+    /// </summary>
+    public List<string> ToNumbers { get; set; } = new();
 
     /// <inheritdoc cref="FacebookSettings.MinSeverity"/>
     public string MinSeverity { get; set; } = "";
