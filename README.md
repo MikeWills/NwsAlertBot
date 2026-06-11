@@ -1,8 +1,8 @@
 # NWS Alert Social Media Bot
 
 A .NET 8 C# console application that polls the National Weather Service API for active weather
-alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, and Mastodon — and sends
-real-time push notifications and SMS via Pushover, ntfy, and Twilio.
+alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, Mastodon, and Discord — and
+sends real-time push notifications and SMS via Pushover, ntfy, and Twilio.
 
 ---
 
@@ -540,6 +540,17 @@ Uses the same Meta Developer app as Facebook.
 - Set scope to `write:statuses`
 - Free, open source, no rate limit concerns for typical alert volumes
 
+### Discord
+- No developer account required — uses an Incoming Webhook
+- In your server: **Server Settings → Integrations → Webhooks → New Webhook**
+- Pick the channel the webhook should post to, then **Copy Webhook URL**
+- Set `WebhookUrl` in `appsettings.json` to that URL
+- Optionally set `Username` to override the display name shown for these messages
+- Free, no rate limit concerns for typical alert volumes
+- Each alert is posted as a rich embed, color-coded by severity (red = Extreme, orange = Severe,
+  yellow = Moderate, green = Minor)
+- API docs: https://discord.com/developers/docs/resources/webhook#execute-webhook
+
 ---
 
 ## Deploying to Ubuntu (GitHub Actions)
@@ -895,3 +906,4 @@ To re-confirm all platforms, delete `confirmed_platforms.txt` entirely and resta
 | Pushover | Priority 0 (normal, no DND bypass) | Intentionally lower priority for test |
 | Twilio | SMS to all `ToNumbers` | Each recipient billed separately |
 | ntfy | Priority 3 (default) | Shows with ✅ tag |
+| Discord | Plain text message | No embed for the confirmation message |

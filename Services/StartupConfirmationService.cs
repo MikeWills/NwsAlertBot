@@ -24,6 +24,7 @@ public class StartupConfirmationService
     private readonly PushoverService  _pushover;
     private readonly TwilioService    _twilio;
     private readonly NtfyService      _ntfy;
+    private readonly DiscordService   _discord;
     private readonly ILogger<StartupConfirmationService> _logger;
 
     private readonly HashSet<string> _confirmed = new(StringComparer.OrdinalIgnoreCase);
@@ -38,6 +39,7 @@ public class StartupConfirmationService
         PushoverService  pushover,
         TwilioService    twilio,
         NtfyService      ntfy,
+        DiscordService   discord,
         ILogger<StartupConfirmationService> logger)
     {
         _facebook  = facebook;
@@ -48,6 +50,7 @@ public class StartupConfirmationService
         _pushover  = pushover;
         _twilio    = twilio;
         _ntfy      = ntfy;
+        _discord   = discord;
         _logger    = logger;
 
         LoadConfirmed();
@@ -100,6 +103,7 @@ public class StartupConfirmationService
         new("Pushover",  msg => _pushover.SendConfirmationAsync(msg)),
         new("Twilio",    msg => _twilio.SendConfirmationAsync(msg)),
         new("Ntfy",      msg => _ntfy.SendConfirmationAsync(msg)),
+        new("Discord",   msg => _discord.SendConfirmationAsync(msg)),
     };
 
     private static string BuildConfirmationMessage() =>

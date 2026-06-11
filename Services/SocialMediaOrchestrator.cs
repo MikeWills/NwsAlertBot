@@ -19,6 +19,7 @@ public class SocialMediaOrchestrator
     private readonly PushoverService _pushover;
     private readonly TwilioService _twilio;
     private readonly NtfyService _ntfy;
+    private readonly DiscordService _discord;
     private readonly ILogger<SocialMediaOrchestrator> _logger;
 
     public SocialMediaOrchestrator(
@@ -32,6 +33,7 @@ public class SocialMediaOrchestrator
         PushoverService pushover,
         TwilioService twilio,
         NtfyService ntfy,
+        DiscordService discord,
         ILogger<SocialMediaOrchestrator> logger)
     {
         _nws       = nws;
@@ -44,6 +46,7 @@ public class SocialMediaOrchestrator
         _pushover  = pushover;
         _twilio    = twilio;
         _ntfy      = ntfy;
+        _discord   = discord;
         _logger    = logger;
     }
 
@@ -91,6 +94,7 @@ public class SocialMediaOrchestrator
             ("Pushover",  _pushover.IsEnabled,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
             ("Twilio",    _twilio.IsEnabled,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
             ("Ntfy",      _ntfy.IsEnabled,      _ntfy.MinSeverity,      _ntfy.EventTypes,      () => _ntfy.SendAlertAsync(alert)),
+            ("Discord",   _discord.IsEnabled,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
         };
 
         var filtered = all

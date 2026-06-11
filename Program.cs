@@ -30,6 +30,7 @@ var host = Host.CreateDefaultBuilder(args)
         var pushoverSettings  = cfg.GetSection("Pushover").Get<PushoverSettings>()   ?? new PushoverSettings();
         var twilioSettings    = cfg.GetSection("Twilio").Get<TwilioSettings>()       ?? new TwilioSettings();
         var ntfySettings      = cfg.GetSection("Ntfy").Get<NtfySettings>()           ?? new NtfySettings();
+        var discordSettings   = cfg.GetSection("Discord").Get<DiscordSettings>()     ?? new DiscordSettings();
 
         // Register settings as singletons
         services.AddSingleton(nwsSettings);
@@ -41,6 +42,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton(pushoverSettings);
         services.AddSingleton(twilioSettings);
         services.AddSingleton(ntfySettings);
+        services.AddSingleton(discordSettings);
 
         // HttpClients — each service gets its own typed client
         services.AddHttpClient<NwsAlertService>(client =>
@@ -58,6 +60,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddHttpClient<PushoverService>();
         services.AddHttpClient<TwilioService>();
         services.AddHttpClient<NtfyService>();
+        services.AddHttpClient<DiscordService>();
 
         // Core services
         services.AddSingleton<AlertTrackerService>();

@@ -11,6 +11,7 @@ public class AppSettings
     public PushoverSettings Pushover { get; set; } = new();
     public TwilioSettings Twilio { get; set; } = new();
     public NtfySettings Ntfy { get; set; } = new();
+    public DiscordSettings Discord { get; set; } = new();
 }
 
 public class NwsSettings
@@ -219,6 +220,29 @@ public class TwilioSettings
     /// Example: ["+15559876543", "+15557654321"]
     /// </summary>
     public List<string> ToNumbers { get; set; } = new();
+
+    /// <inheritdoc cref="FacebookSettings.MinSeverity"/>
+    public string MinSeverity { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.EventTypes"/>
+    public string EventTypes { get; set; } = "";
+}
+
+public class DiscordSettings
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Discord Incoming Webhook URL. Create one in your server:
+    /// Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL
+    /// </summary>
+    public string WebhookUrl { get; set; } = "";
+
+    /// <summary>
+    /// Optional: override the display name shown for messages posted by this webhook.
+    /// Leave empty to use the webhook's configured name.
+    /// </summary>
+    public string Username { get; set; } = "";
 
     /// <inheritdoc cref="FacebookSettings.MinSeverity"/>
     public string MinSeverity { get; set; } = "";
