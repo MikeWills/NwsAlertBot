@@ -825,9 +825,12 @@ use on ntfy.sh.
 The bot automatically sets emoji tags in ntfy notifications based on event type
 (⚠️ warning, 🌪️ tornado, 💧 flood, ❄️ snow, etc.) which appear in the app notification.
 
-**Note on iOS and DND bypass:** On iOS, ntfy priority 5 triggers a "time-sensitive" notification
-that can break through Focus modes, but this requires granting the ntfy app permission to send
-time-sensitive notifications in iOS Settings.
+**Note on iOS and DND bypass:** Unlike Android, ntfy priority 5 ("max") does **not** automatically
+break through Focus/Do Not Disturb on iOS — the ntfy app does not have Apple's "time-sensitive"
+notification entitlement, so no such toggle appears in iOS Settings. To get extreme alerts through
+during a Focus mode, add the ntfy app to that Focus mode's allowed-apps list
+(Settings → Focus → *[your mode]* → Apps → add ntfy). This lets all ntfy notifications through
+during that Focus mode, regardless of priority.
 
 API docs: https://docs.ntfy.sh/publish/
 
