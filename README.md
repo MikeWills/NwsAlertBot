@@ -871,6 +871,10 @@ use on ntfy.sh.
 The bot automatically sets emoji tags in ntfy notifications based on event type
 (⚠️ warning, 🌪️ tornado, 💧 flood, ❄️ snow, etc.) which appear in the app notification.
 
+Each notification includes a **Click action** — tapping the notification (or the link icon in the
+ntfy app) opens the full NWS alert on `api.weather.gov` with the complete untruncated text. The
+notification body shows the area, expiry, and up to ~500 characters of the description.
+
 **Note on iOS and DND bypass:** Unlike Android, ntfy priority 5 ("max") does **not** automatically
 break through Focus/Do Not Disturb on iOS — the ntfy app does not have Apple's "time-sensitive"
 notification entitlement, so no such toggle appears in iOS Settings. To get extreme alerts through

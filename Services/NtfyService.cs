@@ -38,15 +38,18 @@ public class NtfyService
             ? _settings.ExtremePriority
             : _settings.DefaultPriority;
 
+        string? clickUrl = alert.Id.StartsWith("https://") ? alert.Id : null;
+
         return await SendAsync(
             title:    EscapeHeader($"⚠️ {alert.Event}"),
             message:  BuildBody(alert),
             priority: priority,
             tags:     GetTags(alert),
-            label:    alert.Event);
+            label:    alert.Event,
+            clickUrl: clickUrl);
     }
 
-    private async Task<bool> SendAsync(string title, string message, int priority, string tags, string label)
+    private async Task<bool> SendAsync(string title, string message, int priority, string tags, string label, string? clickUrl = null)
     {
         if (!_settings.Enabled) return false;
 
@@ -73,6 +76,8 @@ public class NtfyService
             request.Headers.Add("Title",    EscapeHeader(title));
             request.Headers.Add("Priority", priority.ToString());
             request.Headers.Add("Tags",     tags);
+            if (clickUrl != null)
+                request.Headers.Add("Click", clickUrl);
             request.Content = new StringContent(message, Encoding.UTF8, "text/plain");
 
             var response = await _http.SendAsync(request);
@@ -100,6 +105,15 @@ public class NtfyService
         if (!string.IsNullOrWhiteSpace(alert.AreaDesc)) sb.AppendLine(alert.AreaDesc);
         var expiresAt = alert.Ends ?? alert.Expires;
         if (expiresAt.HasValue) sb.AppendLine($"Until: {expiresAt.Value.ToLocalTime():ddd h:mm tt zzz}");
+
+        // Include description (abbreviated) and instruction; full text is available via the Click URL
+        if (!string.IsNullOrWhiteSpace(alert.Description))
+        {
+            string desc = alert.Description.Length > 500
+                ? alert.Description[..497] + "..."
+                : alert.Description;
+            sb.AppendLine(); sb.AppendLine(desc);
+        }
         if (!string.IsNullOrWhiteSpace(alert.Instruction)) { sb.AppendLine(); sb.AppendLine(alert.Instruction); }
         if (!string.IsNullOrWhiteSpace(alert.SenderName)) sb.AppendLine($"— {alert.SenderName}");
         return sb.ToString().Trim();
