@@ -15,8 +15,9 @@ sends real-time push notifications and SMS via Pushover, ntfy, Twilio, and VoIP.
 5. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
 6. [API Credentials — Social Media](#api-credentials)
 7. [Push / SMS Notifications](#push--sms-notifications)
-8. [Running the Bot](#running-the-bot)
-9. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
+8. [Map Images (Mapbox)](#map-images-mapbox)
+9. [Running the Bot](#running-the-bot)
+10. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
 
 ---
 
@@ -663,6 +664,57 @@ journalctl -u nwsalertbot -n 100
 # Check service status
 sudo systemctl status nwsalertbot
 ```
+
+---
+
+## Map Images (Mapbox)
+
+When enabled, the bot generates a **Mapbox Static Images** URL for each alert and attaches it to
+platforms that support images. Instagram uses the map instead of the static placeholder;
+Discord shows it as an embed image.
+
+The map area is determined by:
+1. The **alert's own GeoJSON geometry polygon** (included in most NWS alerts)
+2. **Fallback:** the union bounding box of your configured zones/counties, fetched once from the
+   NWS zone API on first use and cached for the life of the process
+
+### Setup
+
+1. Create a free account at [account.mapbox.com](https://account.mapbox.com/)
+2. Copy your **default public token** (starts with `pk.`) from the Tokens page
+3. In `appsettings.Local.json`:
+
+```json
+{
+  "Map": {
+    "Enabled": true,
+    "AccessToken": "pk.YOUR_MAPBOX_TOKEN"
+  }
+}
+```
+
+### Configuration
+
+| Field | Description | Default |
+|---|---|---|
+| `Enabled` | Whether to generate map images | `false` |
+| `AccessToken` | Mapbox public token (starts with `pk.`) | `""` |
+| `Style` | Mapbox style ID, format `{username}/{style_id}` | `"mapbox/outdoors-v12"` |
+| `Width` | Image width in pixels (max 1280) | `600` |
+| `Height` | Image height in pixels (max 1280) | `400` |
+
+**Available built-in styles:** `mapbox/outdoors-v12`, `mapbox/streets-v12`, `mapbox/light-v11`,
+`mapbox/dark-v11`, `mapbox/satellite-streets-v12`
+
+**Free tier:** 50,000 static map images per month — more than sufficient for a weather bot.
+
+### Platform behavior
+
+| Platform | Map behavior |
+|---|---|
+| Instagram | Uses the map URL instead of the static `ImageUrl`. Falls back to `ImageUrl` if map is disabled or unavailable. |
+| Discord | Map appears as the embed image below the alert text. |
+| Other platforms | No change — text-only posts are unaffected. |
 
 ---
 

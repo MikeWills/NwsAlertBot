@@ -11,6 +11,7 @@ public class SocialMediaOrchestrator
 {
     private readonly NwsAlertService _nws;
     private readonly AlertTrackerService _tracker;
+    private readonly MapService _map;
     private readonly FacebookService _facebook;
     private readonly InstagramService _instagram;
     private readonly XService _x;
@@ -26,6 +27,7 @@ public class SocialMediaOrchestrator
     public SocialMediaOrchestrator(
         NwsAlertService nws,
         AlertTrackerService tracker,
+        MapService map,
         FacebookService facebook,
         InstagramService instagram,
         XService x,
@@ -40,6 +42,7 @@ public class SocialMediaOrchestrator
     {
         _nws       = nws;
         _tracker   = tracker;
+        _map       = map;
         _facebook  = facebook;
         _instagram = instagram;
         _x         = x;
@@ -67,6 +70,8 @@ public class SocialMediaOrchestrator
 
             _logger.LogInformation("New alert: [{Severity}] {Event} — {AreaDesc}",
                 alert.Severity, alert.Event, alert.AreaDesc);
+
+            alert.MapImageUrl = await _map.GetMapUrlAsync(alert);
 
             await PostToAllPlatformsAsync(alert);
             _tracker.MarkPosted(alert.Id);

@@ -66,6 +66,20 @@ public class NwsAlertService
                     Ends        = GetNullableDateTimeOffset(props, "ends"),
                 };
 
+                if (feature.TryGetProperty("geometry", out var geo) && geo.ValueKind != JsonValueKind.Null)
+                    alert.GeometryJson = geo.GetRawText();
+
+                if (props.TryGetProperty("geocode", out var geocode) &&
+                    geocode.TryGetProperty("UGC", out var ugc) &&
+                    ugc.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var code in ugc.EnumerateArray())
+                    {
+                        var s = code.GetString();
+                        if (!string.IsNullOrEmpty(s)) alert.GeocodeUgc.Add(s);
+                    }
+                }
+
                 alerts.Add(alert);
             }
 

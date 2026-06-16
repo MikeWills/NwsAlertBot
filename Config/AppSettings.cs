@@ -13,6 +13,7 @@ public class AppSettings
     public VoipMsSettings VoipMs { get; set; } = new();
     public NtfySettings Ntfy { get; set; } = new();
     public DiscordSettings Discord { get; set; } = new();
+    public MapSettings Map { get; set; } = new();
 }
 
 public class NwsSettings
@@ -284,6 +285,32 @@ public class VoipMsSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+}
+
+public class MapSettings
+{
+    /// <summary>Whether to generate Mapbox static map images for alert areas.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>
+    /// Mapbox public access token. Create a free account at https://account.mapbox.com/
+    /// and copy the default public token (or create a new one under Tokens).
+    /// Free tier: 50,000 static map images/month.
+    /// </summary>
+    public string AccessToken { get; set; } = "";
+
+    /// <summary>
+    /// Mapbox map style. Format: "{username}/{style_id}".
+    /// Built-in options: "mapbox/outdoors-v12", "mapbox/streets-v12",
+    /// "mapbox/light-v11", "mapbox/dark-v11", "mapbox/satellite-streets-v12"
+    /// </summary>
+    public string Style { get; set; } = "mapbox/outdoors-v12";
+
+    /// <summary>Map image width in pixels. Maximum 1280.</summary>
+    public int Width { get; set; } = 600;
+
+    /// <summary>Map image height in pixels. Maximum 1280.</summary>
+    public int Height { get; set; } = 400;
 }
 
 public class NtfySettings

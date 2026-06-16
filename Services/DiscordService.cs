@@ -36,15 +36,16 @@ public class DiscordService
     {
         if (!_settings.Enabled) return Task.FromResult(false);
 
-        var embed = new
+        var embed = new Dictionary<string, object?>
         {
-            title       = Truncate($"{alert.Event} — {alert.AreaDesc}", 256),
-            description = alert.FormatPost(EmbedDescriptionLimit),
-            color       = GetColor(alert.Severity),
-            footer      = !string.IsNullOrWhiteSpace(alert.SenderName)
-                ? new { text = alert.SenderName }
-                : null
+            ["title"]       = Truncate($"{alert.Event} — {alert.AreaDesc}", 256),
+            ["description"] = alert.FormatPost(EmbedDescriptionLimit),
+            ["color"]       = GetColor(alert.Severity),
         };
+        if (!string.IsNullOrWhiteSpace(alert.SenderName))
+            embed["footer"] = new { text = alert.SenderName };
+        if (!string.IsNullOrEmpty(alert.MapImageUrl))
+            embed["image"] = new { url = alert.MapImageUrl };
 
         return SendAsync(content: null, embed: embed, label: alert.Event);
     }

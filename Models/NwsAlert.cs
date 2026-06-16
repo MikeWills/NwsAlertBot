@@ -17,6 +17,15 @@ public class NwsAlert
     public DateTimeOffset? Expires { get; set; }
     public DateTimeOffset? Ends { get; set; }
 
+    /// <summary>Raw GeoJSON geometry string from the NWS feature. Null when the alert carries no polygon.</summary>
+    public string? GeometryJson { get; set; }
+
+    /// <summary>UGC zone/county codes from the alert's geocode block (e.g. ["MNZ083", "MNC013"]).</summary>
+    public List<string> GeocodeUgc { get; set; } = new();
+
+    /// <summary>Mapbox static map image URL populated by MapService before posting. Null when map generation is disabled or geometry is unavailable.</summary>
+    public string? MapImageUrl { get; set; }
+
     /// <summary>
     /// Formats a social media post. Truncates to fit within the given character limit.
     /// </summary>

@@ -37,22 +37,25 @@ public class InstagramService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostCaptionAsync(alert.FormatPost(maxLength: 2200), alert.Event);
+        var imageUrl = alert.MapImageUrl ?? _settings.ImageUrl;
+        return await PostCaptionAsync(alert.FormatPost(maxLength: 2200), alert.Event, imageUrl);
     }
 
-    private async Task<bool> PostCaptionAsync(string caption, string label)
+    private async Task<bool> PostCaptionAsync(string caption, string label, string? imageUrl = null)
     {
         if (!_settings.Enabled) return false;
 
-        if (string.IsNullOrWhiteSpace(_settings.ImageUrl))
+        imageUrl ??= _settings.ImageUrl;
+
+        if (string.IsNullOrWhiteSpace(imageUrl))
         {
-            _logger.LogWarning("Instagram: ImageUrl is not configured. Instagram requires an image. Skipping {Label}.", label);
+            _logger.LogWarning("Instagram: No image URL available. Instagram requires an image. Skipping {Label}.", label);
             return false;
         }
 
         try
         {
-            string containerId = await CreateMediaContainerAsync(caption);
+            string containerId = await CreateMediaContainerAsync(caption, imageUrl);
             if (string.IsNullOrEmpty(containerId)) return false;
             return await PublishContainerAsync(containerId, label);
         }
@@ -63,13 +66,13 @@ public class InstagramService
         }
     }
 
-    private async Task<string> CreateMediaContainerAsync(string caption)
+    private async Task<string> CreateMediaContainerAsync(string caption, string imageUrl)
     {
         var url = $"https://graph.facebook.com/{GraphApiVersion}/{_settings.InstagramAccountId}/media";
 
         var payload = new
         {
-            image_url = _settings.ImageUrl,
+            image_url = imageUrl,
             caption,
             access_token = _settings.PageAccessToken
         };
