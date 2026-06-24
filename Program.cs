@@ -33,6 +33,7 @@ var host = Host.CreateDefaultBuilder(args)
         var discordSettings   = cfg.GetSection("Discord").Get<DiscordSettings>()     ?? new DiscordSettings();
         var voipMsSettings    = cfg.GetSection("VoipMs").Get<VoipMsSettings>()       ?? new VoipMsSettings();
         var mapSettings       = cfg.GetSection("Map").Get<MapSettings>()             ?? new MapSettings();
+        var spcSettings       = cfg.GetSection("Spc").Get<SpcSettings>()             ?? new SpcSettings();
 
         // Register settings as singletons
         services.AddSingleton(nwsSettings);
@@ -47,6 +48,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton(discordSettings);
         services.AddSingleton(voipMsSettings);
         services.AddSingleton(mapSettings);
+        services.AddSingleton(spcSettings);
 
         // HttpClients — each service gets its own typed client
         services.AddHttpClient<NwsAlertService>(client =>
@@ -66,7 +68,12 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddHttpClient<NtfyService>();
         services.AddHttpClient<DiscordService>();
         services.AddHttpClient<VoipMsService>();
-        services.AddHttpClient<MapService>(client =>
+        services.AddHttpClient<NwsZoneService>(client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
+            client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
+        });
+        services.AddHttpClient<SpcOutlookService>(client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");

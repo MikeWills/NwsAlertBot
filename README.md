@@ -11,13 +11,14 @@ sends real-time push notifications and SMS via Pushover, ntfy, Twilio, and VoIP.
 1. [Setup](#setup)
 2. [Configuration Reference](#configuration-reference)
 3. [Geographic Filtering: Zones and Counties](#geographic-filtering-zones-and-counties)
-4. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
-5. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
-6. [API Credentials — Social Media](#api-credentials)
-7. [Push / SMS Notifications](#push--sms-notifications)
-8. [Map Images (Mapbox)](#map-images-mapbox)
-9. [Running the Bot](#running-the-bot)
-10. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
+4. [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)
+5. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
+6. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
+7. [API Credentials — Social Media](#api-credentials)
+8. [Push / SMS Notifications](#push--sms-notifications)
+9. [Map Images (Mapbox)](#map-images-mapbox)
+10. [Running the Bot](#running-the-bot)
+11. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
 
 ---
 
@@ -105,6 +106,20 @@ Each platform block also accepts:
 **Geographic priority:** `Zones` > `Counties` > `State`. If Zones are specified, Counties and
 State are ignored. If Counties are specified, State is ignored.
 
+`Spc` (see [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)):
+
+```json
+"Spc": {
+  "Enabled": false,
+  "CheckIntervalSeconds": 1800
+}
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `Enabled` | Whether to monitor SPC Day 1/Day 2 Convective Outlooks | `false` |
+| `CheckIntervalSeconds` | Minimum seconds between SPC outlook checks | `1800` |
+
 ---
 
 ## Geographic Filtering: Zones and Counties
@@ -178,6 +193,75 @@ You can monitor as many zones and counties as you want:
 
 There is no API limit on how many codes you pass. The bot makes a single API call with all codes
 comma-separated.
+
+---
+
+## SPC Convective Outlook Monitoring
+
+In addition to NWS warnings/watches/advisories, the bot can separately monitor the
+[SPC (Storm Prediction Center)](https://www.spc.noaa.gov/) Day 1 and Day 2 Convective Outlooks
+and alert when a monitored location is in any non-"None" categorical risk — a general
+thunderstorm risk (`TSTM`) or higher. The same notification bundles that location's tornado,
+wind, and hail probability for the day.
+
+### How it works
+
+- **Locations monitored** are derived from the same `Nws.Zones` (or `Nws.Counties` if `Zones`
+  is empty) already configured for warning geo-filtering above — there is no separate location
+  list to maintain. Each zone/county's polygon is fetched once from the NWS zone API and reduced
+  to its area centroid (geometric center); that point is what gets checked against the SPC
+  outlook polygons. Resolution happens once at startup and is cached for the life of the
+  process — restart the bot after changing `Zones`/`Counties` for SPC monitoring to pick up
+  the change.
+- **Categorical risk** (`TSTM` / `MRGL` / `SLGT` / `ENH` / `MDT` / `HIGH`) is checked
+  independently for Day 1 and Day 2. A location with no categorical match ("None") never
+  triggers an alert, on either day.
+- **Tornado / Wind / Hail probabilities** for that same location are looked up the same way and
+  always included in the post body, e.g.:
+  ```
+  Tornado: 5%
+  Wind: 15%
+  Hail: None
+  ```
+- **Checked every `Spc.CheckIntervalSeconds`** (default 1800s = 30 min) — independent of
+  `Nws.PollIntervalSeconds`, since SPC re-issues the Day 1 outlook ~5x/day and Day 2 ~2x/day;
+  checking more often has no benefit.
+- **Re-alerts on every new SPC issuance**, not only on a category change — if a location stays
+  `SLGT` across three consecutive Day 1 re-issuances, you will get three separate notifications
+  that day. Deduplication keys off the SPC product's own issuance timestamp, reusing the same
+  `posted_alerts.txt` tracking file as NWS alerts.
+- **Delivery** goes through the exact same platform pipeline as NWS alerts — every enabled
+  platform receives outlook posts, subject to that platform's existing `MinSeverity`/
+  `EventTypes` filters (see [Filtering SPC outlook posts per platform](#filtering-spc-outlook-posts-per-platform)
+  below).
+
+> **Caveat:** Because each location is reduced to a single centroid point, a location very near
+> the edge of an outlook risk area may not perfectly reflect that polygon's true boundary —
+> especially for large, oddly-shaped, or multi-part (e.g. coastal) zones/counties.
+
+### Filtering SPC outlook posts per platform
+
+SPC outlook alerts flow through each platform's existing `MinSeverity`/`EventTypes` dials —
+no new filter fields were added:
+
+- **Event names** — `SPC Day 1 Convective Outlook` and `SPC Day 2 Convective Outlook`. Use
+  these in a platform's `EventTypes` if you want that platform to opt in or out of outlook
+  posts specifically (e.g. push notifications only, not social media).
+- **Severity mapping** — the categorical risk is mapped onto the same severity scale used by
+  NWS alerts, so `MinSeverity` and the Pushover/ntfy emergency-priority escalation work
+  automatically:
+
+  | Categorical Risk | Mapped Severity |
+  |---|---|
+  | `HIGH` | Extreme |
+  | `MDT` | Severe |
+  | `ENH` | Severe |
+  | `SLGT` | Moderate |
+  | `MRGL` | Minor |
+  | `TSTM` | Minor |
+
+  For example, a platform configured with `"MinSeverity": "Severe,Extreme"` will receive
+  `ENH`/`MDT`/`HIGH` outlook posts but not `TSTM`/`MRGL`/`SLGT` ones.
 
 ---
 
@@ -999,3 +1083,13 @@ To re-confirm all platforms, delete `confirmed_platforms.txt` entirely and resta
 | VoIP.ms | SMS to all `ToNumbers` | Sent from your DID |
 | ntfy | Priority 3 (default) | Shows with ✅ tag |
 | Discord | Plain text message | No embed for the confirmation message |
+
+---
+
+## Recent Changes
+
+- Added [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring) — alerts on
+  Day 1/Day 2 categorical risk (Thunderstorm or higher) plus tornado/wind/hail probability for
+  monitored zones/counties, posted through the existing platform pipeline. New `Spc` settings
+  block. `MapService`'s zone/county geometry fetch was extracted into a shared `NwsZoneService`
+  (used by both the map bounding-box fallback and the new SPC location resolution).

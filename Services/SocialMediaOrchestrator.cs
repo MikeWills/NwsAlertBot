@@ -10,6 +10,7 @@ namespace NwsAlertBot.Services;
 public class SocialMediaOrchestrator
 {
     private readonly NwsAlertService _nws;
+    private readonly SpcOutlookService _spc;
     private readonly AlertTrackerService _tracker;
     private readonly MapService _map;
     private readonly FacebookService _facebook;
@@ -26,6 +27,7 @@ public class SocialMediaOrchestrator
 
     public SocialMediaOrchestrator(
         NwsAlertService nws,
+        SpcOutlookService spc,
         AlertTrackerService tracker,
         MapService map,
         FacebookService facebook,
@@ -41,6 +43,7 @@ public class SocialMediaOrchestrator
         ILogger<SocialMediaOrchestrator> logger)
     {
         _nws       = nws;
+        _spc       = spc;
         _tracker   = tracker;
         _map       = map;
         _facebook  = facebook;
@@ -87,7 +90,27 @@ public class SocialMediaOrchestrator
         else
             _logger.LogInformation("Posted {Count} new alert(s).", newCount);
 
+        if (_spc.IsEnabled)
+            await CheckSpcOutlooksAsync(ct);
+
         _tracker.PruneOldEntries();
+    }
+
+    private async Task CheckSpcOutlooksAsync(CancellationToken ct)
+    {
+        var outlookAlerts = await _spc.GetOutlookAlertsAsync();
+
+        foreach (var alert in outlookAlerts)
+        {
+            if (ct.IsCancellationRequested) break;
+            if (_tracker.HasBeenPosted(alert.Id)) continue;
+
+            _logger.LogInformation("New SPC outlook: [{Severity}] {Event} — {AreaDesc}",
+                alert.Severity, alert.Event, alert.AreaDesc);
+
+            await PostToAllPlatformsAsync(alert);
+            _tracker.MarkPosted(alert.Id);
+        }
     }
 
     private async Task PostToAllPlatformsAsync(NwsAlert alert)

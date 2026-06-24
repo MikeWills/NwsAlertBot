@@ -13,19 +13,19 @@ namespace NwsAlertBot.Services;
 /// </summary>
 public class MapService
 {
-    private readonly HttpClient _http;
     private readonly MapSettings _settings;
     private readonly NwsSettings _nwsSettings;
+    private readonly NwsZoneService _zones;
     private readonly ILogger<MapService> _logger;
 
     private double[]? _fallbackBbox;
     private readonly SemaphoreSlim _fallbackLock = new(1, 1);
 
-    public MapService(HttpClient http, MapSettings settings, NwsSettings nwsSettings, ILogger<MapService> logger)
+    public MapService(MapSettings settings, NwsSettings nwsSettings, NwsZoneService zones, ILogger<MapService> logger)
     {
-        _http = http;
         _settings = settings;
         _nwsSettings = nwsSettings;
+        _zones = zones;
         _logger = logger;
     }
 
@@ -138,32 +138,17 @@ public class MapService
 
         foreach (var code in codes)
         {
-            if (code.Length < 3) continue;
-            var zoneType = code[2] == 'C' ? "county" : "forecast";
+            var geo = await _zones.GetGeometryAsync(code);
+            if (geo == null) continue;
 
-            try
-            {
-                var resp = await _http.GetAsync($"https://api.weather.gov/zones/{zoneType}/{code}");
-                if (!resp.IsSuccessStatusCode) continue;
+            var bbox = ExtractBbox(geo.Value.GetRawText());
+            if (bbox == null) continue;
 
-                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-
-                if (!doc.RootElement.TryGetProperty("geometry", out var geo) ||
-                    geo.ValueKind == JsonValueKind.Null) continue;
-
-                var bbox = ExtractBbox(geo.GetRawText());
-                if (bbox == null) continue;
-
-                if (bbox[0] < minLon) minLon = bbox[0];
-                if (bbox[1] < minLat) minLat = bbox[1];
-                if (bbox[2] > maxLon) maxLon = bbox[2];
-                if (bbox[3] > maxLat) maxLat = bbox[3];
-                found = true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Map: Failed to fetch zone bounds for {Code}.", code);
-            }
+            if (bbox[0] < minLon) minLon = bbox[0];
+            if (bbox[1] < minLat) minLat = bbox[1];
+            if (bbox[2] > maxLon) maxLon = bbox[2];
+            if (bbox[3] > maxLat) maxLat = bbox[3];
+            found = true;
         }
 
         return found ? new[] { minLon, minLat, maxLon, maxLat } : null;

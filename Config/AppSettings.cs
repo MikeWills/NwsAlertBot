@@ -14,6 +14,7 @@ public class AppSettings
     public NtfySettings Ntfy { get; set; } = new();
     public DiscordSettings Discord { get; set; } = new();
     public MapSettings Map { get; set; } = new();
+    public SpcSettings Spc { get; set; } = new();
 }
 
 public class NwsSettings
@@ -311,6 +312,25 @@ public class MapSettings
 
     /// <summary>Map image height in pixels. Maximum 1280.</summary>
     public int Height { get; set; } = 400;
+}
+
+public class SpcSettings
+{
+    /// <summary>
+    /// Whether to monitor SPC (Storm Prediction Center) Day 1/Day 2 Convective Outlooks
+    /// for the locations derived from Nws.Zones (or Nws.Counties if Zones is empty).
+    /// Alerts when a monitored location is in any non-"None" categorical risk
+    /// (Thunderstorm or higher) on either day, bundled with that location's
+    /// tornado/wind/hail probability.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Minimum seconds between checks against the SPC outlook GeoJSON feeds.
+    /// SPC re-issues the Day 1 outlook ~5x/day and Day 2 ~2x/day, so polling more
+    /// often than every few minutes has no benefit. Default 1800 (30 min).
+    /// </summary>
+    public int CheckIntervalSeconds { get; set; } = 1800;
 }
 
 public class NtfySettings
