@@ -20,8 +20,8 @@ public class SocialMediaOrchestrator
     private readonly MastodonService _mastodon;
     private readonly PushoverService _pushover;
     private readonly TwilioService _twilio;
-    private readonly NtfyService _ntfy;
     private readonly DiscordService _discord;
+    private readonly TelegramService _telegram;
     private readonly VoipMsService _voipMs;
     private readonly ILogger<SocialMediaOrchestrator> _logger;
 
@@ -37,8 +37,8 @@ public class SocialMediaOrchestrator
         MastodonService mastodon,
         PushoverService pushover,
         TwilioService twilio,
-        NtfyService ntfy,
         DiscordService discord,
+        TelegramService telegram,
         VoipMsService voipMs,
         ILogger<SocialMediaOrchestrator> logger)
     {
@@ -53,8 +53,8 @@ public class SocialMediaOrchestrator
         _mastodon  = mastodon;
         _pushover  = pushover;
         _twilio    = twilio;
-        _ntfy      = ntfy;
         _discord   = discord;
+        _telegram  = telegram;
         _voipMs    = voipMs;
         _logger    = logger;
     }
@@ -124,8 +124,8 @@ public class SocialMediaOrchestrator
             ("Mastodon",  _mastodon.IsEnabled,  _mastodon.MinSeverity,  _mastodon.EventTypes,  () => _mastodon.PostAlertAsync(alert)),
             ("Pushover",  _pushover.IsEnabled,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
             ("Twilio",    _twilio.IsEnabled,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
-            ("Ntfy",      _ntfy.IsEnabled,      _ntfy.MinSeverity,      _ntfy.EventTypes,      () => _ntfy.SendAlertAsync(alert)),
             ("Discord",   _discord.IsEnabled,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
+            ("Telegram",  _telegram.IsEnabled,  _telegram.MinSeverity,  _telegram.EventTypes,  () => _telegram.SendAlertAsync(alert)),
             ("VoipMs",    _voipMs.IsEnabled,    _voipMs.MinSeverity,    _voipMs.EventTypes,    () => _voipMs.SendAlertAsync(alert)),
         };
 

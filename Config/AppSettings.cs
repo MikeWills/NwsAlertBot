@@ -11,8 +11,8 @@ public class AppSettings
     public PushoverSettings Pushover { get; set; } = new();
     public TwilioSettings Twilio { get; set; } = new();
     public VoipMsSettings VoipMs { get; set; } = new();
-    public NtfySettings Ntfy { get; set; } = new();
     public DiscordSettings Discord { get; set; } = new();
+    public TelegramSettings Telegram { get; set; } = new();
     public MapSettings Map { get; set; } = new();
     public SpcSettings Spc { get; set; } = new();
 }
@@ -254,6 +254,30 @@ public class DiscordSettings
     public string EventTypes { get; set; } = "";
 }
 
+public class TelegramSettings
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Bot token from @BotFather. Message @BotFather on Telegram, run /newbot, and
+    /// copy the token it gives you (format: "123456789:ABC-DEF...").
+    /// </summary>
+    public string BotToken { get; set; } = "";
+
+    /// <summary>
+    /// Destination chat ID. For a private chat, message your bot once, then look up
+    /// your numeric chat ID (e.g. via @userinfobot). For a channel, add the bot as an
+    /// admin and use the channel's @username or its numeric -100... ID.
+    /// </summary>
+    public string ChatId { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.MinSeverity"/>
+    public string MinSeverity { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.EventTypes"/>
+    public string EventTypes { get; set; } = "";
+}
+
 public class VoipMsSettings
 {
     public bool Enabled { get; set; } = false;
@@ -333,48 +357,3 @@ public class SpcSettings
     public int CheckIntervalSeconds { get; set; } = 1800;
 }
 
-public class NtfySettings
-{
-    public bool Enabled { get; set; } = false;
-
-    /// <summary>
-    /// Base server URL. Use "https://ntfy.sh" for the hosted service,
-    /// or your self-hosted instance URL, e.g. "https://ntfy.example.com"
-    /// </summary>
-    public string ServerUrl { get; set; } = "https://ntfy.sh";
-
-    /// <summary>
-    /// Topic name to publish to. Treat this like a password — make it hard to guess
-    /// unless you are using access control on a self-hosted instance.
-    /// Example: "nws-alerts-a7f3k9"
-    /// </summary>
-    public string Topic { get; set; } = "";
-
-    /// <summary>
-    /// Optional: username for authentication (self-hosted instances with access control,
-    /// or ntfy.sh accounts with reserved topics).
-    /// Leave empty for anonymous access to public topics.
-    /// </summary>
-    public string Username { get; set; } = "";
-
-    /// <summary>Optional: password for authentication. Leave empty for anonymous access.</summary>
-    public string Password { get; set; } = "";
-
-    /// <summary>
-    /// Default priority for most alerts.
-    /// 1 = min, 2 = low, 3 = default, 4 = high, 5 = urgent (max, bypasses DND)
-    /// </summary>
-    public int DefaultPriority { get; set; } = 4;
-
-    /// <summary>
-    /// Priority override for Extreme severity alerts.
-    /// Set to 5 (urgent) to bypass Do Not Disturb for life-threatening events.
-    /// </summary>
-    public int ExtremePriority { get; set; } = 5;
-
-    /// <inheritdoc cref="FacebookSettings.MinSeverity"/>
-    public string MinSeverity { get; set; } = "";
-
-    /// <inheritdoc cref="FacebookSettings.EventTypes"/>
-    public string EventTypes { get; set; } = "";
-}

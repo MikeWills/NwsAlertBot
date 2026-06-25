@@ -1,8 +1,8 @@
 # NWS Alert Social Media Bot
 
 A .NET 8 C# console application that polls the National Weather Service API for active weather
-alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, Mastodon, and Discord — and
-sends real-time push notifications and SMS via Pushover, ntfy, Twilio, and VoIP.ms.
+alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, Mastodon, Discord, and
+Telegram — and sends real-time push notifications and SMS via Pushover, Twilio, and VoIP.ms.
 
 ---
 
@@ -248,7 +248,7 @@ no new filter fields were added:
   these in a platform's `EventTypes` if you want that platform to opt in or out of outlook
   posts specifically (e.g. push notifications only, not social media).
 - **Severity mapping** — the categorical risk is mapped onto the same severity scale used by
-  NWS alerts, so `MinSeverity` and the Pushover/ntfy emergency-priority escalation work
+  NWS alerts, so `MinSeverity` and the Pushover emergency-priority escalation work
   automatically:
 
   | Categorical Risk | Mapped Severity |
@@ -330,7 +330,7 @@ Each platform has an optional `MinSeverity` field that lets you restrict which a
 receives, independently of the global `Severity` filter. Leave it empty to pass everything that
 the global filter allows through.
 
-**Example — ntfy gets all alerts, social media gets only Severe, Extreme:**
+**Example — Pushover gets all alerts, social media gets only Severe, Extreme:**
 
 ```json
 "Nws": {
@@ -342,22 +342,21 @@ the global filter allows through.
 "Bluesky":   { "MinSeverity": "Severe,Extreme" },
 "Mastodon":  { "MinSeverity": "Severe,Extreme" },
 "Pushover":  { "MinSeverity": "" },
-"Twilio":    { "MinSeverity": "" },
-"Ntfy":      { "MinSeverity": "" }
+"Twilio":    { "MinSeverity": "" }
 ```
 
 The global `Severity` filter is applied server-side at the NWS API — it sets the floor for what
 gets fetched at all. Per-platform `MinSeverity` and `EventTypes` are applied client-side after
 the fetch. A platform cannot receive alerts below the global floor, only above it.
 
-**Example — social media gets only tornado alerts; ntfy gets everything:**
+**Example — social media gets only tornado alerts; Pushover gets everything:**
 
 ```json
 "Nws": { "Severity": "" },
 "Facebook": { "EventTypes": "Tornado Warning,Tornado Watch" },
 "X":        { "EventTypes": "Tornado Warning,Tornado Watch" },
 "Bluesky":  { "EventTypes": "Tornado Warning,Tornado Watch" },
-"Ntfy":     { "EventTypes": "" }
+"Pushover": { "EventTypes": "" }
 ```
 
 `MinSeverity` and `EventTypes` can be combined on the same platform — both must pass for the
@@ -636,6 +635,21 @@ Uses the same Meta Developer app as Facebook.
   yellow = Moderate, green = Minor)
 - API docs: https://discord.com/developers/docs/resources/webhook#execute-webhook
 
+### Telegram
+- No developer account required — uses the Telegram Bot API
+- Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, follow the prompts,
+  and copy the bot token it gives you
+- **Find your `ChatId`:**
+  - Private chat: send your new bot any message first, then visit
+    `https://api.telegram.org/bot<YourBotToken>/getUpdates` in a browser and read `chat.id`
+    from the JSON response — or message [@userinfobot](https://t.me/userinfobot) to get your
+    own numeric ID
+  - Channel: add the bot as an **admin** of the channel, then use the channel's `@username`
+    (if public) or its numeric `-100...` ID as `ChatId`
+- Set `BotToken` and `ChatId` in `appsettings.json`
+- Free, no rate limit concerns for typical alert volumes
+- API docs: https://core.telegram.org/bots/api
+
 ---
 
 ## Deploying to Ubuntu (GitHub Actions)
@@ -755,7 +769,7 @@ sudo systemctl status nwsalertbot
 
 When enabled, the bot generates a **Mapbox Static Images** URL for each alert and attaches it to
 platforms that support images. Instagram uses the map instead of the static placeholder;
-Discord shows it as an embed image.
+Discord shows it as an embed image; Telegram sends it as a photo with the alert text as caption.
 
 The map area is determined by:
 1. The **alert's own GeoJSON geometry polygon** (included in most NWS alerts)
@@ -798,6 +812,7 @@ The map area is determined by:
 |---|---|
 | Instagram | Uses the map URL instead of the static `ImageUrl`. Falls back to `ImageUrl` if map is disabled or unavailable. |
 | Discord | Map appears as the embed image below the alert text. |
+| Telegram | Sent as a photo (`sendPhoto`) with the alert text as the caption (1,024-character limit) instead of a plain text message. |
 | Other platforms | No change — text-only posts are unaffected. |
 
 ---
@@ -961,75 +976,14 @@ API docs: https://voip.ms/m/apidocs.php (method: `sendSMS`)
 
 ---
 
-### ntfy (Push Notification — Free, Self-Hostable)
-
-**Cost:** Free (hosted) or self-hosted on your own server
-**Latency:** Near-instant (<5 seconds typical)
-
-ntfy is an open-source HTTP pub/sub notification service. You subscribe to a topic in the ntfy
-app, and the bot POSTs to that topic URL to send a notification. No account required for basic
-use on ntfy.sh.
-
-**Setup (hosted ntfy.sh — easiest):**
-1. Install the ntfy app: https://ntfy.sh/ (iOS and Android)
-2. In the app, subscribe to a topic — use a long, random string (e.g. `nws-alerts-j7k2m9p4`)
-   because topic names are public on ntfy.sh unless you use access control
-3. Set `ServerUrl` to `"https://ntfy.sh"` and `Topic` to your topic name
-4. Leave `Username` and `Password` empty
-
-**Setup (self-hosted):**
-1. Deploy ntfy: https://docs.ntfy.sh/install/ (Docker, binary, or apt)
-2. Configure access control if desired: https://docs.ntfy.sh/config/#access-control
-3. Set `ServerUrl` to your instance URL
-4. Set `Username` and `Password` if using access control
-
-**Priority levels (ntfy):**
-
-| Value | Behavior |
-|---|---|
-| `1` | Min — no notification shown |
-| `2` | Low — notification, no sound |
-| `3` | Default — notification with sound |
-| `4` | High — high-priority notification |
-| `5` | Urgent (max) — bypasses Do Not Disturb on Android |
-
-**Recommended configuration:**
-```json
-"Ntfy": {
-  "Enabled": true,
-  "ServerUrl": "https://ntfy.sh",
-  "Topic": "nws-alerts-your-random-string-here",
-  "DefaultPriority": 4,
-  "ExtremePriority": 5
-}
-```
-
-The bot automatically sets emoji tags in ntfy notifications based on event type
-(⚠️ warning, 🌪️ tornado, 💧 flood, ❄️ snow, etc.) which appear in the app notification.
-
-Each notification includes a **Click action** — tapping the notification (or the link icon in the
-ntfy app) opens the full NWS alert on `api.weather.gov` with the complete untruncated text. The
-notification body shows the area, expiry, and up to ~500 characters of the description.
-
-**Note on iOS and DND bypass:** Unlike Android, ntfy priority 5 ("max") does **not** automatically
-break through Focus/Do Not Disturb on iOS — the ntfy app does not have Apple's "time-sensitive"
-notification entitlement, so no such toggle appears in iOS Settings. To get extreme alerts through
-during a Focus mode, add the ntfy app to that Focus mode's allowed-apps list
-(Settings → Focus → *[your mode]* → Apps → add ntfy). This lets all ntfy notifications through
-during that Focus mode, regardless of priority.
-
-API docs: https://docs.ntfy.sh/publish/
-
----
-
 ### Using Multiple Providers Together
 
-All three providers can be enabled simultaneously and run concurrently per alert. A common
+All providers can be enabled simultaneously and run concurrently per alert. A common
 combination:
 
 ```json
 "Pushover": { "Enabled": true, ... },   // Primary push for your phone
-"Ntfy":     { "Enabled": true, ... },   // Free secondary push / family alerts
+"Telegram": { "Enabled": true, ... },   // Free secondary push / family alerts
 "Twilio":   { "Enabled": false, ... }   // SMS disabled unless needed
 ```
 
@@ -1081,13 +1035,19 @@ To re-confirm all platforms, delete `confirmed_platforms.txt` entirely and resta
 | Pushover | Priority 0 (normal, no DND bypass) | Intentionally lower priority for test |
 | Twilio | SMS to all `ToNumbers` | Each recipient billed separately |
 | VoIP.ms | SMS to all `ToNumbers` | Sent from your DID |
-| ntfy | Priority 3 (default) | Shows with ✅ tag |
 | Discord | Plain text message | No embed for the confirmation message |
+| Telegram | Plain text message | No photo for the confirmation message |
 
 ---
 
 ## Recent Changes
 
+- Removed ntfy support (`NtfyService`, `Ntfy` settings block) — Telegram replaces it as the
+  free/self-hostable push notification option.
+- Added Telegram support (`TelegramService`, `Telegram` settings block) — posts alerts to a
+  Telegram chat or channel via the Bot API. Sends `sendPhoto` with a caption when a Mapbox map
+  image is available, otherwise a plain `sendMessage`. See [Telegram](#telegram) and the
+  confirmation/map-image behavior tables above.
 - Added [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring) — alerts on
   Day 1/Day 2 categorical risk (Thunderstorm or higher) plus tornado/wind/hail probability for
   monitored zones/counties, posted through the existing platform pipeline. New `Spc` settings

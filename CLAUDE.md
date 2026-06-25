@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**NwsAlertBot** is a .NET 8 C# console application (Generic Host / BackgroundService pattern) that polls the NWS REST API for active weather alerts and distributes them concurrently to social media (Facebook, Instagram, X, Bluesky, Mastodon), push notifications (Pushover, ntfy), and SMS (Twilio).
+**NwsAlertBot** is a .NET 8 C# console application (Generic Host / BackgroundService pattern) that polls the NWS REST API for active weather alerts and distributes them concurrently to social media (Facebook, Instagram, X, Bluesky, Mastodon, Discord, Telegram), push notifications (Pushover), and SMS (Twilio, VoIP.ms).
 
 ---
 
@@ -118,7 +118,7 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 | Mastodon | Bearer token |
 | Pushover | API token + User key (form POST) |
 | Twilio | Basic auth (AccountSid:AuthToken) |
-| ntfy | Optional Basic auth |
+| Telegram | Bot token (Bot API) |
 
 ---
 
@@ -135,7 +135,7 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 | Mastodon | 500 | Default; varies by instance |
 | Pushover | 1,024 | Message body limit |
 | Twilio | 320 | Keep to 2 SMS segments |
-| ntfy | ~500 | No strict limit |
+| Telegram | 4,096 | 1,024 if a map image caption is attached |
 
 ---
 
@@ -145,5 +145,4 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 - **Facebook personal profiles** — Graph API cannot post to personal profiles (deprecated since 2018). Pages only.
 - **Bluesky tokens expire** — `BlueskyService` caches `accessJwt` and re-authenticates on 401. Do not remove this logic.
 - **X OAuth 1.0a** — signature must be recalculated per-request (timestamp + nonce). See `XService.BuildOAuth1Header()`.
-- **ntfy headers must be ASCII** — `NtfyService.EscapeHeader()` strips non-ASCII. Keep it for non-English alert text.
 - **Pushover priority 2 (emergency) requires `retry` + `expire`** — omitting causes a 400 error. Always include them when priority == 2.

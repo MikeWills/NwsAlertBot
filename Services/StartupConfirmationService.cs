@@ -23,8 +23,8 @@ public class StartupConfirmationService
     private readonly MastodonService  _mastodon;
     private readonly PushoverService  _pushover;
     private readonly TwilioService    _twilio;
-    private readonly NtfyService      _ntfy;
     private readonly DiscordService   _discord;
+    private readonly TelegramService  _telegram;
     private readonly VoipMsService    _voipMs;
     private readonly ILogger<StartupConfirmationService> _logger;
 
@@ -39,8 +39,8 @@ public class StartupConfirmationService
         MastodonService  mastodon,
         PushoverService  pushover,
         TwilioService    twilio,
-        NtfyService      ntfy,
         DiscordService   discord,
+        TelegramService  telegram,
         VoipMsService    voipMs,
         ILogger<StartupConfirmationService> logger)
     {
@@ -51,8 +51,8 @@ public class StartupConfirmationService
         _mastodon  = mastodon;
         _pushover  = pushover;
         _twilio    = twilio;
-        _ntfy      = ntfy;
         _discord   = discord;
+        _telegram  = telegram;
         _voipMs    = voipMs;
         _logger    = logger;
 
@@ -105,8 +105,8 @@ public class StartupConfirmationService
         new("Mastodon",  msg => _mastodon.SendConfirmationAsync(msg)),
         new("Pushover",  msg => _pushover.SendConfirmationAsync(msg)),
         new("Twilio",    msg => _twilio.SendConfirmationAsync(msg)),
-        new("Ntfy",      msg => _ntfy.SendConfirmationAsync(msg)),
         new("Discord",   msg => _discord.SendConfirmationAsync(msg)),
+        new("Telegram",  msg => _telegram.SendConfirmationAsync(msg)),
         new("VoipMs",    msg => _voipMs.SendConfirmationAsync(msg)),
     };
 
