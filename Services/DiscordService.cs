@@ -28,6 +28,7 @@ public class DiscordService
     public bool IsEnabled => _settings.Enabled;
     public string MinSeverity => _settings.MinSeverity;
     public string EventTypes => _settings.EventTypes;
+    public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
 
     public Task<bool> SendConfirmationAsync(string message) =>
         SendAsync(message, embed: null, label: "confirmation");

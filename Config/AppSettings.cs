@@ -111,6 +111,9 @@ public class FacebookSettings
     /// Example: "Tornado Warning,Tornado Watch" to post only tornado alerts to this platform.
     /// </summary>
     public string EventTypes { get; set; } = "";
+
+    /// <summary>Whether to post SPC Convective Outlook alerts to this platform. Requires Spc.Enabled = true.</summary>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class InstagramSettings
@@ -129,6 +132,9 @@ public class InstagramSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class XSettings
@@ -144,6 +150,9 @@ public class XSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class BlueskySettings
@@ -157,6 +166,9 @@ public class BlueskySettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class MastodonSettings
@@ -170,6 +182,9 @@ public class MastodonSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class PushoverSettings
@@ -217,6 +232,9 @@ public class PushoverSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class TwilioSettings
@@ -244,6 +262,9 @@ public class TwilioSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class DiscordSettings
@@ -267,6 +288,9 @@ public class DiscordSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class TelegramSettings
@@ -291,6 +315,9 @@ public class TelegramSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class VoipMsSettings
@@ -325,6 +352,9 @@ public class VoipMsSettings
 
     /// <inheritdoc cref="FacebookSettings.EventTypes"/>
     public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
 }
 
 public class MapSettings

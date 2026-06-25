@@ -106,6 +106,7 @@ Each platform block also accepts:
 |---|---|---|
 | `MinSeverity` | Comma-separated severity levels for this platform only. Leave empty to use the global `Severity` filter. | `""` (inherit global) |
 | `EventTypes` | Comma-separated NWS event names for this platform only. Leave empty to receive all event types. | `""` (all) |
+| `IncludeSpcOutlooks` | Whether SPC Convective Outlook alerts are posted to this platform. Requires `Spc.Enabled = true`. | `true` |
 
 **Geographic priority:** `Zones` > `Counties` > `State`. If Zones are specified, Counties and
 State are ignored. If Counties are specified, State is ignored.

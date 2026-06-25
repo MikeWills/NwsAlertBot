@@ -119,22 +119,25 @@ public class SocialMediaOrchestrator
 
     private async Task PostToAllPlatformsAsync(NwsAlert alert)
     {
-        var all = new (string Name, bool Enabled, string MinSeverity, string EventTypes, Func<Task<bool>> Action)[]
+        var all = new (string Name, bool Enabled, bool IncludeSpc, string MinSeverity, string EventTypes, Func<Task<bool>> Action)[]
         {
-            ("Facebook",  _facebook.IsEnabled,  _facebook.MinSeverity,  _facebook.EventTypes,  () => _facebook.PostAlertAsync(alert)),
-            ("Instagram", _instagram.IsEnabled, _instagram.MinSeverity, _instagram.EventTypes, () => _instagram.PostAlertAsync(alert)),
-            ("X",         _x.IsEnabled,         _x.MinSeverity,         _x.EventTypes,         () => _x.PostAlertAsync(alert)),
-            ("Bluesky",   _bluesky.IsEnabled,   _bluesky.MinSeverity,   _bluesky.EventTypes,   () => _bluesky.PostAlertAsync(alert)),
-            ("Mastodon",  _mastodon.IsEnabled,  _mastodon.MinSeverity,  _mastodon.EventTypes,  () => _mastodon.PostAlertAsync(alert)),
-            ("Pushover",  _pushover.IsEnabled,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
-            ("Twilio",    _twilio.IsEnabled,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
-            ("Discord",   _discord.IsEnabled,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
-            ("Telegram",  _telegram.IsEnabled,  _telegram.MinSeverity,  _telegram.EventTypes,  () => _telegram.SendAlertAsync(alert)),
-            ("VoipMs",    _voipMs.IsEnabled,    _voipMs.MinSeverity,    _voipMs.EventTypes,    () => _voipMs.SendAlertAsync(alert)),
+            ("Facebook",  _facebook.IsEnabled,  _facebook.IncludeSpcOutlooks,  _facebook.MinSeverity,  _facebook.EventTypes,  () => _facebook.PostAlertAsync(alert)),
+            ("Instagram", _instagram.IsEnabled, _instagram.IncludeSpcOutlooks, _instagram.MinSeverity, _instagram.EventTypes, () => _instagram.PostAlertAsync(alert)),
+            ("X",         _x.IsEnabled,         _x.IncludeSpcOutlooks,         _x.MinSeverity,         _x.EventTypes,         () => _x.PostAlertAsync(alert)),
+            ("Bluesky",   _bluesky.IsEnabled,   _bluesky.IncludeSpcOutlooks,   _bluesky.MinSeverity,   _bluesky.EventTypes,   () => _bluesky.PostAlertAsync(alert)),
+            ("Mastodon",  _mastodon.IsEnabled,  _mastodon.IncludeSpcOutlooks,  _mastodon.MinSeverity,  _mastodon.EventTypes,  () => _mastodon.PostAlertAsync(alert)),
+            ("Pushover",  _pushover.IsEnabled,  _pushover.IncludeSpcOutlooks,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
+            ("Twilio",    _twilio.IsEnabled,    _twilio.IncludeSpcOutlooks,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
+            ("Discord",   _discord.IsEnabled,   _discord.IncludeSpcOutlooks,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
+            ("Telegram",  _telegram.IsEnabled,  _telegram.IncludeSpcOutlooks,  _telegram.MinSeverity,  _telegram.EventTypes,  () => _telegram.SendAlertAsync(alert)),
+            ("VoipMs",    _voipMs.IsEnabled,    _voipMs.IncludeSpcOutlooks,    _voipMs.MinSeverity,    _voipMs.EventTypes,    () => _voipMs.SendAlertAsync(alert)),
         };
 
         var filtered = all
-            .Where(p => p.Enabled && (!PassesFilter(alert.Severity, p.MinSeverity) || !PassesFilter(alert.Event, p.EventTypes)))
+            .Where(p => p.Enabled && (
+                (alert.IsSpcOutlook && !p.IncludeSpc) ||
+                !PassesFilter(alert.Severity, p.MinSeverity) ||
+                !PassesFilter(alert.Event, p.EventTypes)))
             .Select(p => p.Name)
             .ToList();
         if (filtered.Count > 0)
@@ -142,7 +145,10 @@ public class SocialMediaOrchestrator
                 string.Join(", ", filtered), alert.Severity, alert.Event);
 
         var tasks = all
-            .Where(p => p.Enabled && PassesFilter(alert.Severity, p.MinSeverity) && PassesFilter(alert.Event, p.EventTypes))
+            .Where(p => p.Enabled &&
+                !(alert.IsSpcOutlook && !p.IncludeSpc) &&
+                PassesFilter(alert.Severity, p.MinSeverity) &&
+                PassesFilter(alert.Event, p.EventTypes))
             .Select(p => WrapPost(p.Name, p.Action))
             .ToArray();
 

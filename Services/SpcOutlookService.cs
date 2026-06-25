@@ -227,16 +227,17 @@ public class SpcOutlookService
 
         return new NwsAlert
         {
-            Id          = $"SPC-Day{day}-{code}-{issueStamp}",
-            Event       = $"SPC Day {day} Convective Outlook",
-            Headline    = $"{name}: {label2} ({label}) — Day {day} Outlook",
-            AreaDesc    = name,
-            Severity    = severity,
-            SenderName  = "NOAA Storm Prediction Center",
-            Instruction = instruction,
-            Sent        = issue ?? DateTimeOffset.UtcNow,
-            Expires     = expire,
-            MapImageUrl = BuildOutlookImageUrl(day, wfo, state),
+            Id           = $"SPC-Day{day}-{code}-{issueStamp}",
+            Event        = $"SPC Day {day} Convective Outlook",
+            Headline     = $"{name}: {label2} ({label}) — Day {day} Outlook",
+            AreaDesc     = name,
+            Severity     = severity,
+            SenderName   = "NOAA Storm Prediction Center",
+            Instruction  = instruction,
+            Sent         = issue ?? DateTimeOffset.UtcNow,
+            Expires      = expire,
+            MapImageUrl  = BuildOutlookImageUrl(day, wfo, state),
+            IsSpcOutlook = true,
         };
     }
 

@@ -26,6 +26,9 @@ public class NwsAlert
     /// <summary>Mapbox static map image URL populated by MapService before posting. Null when map generation is disabled or geometry is unavailable.</summary>
     public string? MapImageUrl { get; set; }
 
+    /// <summary>True when this alert was synthesized by SpcOutlookService rather than fetched from the NWS API.</summary>
+    public bool IsSpcOutlook { get; set; }
+
     /// <summary>
     /// Formats a social media post. Truncates to fit within the given character limit.
     /// </summary>
