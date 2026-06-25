@@ -59,7 +59,10 @@ public class SocialMediaOrchestrator
         _logger    = logger;
     }
 
-    public async Task RunAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Runs one poll cycle. Returns the number of new alerts that were posted.
+    /// </summary>
+    public async Task<int> RunAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("Checking for new NWS alerts...");
 
@@ -71,8 +74,8 @@ public class SocialMediaOrchestrator
             if (ct.IsCancellationRequested) break;
             if (_tracker.HasBeenPosted(alert.Id)) continue;
 
-            _logger.LogInformation("New alert: [{Severity}] {Event} — {AreaDesc}",
-                alert.Severity, alert.Event, alert.AreaDesc);
+            _logger.LogInformation("New {MessageType}: [{Severity}] {Event} — {AreaDesc}",
+                alert.MessageType, alert.Severity, alert.Event, alert.AreaDesc);
 
             alert.MapImageUrl = await _map.GetMapUrlAsync(alert);
 
@@ -94,6 +97,7 @@ public class SocialMediaOrchestrator
             await CheckSpcOutlooksAsync(ct);
 
         _tracker.PruneOldEntries();
+        return newCount;
     }
 
     private async Task CheckSpcOutlooksAsync(CancellationToken ct)

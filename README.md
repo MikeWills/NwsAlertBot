@@ -76,7 +76,9 @@ All configuration lives in `appsettings.json`.
     "Zones":              ["MOZ066", "MOZ067"],
     "Counties":           ["MOC217", "MOC039"],
     "State":              "MO",
-    "PollIntervalSeconds": 60,
+    "PollIntervalSeconds": 300,
+    "ActiveAlertPollIntervalSeconds": 60,
+    "ActiveAlertWindowHours": 4,
     "Severity":           "Severe,Extreme",
     "Urgency":            "",
     "Certainty":          "",
@@ -90,7 +92,9 @@ All configuration lives in `appsettings.json`.
 | `Zones` | NWS forecast zone codes (see below) | `[]` |
 | `Counties` | NWS county codes (see below) | `[]` |
 | `State` | Two-letter state code fallback | `""` |
-| `PollIntervalSeconds` | How often to check for new alerts | `60` |
+| `PollIntervalSeconds` | Idle poll interval in seconds — used when no active storm window is open | `300` |
+| `ActiveAlertPollIntervalSeconds` | Accelerated poll interval in seconds while an active storm window is open | `60` |
+| `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new alert; resets on each new alert | `4` |
 | `Severity` | Comma-separated severity levels to include | `"Severe,Extreme"` |
 | `Urgency` | Comma-separated urgency levels to include | `""` (all) |
 | `Certainty` | Comma-separated certainty levels to include | `""` (all) |
@@ -279,6 +283,18 @@ no new filter fields were added:
 
 All filter fields are pushed directly to the NWS API — the bot does not pull all alerts and
 filter locally. This keeps API responses small and fast.
+
+### Message Types
+
+The bot requests all three NWS message types:
+
+| Type | Prefix in post | Meaning |
+|---|---|---|
+| `Alert` | ⚠️ | New issuance |
+| `Update` | 🔄 UPDATE: | Amendment or extension of an existing alert |
+| `Cancel` | ✅ CANCELLED: | Explicit cancellation before the original expiry |
+
+Each message type has its own unique ID, so deduplication works correctly — an update or cancellation will always post even if the original alert was already posted. Note that not every alert receives a cancellation; some simply expire naturally without a `Cancel` message from NWS.
 
 ### Severity
 

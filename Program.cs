@@ -113,15 +113,18 @@ await host.RunAsync();
 // ---------------------------------------------------------------
 public class AlertPollingService : BackgroundService
 {
-    private readonly StartupConfirmationService _confirmation;
-    private readonly SocialMediaOrchestrator    _orchestrator;
-    private readonly NwsSettings                _settings;
+    private readonly StartupConfirmationService  _confirmation;
+    private readonly SocialMediaOrchestrator     _orchestrator;
+    private readonly NwsSettings                 _settings;
     private readonly ILogger<AlertPollingService> _logger;
 
+    // Tracks when the last new alert was posted; null means no alert seen yet this session.
+    private DateTime? _lastNewAlertUtc;
+
     public AlertPollingService(
-        StartupConfirmationService confirmation,
-        SocialMediaOrchestrator    orchestrator,
-        NwsSettings                settings,
+        StartupConfirmationService  confirmation,
+        SocialMediaOrchestrator     orchestrator,
+        NwsSettings                 settings,
         ILogger<AlertPollingService> logger)
     {
         _confirmation = confirmation;
@@ -139,8 +142,9 @@ public class AlertPollingService : BackgroundService
                 : string.IsNullOrWhiteSpace(_settings.State) ? "Nationwide" : $"State: {_settings.State}";
 
         _logger.LogInformation(
-            "NWS Alert Bot started. Poll interval: {Interval}s | {GeoFilter} | Min severity: {Severity}",
-            _settings.PollIntervalSeconds, geoFilter, _settings.Severity);
+            "NWS Alert Bot started. Idle poll: {Idle}s | Active poll: {Active}s (window: {Hours}h) | {GeoFilter} | Min severity: {Severity}",
+            _settings.PollIntervalSeconds, _settings.ActiveAlertPollIntervalSeconds,
+            _settings.ActiveAlertWindowHours, geoFilter, _settings.Severity);
 
         // Send one-time confirmation to any platform not yet verified
         await _confirmation.RunAsync(stoppingToken);
@@ -148,8 +152,37 @@ public class AlertPollingService : BackgroundService
         // Main polling loop
         while (!stoppingToken.IsCancellationRequested)
         {
-            await _orchestrator.RunAsync(stoppingToken);
-            await Task.Delay(TimeSpan.FromSeconds(_settings.PollIntervalSeconds), stoppingToken);
+            int newAlerts = await _orchestrator.RunAsync(stoppingToken);
+
+            if (newAlerts > 0)
+            {
+                if (_lastNewAlertUtc == null)
+                    _logger.LogInformation("Active storm mode engaged — polling every {Interval}s for {Hours}h.",
+                        _settings.ActiveAlertPollIntervalSeconds, _settings.ActiveAlertWindowHours);
+                else
+                    _logger.LogInformation("Active storm window reset — {Count} new alert(s) posted.", newAlerts);
+
+                _lastNewAlertUtc = DateTime.UtcNow;
+            }
+
+            int delaySeconds;
+            if (_lastNewAlertUtc.HasValue &&
+                (DateTime.UtcNow - _lastNewAlertUtc.Value).TotalHours < _settings.ActiveAlertWindowHours)
+            {
+                delaySeconds = _settings.ActiveAlertPollIntervalSeconds;
+            }
+            else
+            {
+                if (_lastNewAlertUtc.HasValue)
+                {
+                    _logger.LogInformation("Active storm window expired — returning to idle poll interval ({Interval}s).",
+                        _settings.PollIntervalSeconds);
+                    _lastNewAlertUtc = null;
+                }
+                delaySeconds = _settings.PollIntervalSeconds;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds), stoppingToken);
         }
 
         _logger.LogInformation("NWS Alert Bot stopped.");

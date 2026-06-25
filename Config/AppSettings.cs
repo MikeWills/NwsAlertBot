@@ -42,8 +42,23 @@ public class NwsSettings
     /// </summary>
     public List<string> Counties { get; set; } = new();
 
-    /// <summary>Poll interval in seconds. 60 is recommended.</summary>
-    public int PollIntervalSeconds { get; set; } = 60;
+    /// <summary>
+    /// Idle poll interval in seconds — used when no active alerts have been seen recently.
+    /// 300 (5 minutes) is a reasonable default to avoid hammering the NWS API.
+    /// </summary>
+    public int PollIntervalSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// Accelerated poll interval in seconds, active while within the storm alert window.
+    /// Defaults to 60 seconds for near-real-time monitoring during active weather events.
+    /// </summary>
+    public int ActiveAlertPollIntervalSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// How many hours after the last new alert was posted to remain in accelerated polling mode.
+    /// Resets to this full window each time a new alert is posted.
+    /// </summary>
+    public double ActiveAlertWindowHours { get; set; } = 4;
 
     /// <summary>
     /// Filter by minimum severity — passed directly to the NWS API.

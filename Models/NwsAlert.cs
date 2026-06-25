@@ -36,6 +36,8 @@ public class NwsAlert
             ? Headline
             : $"{Event} issued for {AreaDesc}";
 
+        string issuedLine = $"\nIssued: {Sent.ToLocalTime():ddd MMM d h:mm tt zzz}";
+
         string expiresLine = "";
         var expiresAt = Ends ?? Expires;
         if (expiresAt.HasValue)
@@ -45,7 +47,14 @@ public class NwsAlert
             ? $"\nIssued by: {SenderName}"
             : "";
 
-        string body = $"⚠️ {header}{expiresLine}{issuedBy}";
+        string prefix = MessageType?.ToLower() switch
+        {
+            "cancel" => "✅ CANCELLED: ",
+            "update" => "🔄 UPDATE: ",
+            _        => "⚠️ "
+        };
+
+        string body = $"{prefix}{header}{issuedLine}{expiresLine}{issuedBy}";
 
         // Append instruction if it fits
         if (!string.IsNullOrWhiteSpace(Instruction))

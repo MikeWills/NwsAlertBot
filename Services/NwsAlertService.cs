@@ -102,7 +102,7 @@ public class NwsAlertService
         var qs = new List<string>
         {
             "status=actual",
-            "message_type=alert"
+            "message_type=alert,update,cancel"
         };
 
         // Geographic filter — zones take priority over counties over state
