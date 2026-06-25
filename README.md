@@ -601,10 +601,54 @@ Posts: Tornado Warnings, Flash Flood Emergencies, Storm Surge Warnings, Tsunami 
 ## API Credentials
 
 ### Facebook Page
-Requires a Meta Developer account and app review for `pages_manage_posts` permission.
-- Developer portal: https://developers.facebook.com/
-- You need a **never-expiring Page Access Token** (generated via a long-lived user token)
-- Guide: https://postproxy.dev/blog/facebook-graph-api-posting-guide/
+Requires a Meta Developer account. For posting only to Pages you personally administer, you do
+**not** need to submit for App Review — that's only required for Advanced Access (posting to
+Pages you don't own) or distributing the app to other users.
+
+**Getting a never-expiring Page Access Token** (this is the part that trips people up — follow
+this exact order):
+
+1. Create an app at [developers.facebook.com](https://developers.facebook.com/) → My Apps →
+   Create App → type **Business**. Note the **App ID** and **App Secret** (Settings → Basic).
+2. In [Graph API Explorer](https://developers.facebook.com/tools/explorer/), select your app,
+   generate a **User Access Token** with permissions `pages_show_list`, `pages_read_engagement`,
+   `pages_manage_posts`. This works immediately in Development Mode for Pages you admin — no
+   review needed.
+3. Exchange it for a **long-lived User Access Token** (~60 days):
+   ```
+   GET https://graph.facebook.com/v25.0/oauth/access_token
+     ?grant_type=fb_exchange_token
+     &client_id={app-id}
+     &client_secret={app-secret}
+     &fb_exchange_token={short-lived-token}
+   ```
+4. Use the **long-lived user token** (not the short-lived one) to derive the Page token:
+   ```
+   GET https://graph.facebook.com/v25.0/{page-id}?fields=access_token
+     &access_token={long-lived-user-token}
+   ```
+   The returned `access_token` is your never-expiring Page token. Find your Page ID the same
+   way you'd normally look up account info — Business Settings → Accounts → Pages → click your
+   Page, or from the `me/accounts` response if you used that instead of a direct page ID.
+5. Verify in the [Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken/)
+   — **Expires** should say **Never**. Use this for `Facebook.PageAccessToken`.
+
+> **Gotcha — Business Manager System User tokens didn't work for us:** generating a Page token
+> via Business Settings → System Users → Generate New Token (even with `pages_read_engagement` +
+> `pages_manage_posts` scopes confirmed in the Access Token Debugger, and the System User granted
+> Full control on the Page) still failed with:
+> `(#200) ... requires both pages_read_engagement and pages_manage_posts as an admin with
+> sufficient administrative permission`. Deriving the token from a personal long-lived **User**
+> token (steps 1–5 above) worked on the first try. If you hit this error, skip the System User
+> route entirely and use the user-token derivation method instead.
+>
+> Also check **App Dashboard → Use cases → Testing your use cases** — newer Meta apps show a
+> "0 of 1 API call(s) required" checklist per permission (`pages_manage_posts`,
+> `pages_read_engagement`, etc.) under a use case like "Manage everything on your Page." We're not
+> certain this gates Standard Access, but if you're still stuck after the steps above, satisfying
+> that checklist via Graph API Explorer is worth trying — results can take up to 24 hours to
+> register.
+
 - **Note:** Automated posting to personal profiles is not supported by the API.
 - When a map image is available, posts go to `/photos` instead of `/feed` automatically — no
   extra permission needed beyond `pages_manage_posts`.

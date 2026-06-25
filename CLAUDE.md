@@ -147,6 +147,7 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 
 - **Instagram requires an image** — text-only posts are not supported. If `ImageUrl` is not set, the service logs a warning and skips.
 - **Facebook personal profiles** — Graph API cannot post to personal profiles (deprecated since 2018). Pages only.
+- **Facebook Business Manager System User tokens can fail with OAuthException #200** even with correct scopes (`pages_read_engagement`, `pages_manage_posts`) and Full control on the Page — confirmed in production debugging. The fix that worked: derive the Page token from a personal long-lived **User** Access Token (`GET /{page-id}?fields=access_token`) instead of generating one via Business Settings → System Users. See README "Facebook Page" setup section for the full gotcha writeup before assuming a config/code bug.
 - **Bluesky tokens expire** — `BlueskyService` caches `accessJwt` and re-authenticates on 401. Do not remove this logic.
 - **X OAuth 1.0a** — signature must be recalculated per-request (timestamp + nonce). See `XService.BuildOAuth1Header()`.
 - **X media upload signing** — `XService.UploadMediaAsync()` reuses `BuildOAuth1Header(method, url)` with no body params signed. This matches X's own (non-strict-OAuth1.0a) behavior for multipart media upload — do not add multipart fields to the signature base, it will break the upload.
