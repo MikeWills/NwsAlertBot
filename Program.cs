@@ -143,7 +143,8 @@ static class LocalConfigSync
     }
 
     // Recursively copies keys present in source but absent from local.
-    // Skips top-level keys (path == "") so whole sections are never injected.
+    // Missing top-level sections that have an Enabled field are injected as disabled.
+    // Sections without Enabled (e.g. Nws) are skipped at the top level.
     private static void Merge(JsonObject local, JsonObject source, string path, List<string> added)
     {
         foreach (var (key, sourceValue) in source)
@@ -155,12 +156,30 @@ static class LocalConfigSync
                 if (sourceValue is JsonObject srcChild && local[key] is JsonObject localChild)
                     Merge(localChild, srcChild, fullKey, added);
             }
-            else if (path.Length > 0) // never inject a missing top-level section
+            else if (path.Length == 0)
+            {
+                // Top-level: inject service sections (those with Enabled) as disabled
+                if (sourceValue is JsonObject srcSection && srcSection.ContainsKey("Enabled"))
+                {
+                    local[key] = BuildOffSection(srcSection);
+                    added.Add($"{key} (disabled)");
+                }
+            }
+            else
             {
                 local[key] = OffDefault(sourceValue);
                 added.Add(fullKey);
             }
         }
+    }
+
+    // Builds a JsonObject from source with all values set to off defaults.
+    private static JsonObject BuildOffSection(JsonObject source)
+    {
+        var obj = new JsonObject();
+        foreach (var (key, value) in source)
+            obj[key] = value is JsonObject nested ? BuildOffSection(nested) : OffDefault(value);
+        return obj;
     }
 
     // Returns a conservative "off" default for a missing key.
