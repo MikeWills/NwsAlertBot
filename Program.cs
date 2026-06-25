@@ -2,6 +2,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using NwsAlertBot.Config;
 using NwsAlertBot.Services;
 
@@ -9,6 +11,8 @@ using NwsAlertBot.Services;
 // NWS Alert Social Media + Push Notification Bot
 // Built with .NET 8 Console App / Generic Host
 // ---------------------------------------------------------------
+
+LocalConfigSync.Run();
 
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration(config =>
@@ -107,6 +111,70 @@ if (args.Contains("--smoke-test-image"))
 
 await host.RunAsync();
 
+
+// ---------------------------------------------------------------
+// Local config sync — runs once at startup before the host is built.
+// Compares appsettings.Local.json against appsettings.json and adds
+// any missing keys (within sections that already exist in local) with
+// conservative defaults: booleans → false, strings → "", numbers keep
+// the base default. Top-level sections absent from local are skipped
+// so unconfigured platforms don't get empty blocks injected.
+// ---------------------------------------------------------------
+static class LocalConfigSync
+{
+    private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
+
+    public static void Run(string basePath = "appsettings.json", string localPath = "appsettings.Local.json")
+    {
+        if (!File.Exists(localPath) || !File.Exists(basePath)) return;
+
+        var localRoot = JsonNode.Parse(File.ReadAllText(localPath));
+        var baseRoot  = JsonNode.Parse(File.ReadAllText(basePath));
+
+        if (localRoot is not JsonObject localObj || baseRoot is not JsonObject baseObj) return;
+
+        var added = new List<string>();
+        Merge(localObj, baseObj, path: "", added);
+
+        if (added.Count == 0) return;
+
+        File.WriteAllText(localPath, localRoot.ToJsonString(WriteOptions));
+        Console.WriteLine($"[Config] Added {added.Count} missing setting(s) to {localPath}: {string.Join(", ", added)}");
+    }
+
+    // Recursively copies keys present in source but absent from local.
+    // Skips top-level keys (path == "") so whole sections are never injected.
+    private static void Merge(JsonObject local, JsonObject source, string path, List<string> added)
+    {
+        foreach (var (key, sourceValue) in source)
+        {
+            string fullKey = path.Length > 0 ? $"{path}.{key}" : key;
+
+            if (local.ContainsKey(key))
+            {
+                if (sourceValue is JsonObject srcChild && local[key] is JsonObject localChild)
+                    Merge(localChild, srcChild, fullKey, added);
+            }
+            else if (path.Length > 0) // never inject a missing top-level section
+            {
+                local[key] = OffDefault(sourceValue);
+                added.Add(fullKey);
+            }
+        }
+    }
+
+    // Returns a conservative "off" default for a missing key.
+    // Booleans → false, strings → "", numbers keep the base value.
+    private static JsonNode OffDefault(JsonNode? node) => node switch
+    {
+        JsonObject                                     => new JsonObject(),
+        JsonArray                                      => new JsonArray(),
+        JsonValue v when v.TryGetValue<bool>(out _)   => JsonValue.Create(false)!,
+        JsonValue v when v.TryGetValue<string>(out _) => JsonValue.Create("")!,
+        JsonValue                                      => node.DeepClone(), // numbers — keep base default
+        _                                              => JsonValue.Create(false)!,
+    };
+}
 
 // ---------------------------------------------------------------
 // Background polling service
