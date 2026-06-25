@@ -84,6 +84,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<MapService>();
         services.AddSingleton<StartupConfirmationService>();
         services.AddSingleton<SocialMediaOrchestrator>();
+        services.AddSingleton<ImageSmokeTestService>();
 
         // Background polling loop
         services.AddHostedService<AlertPollingService>();
@@ -95,6 +96,14 @@ var host = Host.CreateDefaultBuilder(args)
         logging.SetMinimumLevel(LogLevel.Information);
     })
     .Build();
+
+// Dev tool: posts a synthetic alert with a test image to every enabled image-capable platform,
+// then exits without starting the live polling loop. See ImageSmokeTestService for details.
+if (args.Contains("--smoke-test-image"))
+{
+    await host.Services.GetRequiredService<ImageSmokeTestService>().RunAsync();
+    return;
+}
 
 await host.RunAsync();
 

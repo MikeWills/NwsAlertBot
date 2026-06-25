@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -41,10 +42,10 @@ public class BlueskyService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostTextAsync(alert.FormatPost(maxLength: CharLimit), alert.Event);
+        return await PostTextAsync(alert.FormatPost(maxLength: CharLimit), alert.Event, alert.MapImageUrl);
     }
 
-    private async Task<bool> PostTextAsync(string text, string label)
+    private async Task<bool> PostTextAsync(string text, string label, string? imageUrl = null)
     {
         if (!_settings.Enabled) return false;
 
@@ -55,14 +56,14 @@ public class BlueskyService
 
             if (string.IsNullOrEmpty(_accessJwt)) return false;
 
-            bool success = await CreatePostAsync(text, label);
+            bool success = await CreatePostAsync(text, label, imageUrl);
 
             // Retry once on auth failure
             if (!success)
             {
                 _accessJwt = "";
                 await AuthenticateAsync();
-                success = await CreatePostAsync(text, label);
+                success = await CreatePostAsync(text, label, imageUrl);
             }
 
             return success;
@@ -105,18 +106,33 @@ public class BlueskyService
         }
     }
 
-    private async Task<bool> CreatePostAsync(string text, string label)
+    private async Task<bool> CreatePostAsync(string text, string label, string? imageUrl)
     {
-        var payload = JsonSerializer.Serialize(new
+        var record = new Dictionary<string, object?>
         {
-            repo       = _did,
-            collection = "app.bsky.feed.post",
-            record     = new
+            ["$type"]     = "app.bsky.feed.post",
+            ["text"]      = text,
+            ["createdAt"] = DateTimeOffset.UtcNow.ToString("o"),
+        };
+
+        if (!string.IsNullOrEmpty(imageUrl))
+        {
+            var blob = await UploadBlobAsync(imageUrl, label);
+            if (blob != null)
             {
-                @type     = "app.bsky.feed.post",
-                text,
-                createdAt = DateTimeOffset.UtcNow.ToString("o")
+                record["embed"] = new Dictionary<string, object?>
+                {
+                    ["$type"]  = "app.bsky.embed.images",
+                    ["images"] = new object[] { new Dictionary<string, object?> { ["image"] = blob.Value, ["alt"] = "" } }
+                };
             }
+        }
+
+        var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["repo"]       = _did,
+            ["collection"] = "app.bsky.feed.post",
+            ["record"]     = record
         });
 
         using var request = new HttpRequestMessage(HttpMethod.Post,
@@ -135,5 +151,42 @@ public class BlueskyService
 
         _logger.LogError("Bluesky: Post failed. Status={Status} Body={Body}", response.StatusCode, body);
         return false;
+    }
+
+    /// <summary>
+    /// Uploads image bytes to the PDS via uploadBlob and returns the resulting blob reference
+    /// (to be embedded in the post record's "embed.images[].image" field), or null on failure.
+    /// </summary>
+    private async Task<JsonElement?> UploadBlobAsync(string imageUrl, string label)
+    {
+        try
+        {
+            var imageBytes = await _http.GetByteArrayAsync(imageUrl);
+
+            using var content = new ByteArrayContent(imageBytes);
+            content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{PdsHost}/xrpc/com.atproto.repo.uploadBlob");
+            request.Headers.Add("Authorization", $"Bearer {_accessJwt}");
+            request.Content = content;
+
+            var response = await _http.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Bluesky: Blob upload failed for {Label}. Status={Status} Body={Body}",
+                    label, response.StatusCode, body);
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("blob", out var blob) ? blob.Clone() : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bluesky: Exception uploading blob for {Label}.", label);
+            return null;
+        }
     }
 }

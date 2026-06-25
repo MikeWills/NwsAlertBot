@@ -20,6 +20,7 @@ public class XService
     private readonly ILogger<XService> _logger;
 
     private const string PostTweetUrl = "https://api.twitter.com/2/tweets";
+    private const string MediaUploadUrl = "https://upload.twitter.com/1.1/media/upload.json";
 
     public XService(HttpClient http, XSettings settings, ILogger<XService> logger)
     {
@@ -38,17 +39,23 @@ public class XService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostTextAsync(alert.FormatPost(maxLength: 280), alert.Event);
+        return await PostTextAsync(alert.FormatPost(maxLength: 280), alert.Event, alert.MapImageUrl);
     }
 
-    private async Task<bool> PostTextAsync(string text, string label)
+    private async Task<bool> PostTextAsync(string text, string label, string? imageUrl = null)
     {
         if (!_settings.Enabled) return false;
 
         try
         {
+            string? mediaId = !string.IsNullOrEmpty(imageUrl) ? await UploadMediaAsync(imageUrl, label) : null;
+
+            object tweetBody = mediaId != null
+                ? new { text, media = new { media_ids = new[] { mediaId } } }
+                : new { text };
+
             var authHeader = BuildOAuth1Header("POST", PostTweetUrl);
-            var payload = JsonSerializer.Serialize(new { text });
+            var payload = JsonSerializer.Serialize(tweetBody);
             var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
             using var request = new HttpRequestMessage(HttpMethod.Post, PostTweetUrl);
@@ -71,6 +78,47 @@ public class XService
         {
             _logger.LogError(ex, "X: Exception posting {Label}.", label);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Uploads an image to the v1.1 media endpoint and returns its media_id_string, or null on
+    /// failure (the tweet is still posted as text-only in that case). Posting media still goes
+    /// through this v1.1 endpoint even for v2 tweets — X has not migrated media upload to v2.
+    /// Multipart fields are not part of the OAuth1.0a signature base for this endpoint, so the
+    /// same header-only signing used for the tweet itself applies here too.
+    /// </summary>
+    private async Task<string?> UploadMediaAsync(string imageUrl, string label)
+    {
+        try
+        {
+            var imageBytes = await _http.GetByteArrayAsync(imageUrl);
+
+            using var content = new MultipartFormDataContent();
+            content.Add(new ByteArrayContent(imageBytes), "media", "map.png");
+
+            var authHeader = BuildOAuth1Header("POST", MediaUploadUrl);
+            using var request = new HttpRequestMessage(HttpMethod.Post, MediaUploadUrl);
+            request.Headers.Add("Authorization", authHeader);
+            request.Content = content;
+
+            var response = await _http.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("X: Media upload failed for {Label}. Status={Status} Body={Body}",
+                    label, response.StatusCode, body);
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("media_id_string", out var id) ? id.GetString() : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "X: Exception uploading media for {Label}.", label);
+            return null;
         }
     }
 

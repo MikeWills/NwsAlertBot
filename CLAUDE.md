@@ -20,6 +20,10 @@ dotnet run
 # Publish self-contained
 dotnet publish -c Release -r win-x64 --self-contained
 
+# Smoke-test image attachment against live platform APIs (posts a real test post, then exits
+# without starting the polling loop). See ImageSmokeTestService / README "Image Smoke Test".
+dotnet run -- --smoke-test-image
+
 # There are no automated tests in this project.
 ```
 
@@ -145,4 +149,6 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 - **Facebook personal profiles** — Graph API cannot post to personal profiles (deprecated since 2018). Pages only.
 - **Bluesky tokens expire** — `BlueskyService` caches `accessJwt` and re-authenticates on 401. Do not remove this logic.
 - **X OAuth 1.0a** — signature must be recalculated per-request (timestamp + nonce). See `XService.BuildOAuth1Header()`.
+- **X media upload signing** — `XService.UploadMediaAsync()` reuses `BuildOAuth1Header(method, url)` with no body params signed. This matches X's own (non-strict-OAuth1.0a) behavior for multipart media upload — do not add multipart fields to the signature base, it will break the upload.
 - **Pushover priority 2 (emergency) requires `retry` + `expire`** — omitting causes a 400 error. Always include them when priority == 2.
+- **Image attachment failure modes differ by platform** — X/Bluesky/Mastodon have a separate upload step; if it fails, they fall back to posting text-only (don't change this to abort the whole post). Facebook (`/photos`) and Twilio (`MediaUrl`) instead pass the image URL directly in the same request as the text — if that URL is bad, the entire post/SMS fails, since there's no separate upload step to fail independently.

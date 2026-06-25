@@ -11,7 +11,10 @@ namespace NwsAlertBot.Services;
 /// and checks each monitored location (derived from Nws.Zones/Nws.Counties) against the
 /// categorical risk polygons (TSTM/MRGL/SLGT/ENH/MDT/HIGH) and the tornado/wind/hail
 /// probability polygons. Produces one synthetic NwsAlert per (location, day) that is in
-/// any non-"None" categorical risk, bundling the tornado/wind/hail breakdown.
+/// any non-"None" categorical risk, bundling the tornado/wind/hail breakdown and a
+/// categorical outlook map image (via Iowa State's IEM Mesonet plotting service, keyed
+/// off the location's WFO/state) that flows through the same MapImageUrl pipeline as
+/// Mapbox alert maps.
 /// Docs: https://www.spc.noaa.gov/misc/about.html
 /// </summary>
 public class SpcOutlookService
@@ -24,7 +27,7 @@ public class SpcOutlookService
 
     private const string BaseUrl = "https://www.spc.noaa.gov/products/outlook/";
 
-    private List<(string Code, string Name, double Lat, double Lon)>? _locations;
+    private List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)>? _locations;
     private DateTimeOffset _lastCheckedUtc = DateTimeOffset.MinValue;
 
     public SpcOutlookService(HttpClient http, SpcSettings settings, NwsSettings nwsSettings, NwsZoneService zones, ILogger<SpcOutlookService> logger)
@@ -65,30 +68,30 @@ public class SpcOutlookService
         return results;
     }
 
-    private async Task<List<(string Code, string Name, double Lat, double Lon)>> EnsureLocationsResolvedAsync()
+    private async Task<List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)>> EnsureLocationsResolvedAsync()
     {
         if (_locations != null) return _locations;
 
         var codes = _nwsSettings.Zones.Count > 0 ? _nwsSettings.Zones : _nwsSettings.Counties;
-        var resolved = new List<(string Code, string Name, double Lat, double Lon)>();
+        var resolved = new List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)>();
 
         foreach (var code in codes)
         {
-            var geometry = await _zones.GetGeometryAsync(code);
-            if (geometry == null)
+            var info = await _zones.GetZoneInfoAsync(code);
+            if (info == null)
             {
                 _logger.LogWarning("Spc: Could not resolve geometry for {Code}; this location will not be monitored.", code);
                 continue;
             }
 
-            var centroid = ComputeCentroid(geometry.Value);
+            var centroid = ComputeCentroid(info.Geometry);
             if (centroid == null)
             {
                 _logger.LogWarning("Spc: Could not compute a centroid for {Code}; this location will not be monitored.", code);
                 continue;
             }
 
-            resolved.Add((code, code, centroid.Value.Lat, centroid.Value.Lon));
+            resolved.Add((code, code, centroid.Value.Lat, centroid.Value.Lon, info.Cwa, info.State));
         }
 
         _locations = resolved;
@@ -98,7 +101,7 @@ public class SpcOutlookService
         return _locations;
     }
 
-    private async Task<List<NwsAlert>> CheckDayAsync(int day, List<(string Code, string Name, double Lat, double Lon)> locations)
+    private async Task<List<NwsAlert>> CheckDayAsync(int day, List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)> locations)
     {
         var alerts = new List<NwsAlert>();
 
@@ -125,7 +128,7 @@ public class SpcOutlookService
                 var windPct = FindMaxProbability(windFeatures, loc.Lon, loc.Lat);
                 var hailPct = FindMaxProbability(hailFeatures, loc.Lon, loc.Lat);
 
-                alerts.Add(BuildAlert(day, loc.Code, loc.Name, label, label2!, issue, expire, tornPct, windPct, hailPct));
+                alerts.Add(BuildAlert(day, loc.Code, loc.Name, loc.Wfo, loc.State, label, label2!, issue, expire, tornPct, windPct, hailPct));
             }
         }
         catch (Exception ex)
@@ -205,7 +208,7 @@ public class SpcOutlookService
     private static DateTimeOffset? ParseIso(JsonElement props, string key) =>
         props.TryGetProperty(key, out var el) && DateTimeOffset.TryParse(el.GetString(), out var dt) ? dt : null;
 
-    private static NwsAlert BuildAlert(int day, string code, string name, string label, string label2,
+    private static NwsAlert BuildAlert(int day, string code, string name, string? wfo, string? state, string label, string label2,
         DateTimeOffset? issue, DateTimeOffset? expire, double? tornPct, double? windPct, double? hailPct)
     {
         string severity = label switch
@@ -233,7 +236,23 @@ public class SpcOutlookService
             Instruction = instruction,
             Sent        = issue ?? DateTimeOffset.UtcNow,
             Expires     = expire,
+            MapImageUrl = BuildOutlookImageUrl(day, wfo, state),
         };
+    }
+
+    /// <summary>
+    /// Builds an IEM Mesonet auto-plot URL showing the categorical outlook for the location's
+    /// WFO/state, e.g. https://mesonet.agron.iastate.edu/plotting/auto/plot/220/which:1C::...
+    /// Returns null if the WFO or state couldn't be resolved (e.g. some Alaska/Pacific/Caribbean
+    /// offices use ICAO-prefixed codes on IEM's side that don't match the NWS API's plain CWA id).
+    /// No API key required. Plot docs: https://mesonet.agron.iastate.edu/plotting/auto/?q=220
+    /// </summary>
+    private static string? BuildOutlookImageUrl(int day, string? wfo, string? state)
+    {
+        if (string.IsNullOrEmpty(wfo) || string.IsNullOrEmpty(state)) return null;
+
+        return "https://mesonet.agron.iastate.edu/plotting/auto/plot/220/" +
+               $"which:{day}C::cat:categorical::t:cwa::network:WFO::wfo:{wfo}::csector:{state}::_r:t::dpi:100.png";
     }
 
     // --- Point-in-polygon (ray casting) ---

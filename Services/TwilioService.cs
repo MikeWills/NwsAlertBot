@@ -33,10 +33,10 @@ public class TwilioService
     public async Task<bool> SendAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await SendToAllAsync(BuildSmsText(alert), alert.Event);
+        return await SendToAllAsync(BuildSmsText(alert), alert.Event, alert.MapImageUrl);
     }
 
-    private async Task<bool> SendToAllAsync(string message, string label)
+    private async Task<bool> SendToAllAsync(string message, string label, string? mediaUrl = null)
     {
         if (!_settings.Enabled) return false;
 
@@ -49,12 +49,12 @@ public class TwilioService
         // Keep SMS to 2 segments (320 chars) to control cost
         if (message.Length > 320) message = message[..317] + "...";
 
-        var tasks = _settings.ToNumbers.Select(to => SendSmsAsync(to, message, label));
+        var tasks = _settings.ToNumbers.Select(to => SendSmsAsync(to, message, label, mediaUrl));
         var results = await Task.WhenAll(tasks);
         return results.All(r => r);
     }
 
-    private async Task<bool> SendSmsAsync(string toNumber, string message, string label)
+    private async Task<bool> SendSmsAsync(string toNumber, string message, string label, string? mediaUrl = null)
     {
         try
         {
@@ -62,12 +62,17 @@ public class TwilioService
             string credentials = Convert.ToBase64String(
                 Encoding.ASCII.GetBytes($"{_settings.AccountSid}:{_settings.AuthToken}"));
 
-            var formData = new FormUrlEncodedContent(new[]
+            var formFields = new List<KeyValuePair<string, string>>
             {
-                new KeyValuePair<string, string>("From", _settings.FromNumber),
-                new KeyValuePair<string, string>("To",   toNumber),
-                new KeyValuePair<string, string>("Body", message),
-            });
+                new("From", _settings.FromNumber),
+                new("To",   toNumber),
+                new("Body", message),
+            };
+            // MediaUrl turns the message into MMS — Twilio fetches the URL itself, no upload needed.
+            if (!string.IsNullOrEmpty(mediaUrl))
+                formFields.Add(new("MediaUrl", mediaUrl));
+
+            var formData = new FormUrlEncodedContent(formFields);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.Add("Authorization", $"Basic {credentials}");

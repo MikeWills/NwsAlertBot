@@ -37,22 +37,25 @@ public class FacebookService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostMessageAsync(alert.FormatPost(maxLength: 63206), alert.Event);
+        return await PostMessageAsync(alert.FormatPost(maxLength: 63206), alert.Event, alert.MapImageUrl);
     }
 
-    private async Task<bool> PostMessageAsync(string message, string label)
+    private async Task<bool> PostMessageAsync(string message, string label, string? imageUrl = null)
     {
         if (!_settings.Enabled) return false;
 
         try
         {
-            var url = $"https://graph.facebook.com/{GraphApiVersion}/{_settings.PageId}/feed";
+            // With an image, post to /photos (url + caption) instead of /feed (message-only)
+            // so the map renders inline rather than as a link preview.
+            bool hasImage = !string.IsNullOrEmpty(imageUrl);
+            var url = hasImage
+                ? $"https://graph.facebook.com/{GraphApiVersion}/{_settings.PageId}/photos"
+                : $"https://graph.facebook.com/{GraphApiVersion}/{_settings.PageId}/feed";
 
-            var payload = new
-            {
-                message,
-                access_token = _settings.PageAccessToken
-            };
+            object payload = hasImage
+                ? new { url = imageUrl, caption = message, access_token = _settings.PageAccessToken }
+                : new { message, access_token = _settings.PageAccessToken };
 
             var content = new StringContent(
                 JsonSerializer.Serialize(payload),

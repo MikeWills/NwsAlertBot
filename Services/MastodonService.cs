@@ -1,4 +1,6 @@
+using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NwsAlertBot.Config;
 using NwsAlertBot.Models;
@@ -36,25 +38,32 @@ public class MastodonService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostStatusAsync(alert.FormatPost(maxLength: CharLimit), alert.Event);
+        return await PostStatusAsync(alert.FormatPost(maxLength: CharLimit), alert.Event, alert.MapImageUrl);
     }
 
-    private async Task<bool> PostStatusAsync(string status, string label)
+    private async Task<bool> PostStatusAsync(string status, string label, string? imageUrl = null)
     {
         if (!_settings.Enabled) return false;
 
         try
         {
-            var formData = new FormUrlEncodedContent(new[]
-            {
-                new KeyValuePair<string, string>("status",     status),
-                new KeyValuePair<string, string>("visibility", "public")
-            });
-
             string instanceUrl = _settings.InstanceUrl.TrimEnd('/');
+
+            string? mediaId = !string.IsNullOrEmpty(imageUrl)
+                ? await UploadMediaAsync(instanceUrl, imageUrl, label)
+                : null;
+
+            var formFields = new List<KeyValuePair<string, string>>
+            {
+                new("status",     status),
+                new("visibility", "public")
+            };
+            if (mediaId != null)
+                formFields.Add(new("media_ids[]", mediaId));
+
             using var request = new HttpRequestMessage(HttpMethod.Post, $"{instanceUrl}/api/v1/statuses");
             request.Headers.Add("Authorization", $"Bearer {_settings.AccessToken}");
-            request.Content = formData;
+            request.Content = new FormUrlEncodedContent(formFields);
 
             var response = await _http.SendAsync(request);
             var body     = await response.Content.ReadAsStringAsync();
@@ -72,6 +81,45 @@ public class MastodonService
         {
             _logger.LogError(ex, "Mastodon: Exception posting {Label}.", label);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Uploads an image via the media endpoint and returns its id (to attach via media_ids[]
+    /// on the status), or null on failure (the status is still posted as text-only).
+    /// </summary>
+    private async Task<string?> UploadMediaAsync(string instanceUrl, string imageUrl, string label)
+    {
+        try
+        {
+            var imageBytes = await _http.GetByteArrayAsync(imageUrl);
+
+            using var content = new MultipartFormDataContent();
+            var fileContent = new ByteArrayContent(imageBytes);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+            content.Add(fileContent, "file", "map.png");
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{instanceUrl}/api/v2/media");
+            request.Headers.Add("Authorization", $"Bearer {_settings.AccessToken}");
+            request.Content = content;
+
+            var response = await _http.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Mastodon: Media upload failed for {Label}. Status={Status} Body={Body}",
+                    label, response.StatusCode, body);
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.TryGetProperty("id", out var id) ? id.GetString() : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Mastodon: Exception uploading media for {Label}.", label);
+            return null;
         }
     }
 }
