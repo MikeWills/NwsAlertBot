@@ -94,7 +94,7 @@ All configuration lives in `appsettings.json`.
 | `State` | Two-letter state code fallback | `""` |
 | `PollIntervalSeconds` | Idle poll interval in seconds — used when no active storm window is open | `300` |
 | `ActiveAlertPollIntervalSeconds` | Accelerated poll interval in seconds while an active storm window is open | `60` |
-| `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new alert; resets on each new alert | `4` |
+| `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new NWS alert; resets on each new NWS alert. SPC outlooks do not affect the storm window. | `4` |
 | `Severity` | Comma-separated severity levels to include | `"Severe,Extreme"` |
 | `Urgency` | Comma-separated urgency levels to include | `""` (all) |
 | `Certainty` | Comma-separated certainty levels to include | `""` (all) |
@@ -1195,8 +1195,9 @@ If nothing is enabled, it logs a warning and exits without posting anything.
     API embeds the bot token in the URL path by design, so request URL logging was leaking the token.
   - `StartupConfirmationService`: disabled platforms are now excluded from the pending list instead
     of producing a misleading "delivery failed — check credentials" warning on every startup.
-  - `SocialMediaOrchestrator`: SPC outlooks now contribute to the `newCount` returned by `RunAsync`,
-    so a new SPC outlook will engage accelerated polling mode (same as NWS alerts).
+  - `SocialMediaOrchestrator`: only NWS alerts engage active storm mode (accelerated polling). SPC
+    outlooks are posted but do not affect the polling interval — they update only a few times per day
+    and are independent of active NWS warnings.
   - `BlueskyService`: re-authentication retry now only triggers on HTTP 401 Unauthorized, not on
     rate-limit, content-policy, or transient errors.
   - Removed unused `AppSettings` class (all settings were bound per-section directly) and the
