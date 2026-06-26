@@ -75,6 +75,15 @@ public class NwsSettings
     public string EventTypes { get; set; } = "";
 
     /// <summary>
+    /// Additional event types to always fetch regardless of the Severity filter.
+    /// Use this to include specific lower-severity events (e.g. "Special Weather Statement,
+    /// Winter Weather Advisory") alongside a Severity filter like "Moderate,Severe,Extreme".
+    /// These are fetched in a separate API call (no severity filter) and merged with the main results.
+    /// Leave empty if not needed.
+    /// </summary>
+    public string AdditionalEventTypes { get; set; } = "";
+
+    /// <summary>
     /// IANA time zone ID used to format Issued/Valid/Expires times on all alert posts
     /// (both NWS and SPC). Works on Windows and Linux. Examples: "America/Chicago",
     /// "America/New_York", "America/Denver", "America/Los_Angeles".

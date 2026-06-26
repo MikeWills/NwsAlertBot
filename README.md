@@ -99,6 +99,7 @@ All configuration lives in `appsettings.json`.
 | `Urgency` | Comma-separated urgency levels to include | `""` (all) |
 | `Certainty` | Comma-separated certainty levels to include | `""` (all) |
 | `EventTypes` | Comma-separated event names to include | `""` (all) |
+| `AdditionalEventTypes` | Comma-separated event types to always fetch regardless of `Severity`. Use to include specific lower-severity events (e.g. advisories) alongside a severity filter. Makes a separate API call and merges results. | `""` (none) |
 | `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS and SPC). Works on Windows and Linux. | `"America/Chicago"` |
 
 **US IANA timezone IDs:**

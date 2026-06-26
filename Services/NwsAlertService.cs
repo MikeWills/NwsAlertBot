@@ -8,9 +8,11 @@ namespace NwsAlertBot.Services;
 /// <summary>
 /// Polls the NWS REST API for active alerts.
 /// API docs: https://www.weather.gov/documentation/services-web-api
-/// 
+///
 /// Filtering is pushed to the API where possible (zones, counties, severity,
 /// urgency, certainty, event type) to minimize data transfer and processing.
+/// When AdditionalEventTypes is set, a second API call is made with only the
+/// geographic filter so those event types bypass the Severity filter.
 /// </summary>
 public class NwsAlertService
 {
@@ -47,59 +49,21 @@ public class NwsAlertService
     {
         try
         {
-            string url = BuildUrl();
-            _logger.LogDebug("NWS request URL: {Url}", url);
+            var alerts = await FetchAlertsAsync(BuildUrl());
 
-            var response = await _http.GetAsync(url);
-            response.EnsureSuccessStatusCode();
-
-            var json = await response.Content.ReadAsStringAsync();
-            var doc = JsonDocument.Parse(json);
-
-            var alerts = new List<NwsAlert>();
-
-            if (!doc.RootElement.TryGetProperty("features", out var features))
-                return alerts;
-
-            foreach (var feature in features.EnumerateArray())
+            if (!string.IsNullOrWhiteSpace(_settings.AdditionalEventTypes))
             {
-                if (!feature.TryGetProperty("properties", out var props))
-                    continue;
-
-                var alert = new NwsAlert
+                try
                 {
-                    Id              = GetString(props, "id"),
-                    Event           = GetString(props, "event"),
-                    Headline        = GetString(props, "headline"),
-                    Description     = GetString(props, "description"),
-                    Instruction     = GetString(props, "instruction"),
-                    AreaDesc        = GetString(props, "areaDesc"),
-                    Severity        = GetString(props, "severity"),
-                    Urgency         = GetString(props, "urgency"),
-                    Certainty       = GetString(props, "certainty"),
-                    SenderName      = GetString(props, "senderName"),
-                    MessageType     = GetString(props, "messageType"),
-                    Sent            = GetDateTimeOffset(props, "sent"),
-                    Expires         = GetNullableDateTimeOffset(props, "expires"),
-                    Ends            = GetNullableDateTimeOffset(props, "ends"),
-                    DisplayTimeZone = _timeZone,
-                };
-
-                if (feature.TryGetProperty("geometry", out var geo) && geo.ValueKind != JsonValueKind.Null)
-                    alert.GeometryJson = geo.GetRawText();
-
-                if (props.TryGetProperty("geocode", out var geocode) &&
-                    geocode.TryGetProperty("UGC", out var ugc) &&
-                    ugc.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var code in ugc.EnumerateArray())
-                    {
-                        var s = code.GetString();
-                        if (!string.IsNullOrEmpty(s)) alert.GeocodeUgc.Add(s);
-                    }
+                    var additional = await FetchAlertsAsync(BuildAdditionalUrl());
+                    var seen = new HashSet<string>(alerts.Select(a => a.Id), StringComparer.Ordinal);
+                    foreach (var a in additional)
+                        if (seen.Add(a.Id)) alerts.Add(a);
                 }
-
-                alerts.Add(alert);
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "NWS: Failed to fetch AdditionalEventTypes alerts.");
+                }
             }
 
             _logger.LogInformation("NWS returned {Count} qualifying active alerts.", alerts.Count);
@@ -112,51 +76,116 @@ public class NwsAlertService
         }
     }
 
+    private async Task<List<NwsAlert>> FetchAlertsAsync(string url)
+    {
+        _logger.LogDebug("NWS request URL: {Url}", url);
+        var response = await _http.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+        return ParseAlerts(JsonDocument.Parse(json));
+    }
+
+    private List<NwsAlert> ParseAlerts(JsonDocument doc)
+    {
+        var alerts = new List<NwsAlert>();
+
+        if (!doc.RootElement.TryGetProperty("features", out var features))
+            return alerts;
+
+        foreach (var feature in features.EnumerateArray())
+        {
+            if (!feature.TryGetProperty("properties", out var props))
+                continue;
+
+            var alert = new NwsAlert
+            {
+                Id              = GetString(props, "id"),
+                Event           = GetString(props, "event"),
+                Headline        = GetString(props, "headline"),
+                Description     = GetString(props, "description"),
+                Instruction     = GetString(props, "instruction"),
+                AreaDesc        = GetString(props, "areaDesc"),
+                Severity        = GetString(props, "severity"),
+                Urgency         = GetString(props, "urgency"),
+                Certainty       = GetString(props, "certainty"),
+                SenderName      = GetString(props, "senderName"),
+                MessageType     = GetString(props, "messageType"),
+                Sent            = GetDateTimeOffset(props, "sent"),
+                Expires         = GetNullableDateTimeOffset(props, "expires"),
+                Ends            = GetNullableDateTimeOffset(props, "ends"),
+                DisplayTimeZone = _timeZone,
+            };
+
+            if (feature.TryGetProperty("geometry", out var geo) && geo.ValueKind != JsonValueKind.Null)
+                alert.GeometryJson = geo.GetRawText();
+
+            if (props.TryGetProperty("geocode", out var geocode) &&
+                geocode.TryGetProperty("UGC", out var ugc) &&
+                ugc.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var code in ugc.EnumerateArray())
+                {
+                    var s = code.GetString();
+                    if (!string.IsNullOrEmpty(s)) alert.GeocodeUgc.Add(s);
+                }
+            }
+
+            alerts.Add(alert);
+        }
+
+        return alerts;
+    }
+
     /// <summary>
-    /// Builds the NWS API URL, pushing as many filters as possible to the server.
-    /// Priority: Zones > Counties > State > Nationwide (avoid nationwide — very noisy)
+    /// Appends the geographic filter (zones, counties, or state) to the query string.
+    /// </summary>
+    private void AddGeoFilter(List<string> qs)
+    {
+        if (_settings.Zones.Count > 0)
+            qs.Add($"zone={string.Join(",", _settings.Zones)}");
+        else if (_settings.Counties.Count > 0)
+            qs.Add($"zone={string.Join(",", _settings.Counties)}");
+        else if (!string.IsNullOrWhiteSpace(_settings.State))
+            qs.Add($"area={_settings.State.ToUpper()}");
+        else
+            _logger.LogWarning("No geographic filter configured. Fetching nationwide alerts (high volume).");
+    }
+
+    /// <summary>
+    /// Main query: geographic + severity/urgency/certainty/event filters.
     /// </summary>
     private string BuildUrl()
     {
-        var qs = new List<string>
-        {
-            "status=actual",
-            "message_type=alert,update,cancel"
-        };
+        var qs = new List<string> { "status=actual", "message_type=alert,update,cancel" };
 
-        // Geographic filter — zones take priority over counties over state
-        if (_settings.Zones.Count > 0)
-        {
-            qs.Add($"zone={string.Join(",", _settings.Zones)}");
-        }
-        else if (_settings.Counties.Count > 0)
-        {
-            qs.Add($"zone={string.Join(",", _settings.Counties)}");
-        }
-        else if (!string.IsNullOrWhiteSpace(_settings.State))
-        {
-            qs.Add($"area={_settings.State.ToUpper()}");
-        }
-        else
-        {
-            _logger.LogWarning("No geographic filter configured. Fetching nationwide alerts (high volume).");
-        }
+        AddGeoFilter(qs);
 
-        // Severity filter — e.g. "Severe,Extreme"
         if (!string.IsNullOrWhiteSpace(_settings.Severity))
             qs.Add($"severity={Uri.EscapeDataString(_settings.Severity)}");
 
-        // Urgency filter — e.g. "Immediate,Expected"
         if (!string.IsNullOrWhiteSpace(_settings.Urgency))
             qs.Add($"urgency={Uri.EscapeDataString(_settings.Urgency)}");
 
-        // Certainty filter — e.g. "Observed,Likely"
         if (!string.IsNullOrWhiteSpace(_settings.Certainty))
             qs.Add($"certainty={Uri.EscapeDataString(_settings.Certainty)}");
 
-        // Event type filter — e.g. "Tornado Warning,Flash Flood Warning"
         if (!string.IsNullOrWhiteSpace(_settings.EventTypes))
             qs.Add($"event={Uri.EscapeDataString(_settings.EventTypes)}");
+
+        return "https://api.weather.gov/alerts/active?" + string.Join("&", qs);
+    }
+
+    /// <summary>
+    /// Secondary query for AdditionalEventTypes: geographic filter + specific event types only,
+    /// no severity filter, so Minor events are included regardless of the main Severity setting.
+    /// </summary>
+    private string BuildAdditionalUrl()
+    {
+        var qs = new List<string> { "status=actual", "message_type=alert,update,cancel" };
+
+        AddGeoFilter(qs);
+
+        qs.Add($"event={Uri.EscapeDataString(_settings.AdditionalEventTypes)}");
 
         return "https://api.weather.gov/alerts/active?" + string.Join("&", qs);
     }
