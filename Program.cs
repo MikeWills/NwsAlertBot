@@ -33,7 +33,8 @@ var host = Host.CreateDefaultBuilder(args)
         var mastodonSettings  = cfg.GetSection("Mastodon").Get<MastodonSettings>()   ?? new MastodonSettings();
         var pushoverSettings  = cfg.GetSection("Pushover").Get<PushoverSettings>()   ?? new PushoverSettings();
         var twilioSettings    = cfg.GetSection("Twilio").Get<TwilioSettings>()       ?? new TwilioSettings();
-        var discordSettings   = cfg.GetSection("Discord").Get<DiscordSettings>()     ?? new DiscordSettings();
+        var discordSettings   = cfg.GetSection("Discord").Get<DiscordSettings>()       ?? new DiscordSettings();
+        var discordDmSettings = cfg.GetSection("DiscordDm").Get<DiscordDmSettings>() ?? new DiscordDmSettings();
         var telegramSettings  = cfg.GetSection("Telegram").Get<TelegramSettings>()   ?? new TelegramSettings();
         var voipMsSettings    = cfg.GetSection("VoipMs").Get<VoipMsSettings>()       ?? new VoipMsSettings();
         var mapSettings       = cfg.GetSection("Map").Get<MapSettings>()             ?? new MapSettings();
@@ -49,6 +50,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton(pushoverSettings);
         services.AddSingleton(twilioSettings);
         services.AddSingleton(discordSettings);
+        services.AddSingleton(discordDmSettings);
         services.AddSingleton(telegramSettings);
         services.AddSingleton(voipMsSettings);
         services.AddSingleton(mapSettings);
@@ -70,6 +72,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddHttpClient<PushoverService>();
         services.AddHttpClient<TwilioService>();
         services.AddHttpClient<DiscordService>();
+        services.AddHttpClient<DiscordDmService>();
         services.AddHttpClient<TelegramService>();
         services.AddHttpClient<VoipMsService>();
         services.AddHttpClient<NwsZoneService>(client =>

@@ -21,6 +21,7 @@ public class SocialMediaOrchestrator
     private readonly PushoverService _pushover;
     private readonly TwilioService _twilio;
     private readonly DiscordService _discord;
+    private readonly DiscordDmService _discordDm;
     private readonly TelegramService _telegram;
     private readonly VoipMsService _voipMs;
     private readonly ILogger<SocialMediaOrchestrator> _logger;
@@ -38,6 +39,7 @@ public class SocialMediaOrchestrator
         PushoverService pushover,
         TwilioService twilio,
         DiscordService discord,
+        DiscordDmService discordDm,
         TelegramService telegram,
         VoipMsService voipMs,
         ILogger<SocialMediaOrchestrator> logger)
@@ -54,6 +56,7 @@ public class SocialMediaOrchestrator
         _pushover  = pushover;
         _twilio    = twilio;
         _discord   = discord;
+        _discordDm = discordDm;
         _telegram  = telegram;
         _voipMs    = voipMs;
         _logger    = logger;
@@ -129,6 +132,7 @@ public class SocialMediaOrchestrator
             ("Pushover",  _pushover.IsEnabled,  _pushover.IncludeSpcOutlooks,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
             ("Twilio",    _twilio.IsEnabled,    _twilio.IncludeSpcOutlooks,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
             ("Discord",   _discord.IsEnabled,   _discord.IncludeSpcOutlooks,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
+            ("DiscordDm", _discordDm.IsEnabled, _discordDm.IncludeSpcOutlooks, _discordDm.MinSeverity, _discordDm.EventTypes, () => _discordDm.PostAlertAsync(alert)),
             ("Telegram",  _telegram.IsEnabled,  _telegram.IncludeSpcOutlooks,  _telegram.MinSeverity,  _telegram.EventTypes,  () => _telegram.SendAlertAsync(alert)),
             ("VoipMs",    _voipMs.IsEnabled,    _voipMs.IncludeSpcOutlooks,    _voipMs.MinSeverity,    _voipMs.EventTypes,    () => _voipMs.SendAlertAsync(alert)),
         };

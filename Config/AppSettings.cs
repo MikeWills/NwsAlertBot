@@ -12,6 +12,7 @@ public class AppSettings
     public TwilioSettings Twilio { get; set; } = new();
     public VoipMsSettings VoipMs { get; set; } = new();
     public DiscordSettings Discord { get; set; } = new();
+    public DiscordDmSettings DiscordDm { get; set; } = new();
     public TelegramSettings Telegram { get; set; } = new();
     public MapSettings Map { get; set; } = new();
     public SpcSettings Spc { get; set; } = new();
@@ -256,6 +257,34 @@ public class TwilioSettings
     /// Example: ["+15559876543", "+15557654321"]
     /// </summary>
     public List<string> ToNumbers { get; set; } = new();
+
+    /// <inheritdoc cref="FacebookSettings.MinSeverity"/>
+    public string MinSeverity { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.EventTypes"/>
+    public string EventTypes { get; set; } = "";
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
+    public bool IncludeSpcOutlooks { get; set; } = true;
+}
+
+public class DiscordDmSettings
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Discord bot token from the Developer Portal (Bot → Token).
+    /// The bot must share a server with each recipient, or the recipient must allow DMs
+    /// from server members. Create a bot at https://discord.com/developers/applications
+    /// </summary>
+    public string BotToken { get; set; } = "";
+
+    /// <summary>
+    /// Discord user IDs to DM. Right-click a user in Discord (with Developer Mode on)
+    /// and choose "Copy User ID". All listed users receive every alert.
+    /// Example: ["123456789012345678", "987654321098765432"]
+    /// </summary>
+    public List<string> UserIds { get; set; } = new();
 
     /// <inheritdoc cref="FacebookSettings.MinSeverity"/>
     public string MinSeverity { get; set; } = "";

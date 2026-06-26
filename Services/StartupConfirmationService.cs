@@ -24,6 +24,7 @@ public class StartupConfirmationService
     private readonly PushoverService  _pushover;
     private readonly TwilioService    _twilio;
     private readonly DiscordService   _discord;
+    private readonly DiscordDmService _discordDm;
     private readonly TelegramService  _telegram;
     private readonly VoipMsService    _voipMs;
     private readonly ILogger<StartupConfirmationService> _logger;
@@ -40,6 +41,7 @@ public class StartupConfirmationService
         PushoverService  pushover,
         TwilioService    twilio,
         DiscordService   discord,
+        DiscordDmService discordDm,
         TelegramService  telegram,
         VoipMsService    voipMs,
         ILogger<StartupConfirmationService> logger)
@@ -52,6 +54,7 @@ public class StartupConfirmationService
         _pushover  = pushover;
         _twilio    = twilio;
         _discord   = discord;
+        _discordDm = discordDm;
         _telegram  = telegram;
         _voipMs    = voipMs;
         _logger    = logger;
@@ -106,6 +109,7 @@ public class StartupConfirmationService
         new("Pushover",  msg => _pushover.SendConfirmationAsync(msg)),
         new("Twilio",    msg => _twilio.SendConfirmationAsync(msg)),
         new("Discord",   msg => _discord.SendConfirmationAsync(msg)),
+        new("DiscordDm", msg => _discordDm.SendConfirmationAsync(msg)),
         new("Telegram",  msg => _telegram.SendConfirmationAsync(msg)),
         new("VoipMs",    msg => _voipMs.SendConfirmationAsync(msg)),
     };

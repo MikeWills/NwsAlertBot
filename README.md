@@ -1,8 +1,8 @@
 # NWS Alert Social Media Bot
 
 A .NET 8 C# console application that polls the National Weather Service API for active weather
-alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, Mastodon, Discord, and
-Telegram — and sends real-time push notifications and SMS via Pushover, Twilio, and VoIP.ms.
+alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, Mastodon, Discord (webhook
+and DM), and Telegram — and sends real-time push notifications and SMS via Pushover, Twilio, and VoIP.ms.
 
 ---
 
@@ -703,7 +703,7 @@ Uses the same Meta Developer app as Facebook.
 - When a map image is available, it's downloaded and uploaded via the media endpoint, then
   attached to the status — no extra setup needed.
 
-### Discord
+### Discord (Webhook — channel posts)
 - No developer account required — uses an Incoming Webhook
 - In your server: **Server Settings → Integrations → Webhooks → New Webhook**
 - Pick the channel the webhook should post to, then **Copy Webhook URL**
@@ -713,6 +713,23 @@ Uses the same Meta Developer app as Facebook.
 - Each alert is posted as a rich embed, color-coded by severity (red = Extreme, orange = Severe,
   yellow = Moderate, green = Minor)
 - API docs: https://discord.com/developers/docs/resources/webhook#execute-webhook
+
+### Discord DM (Bot — direct messages to users)
+- Delivers alerts as direct messages to one or more Discord users via a bot
+- **Create a bot:**
+  1. Go to https://discord.com/developers/applications → **New Application**
+  2. Go to **Bot** → **Reset Token** → copy the token → set `BotToken` in config
+  3. No special OAuth scopes are needed — the bot only sends DMs, it never joins a server
+- **Add the bot to a shared server** (required — Discord only allows bots to DM users they share a server with):
+  1. Under **OAuth2 → URL Generator**, select scope `bot` with no permissions
+  2. Open the generated URL and add the bot to any server you and the recipients are in
+- **Find user IDs:**
+  - Enable **Developer Mode** in Discord: Settings → Advanced → Developer Mode
+  - Right-click any user → **Copy User ID**
+  - Add each ID to `UserIds` in config: `["123456789012345678"]`
+- Each alert is sent as a rich embed, color-coded by severity, same as the webhook format
+- The DM channel for each user is opened once and cached for the session
+- API docs: https://discord.com/developers/docs/resources/channel#create-message
 
 ### Telegram
 - No developer account required — uses the Telegram Bot API
@@ -1134,6 +1151,7 @@ To re-confirm all platforms, delete `confirmed_platforms.txt` entirely and resta
 | Twilio | SMS to all `ToNumbers` | Each recipient billed separately |
 | VoIP.ms | SMS to all `ToNumbers` | Sent from your DID |
 | Discord | Plain text message | No embed for the confirmation message |
+| DiscordDm | Plain text DM to each configured user | No embed for the confirmation message |
 | Telegram | Plain text message | No photo for the confirmation message |
 
 ---
