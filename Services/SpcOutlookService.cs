@@ -245,8 +245,16 @@ public class SpcOutlookService
         return best;
     }
 
-    private static DateTimeOffset? ParseIso(JsonElement props, string key) =>
-        props.TryGetProperty(key, out var el) && DateTimeOffset.TryParse(el.GetString(), out var dt) ? dt : null;
+    // SPC timestamps are UTC. AssumeUniversal treats offset-free strings as UTC;
+    // explicit offsets (+00:00, Z) are still honoured.
+    private static DateTimeOffset? ParseIso(JsonElement props, string key)
+    {
+        if (!props.TryGetProperty(key, out var el)) return null;
+        var str = el.GetString();
+        return str != null && DateTimeOffset.TryParse(str, null,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var dt)
+            ? dt : null;
+    }
 
     private static NwsAlert? BuildAlert(int day, string? wfo, string? state, string label, string label2,
         DateTimeOffset? issue, DateTimeOffset? expire, double? tornPct, double? windPct, double? hailPct, TimeZoneInfo timeZone)
