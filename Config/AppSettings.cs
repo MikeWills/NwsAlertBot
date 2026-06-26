@@ -44,6 +44,16 @@ public class NwsSettings
     public double ActiveAlertWindowHours { get; set; } = 4;
 
     /// <summary>
+    /// Minimum severity required for a new alert to trigger (or extend) accelerated polling mode.
+    /// Lower-severity alerts (e.g. Moderate advisories added via AdditionalEventTypes) are posted
+    /// normally but do not engage the faster poll interval.
+    /// Valid values: Extreme, Severe, Moderate, Minor, Unknown
+    /// Comma-separated list: "Severe,Extreme" means only Severe or Extreme alerts trigger active mode.
+    /// Leave empty to have any new alert trigger active mode.
+    /// </summary>
+    public string ActiveAlertMinSeverity { get; set; } = "Severe,Extreme";
+
+    /// <summary>
     /// Filter by minimum severity — passed directly to the NWS API.
     /// Valid values: Extreme, Severe, Moderate, Minor, Unknown
     /// Can be a comma-separated list, e.g. "Extreme,Severe"

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using NwsAlertBot.Config;
 using NwsAlertBot.Models;
 
 namespace NwsAlertBot.Services;
@@ -9,6 +10,7 @@ namespace NwsAlertBot.Services;
 /// </summary>
 public class SocialMediaOrchestrator
 {
+    private readonly NwsSettings _nwsSettings;
     private readonly NwsAlertService _nws;
     private readonly SpcOutlookService _spc;
     private readonly AlertTrackerService _tracker;
@@ -27,6 +29,7 @@ public class SocialMediaOrchestrator
     private readonly ILogger<SocialMediaOrchestrator> _logger;
 
     public SocialMediaOrchestrator(
+        NwsSettings nwsSettings,
         NwsAlertService nws,
         SpcOutlookService spc,
         AlertTrackerService tracker,
@@ -44,6 +47,7 @@ public class SocialMediaOrchestrator
         VoipMsService voipMs,
         ILogger<SocialMediaOrchestrator> logger)
     {
+        _nwsSettings = nwsSettings;
         _nws       = nws;
         _spc       = spc;
         _tracker   = tracker;
@@ -63,7 +67,9 @@ public class SocialMediaOrchestrator
     }
 
     /// <summary>
-    /// Runs one poll cycle. Returns the number of new alerts that were posted.
+    /// Runs one poll cycle. Returns the number of new alerts that qualify as active-storm
+    /// triggers (i.e. meet ActiveAlertMinSeverity). Lower-severity alerts are still posted
+    /// but do not count toward triggering accelerated polling.
     /// </summary>
     public async Task<int> RunAsync(CancellationToken ct = default)
     {
@@ -72,6 +78,7 @@ public class SocialMediaOrchestrator
         var alerts = await _nws.GetActiveAlertsAsync();
 
         int newCount = 0;
+        int stormCount = 0;
         foreach (var alert in alerts)
         {
             if (ct.IsCancellationRequested) break;
@@ -86,6 +93,9 @@ public class SocialMediaOrchestrator
             _tracker.MarkPosted(alert.Id);
             newCount++;
 
+            if (PassesFilter(alert.Severity, _nwsSettings.ActiveAlertMinSeverity))
+                stormCount++;
+
             // Brief delay between alerts to avoid rate limit bursts
             if (newCount < alerts.Count)
                 await Task.Delay(TimeSpan.FromSeconds(2), ct);
@@ -94,13 +104,13 @@ public class SocialMediaOrchestrator
         if (newCount == 0)
             _logger.LogInformation("No new alerts to post.");
         else
-            _logger.LogInformation("Posted {Count} new alert(s).", newCount);
+            _logger.LogInformation("Posted {Count} new alert(s) ({StormCount} storm-triggering).", newCount, stormCount);
 
         if (_spc.IsEnabled)
             await CheckSpcOutlooksAsync(ct);
 
         _tracker.PruneOldEntries();
-        return newCount;
+        return stormCount;
     }
 
     private async Task CheckSpcOutlooksAsync(CancellationToken ct)

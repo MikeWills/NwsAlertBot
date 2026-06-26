@@ -239,9 +239,10 @@ public class AlertPollingService : BackgroundService
                 : string.IsNullOrWhiteSpace(_settings.State) ? "Nationwide" : $"State: {_settings.State}";
 
         _logger.LogInformation(
-            "NWS Alert Bot started. Idle poll: {Idle}s | Active poll: {Active}s (window: {Hours}h) | {GeoFilter} | Min severity: {Severity}",
+            "NWS Alert Bot started. Idle poll: {Idle}s | Active poll: {Active}s (window: {Hours}h) | {GeoFilter} | Min severity: {Severity} | Active mode trigger: {ActiveMinSeverity}",
             _settings.PollIntervalSeconds, _settings.ActiveAlertPollIntervalSeconds,
-            _settings.ActiveAlertWindowHours, geoFilter, _settings.Severity);
+            _settings.ActiveAlertWindowHours, geoFilter, _settings.Severity,
+            string.IsNullOrWhiteSpace(_settings.ActiveAlertMinSeverity) ? "any" : _settings.ActiveAlertMinSeverity);
 
         // Send one-time confirmation to any platform not yet verified
         await _confirmation.RunAsync(stoppingToken);

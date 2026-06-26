@@ -95,6 +95,7 @@ All configuration lives in `appsettings.json`.
 | `PollIntervalSeconds` | Idle poll interval in seconds — used when no active storm window is open | `300` |
 | `ActiveAlertPollIntervalSeconds` | Accelerated poll interval in seconds while an active storm window is open | `60` |
 | `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new NWS alert; resets on each new NWS alert. SPC outlooks do not affect the storm window. | `4` |
+| `ActiveAlertMinSeverity` | Minimum severity for a new alert to trigger or extend accelerated polling mode. Alerts below this threshold are still posted but do not engage the faster poll interval. Leave empty to have any new alert trigger active mode. | `"Severe,Extreme"` |
 | `Severity` | Comma-separated severity levels to include | `"Severe,Extreme"` |
 | `Urgency` | Comma-separated urgency levels to include | `""` (all) |
 | `Certainty` | Comma-separated certainty levels to include | `""` (all) |
