@@ -164,6 +164,8 @@ public class SpcOutlookService
 
             if (bestLabel == null) return null;
 
+            _logger.LogInformation("Spc: Day {Day} raw timestamps — issue={Issue:O} expire={Expire:O}", day, bestIssue, bestExpire);
+
             var alert = BuildAlert(day, bestWfo, bestState, bestLabel, bestLabel2!, bestIssue, bestExpire, maxTorn, maxWind, maxHail, _timeZone);
             if (alert == null)
                 _logger.LogWarning("Spc: Skipping Day {Day} outlook — both ISSUE_ISO and EXPIRE_ISO are absent.", day);
