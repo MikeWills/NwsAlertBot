@@ -29,6 +29,9 @@ public class NwsAlert
     /// <summary>True when this alert was synthesized by SpcOutlookService rather than fetched from the NWS API.</summary>
     public bool IsSpcOutlook { get; set; }
 
+    private static readonly TimeZoneInfo CentralTime =
+        TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
+
     /// <summary>
     /// Formats a social media post. Truncates to fit within the given character limit.
     /// </summary>
@@ -39,12 +42,22 @@ public class NwsAlert
             ? Headline
             : $"{Event} issued for {AreaDesc}";
 
-        string issuedLine = $"\nIssued: {Sent.ToLocalTime():ddd MMM d h:mm tt zzz}";
-
+        string issuedLine;
         string expiresLine = "";
         var expiresAt = Ends ?? Expires;
-        if (expiresAt.HasValue)
-            expiresLine = $"\nExpires: {expiresAt.Value.ToLocalTime():ddd MMM d h:mm tt zzz}";
+
+        if (IsSpcOutlook)
+        {
+            issuedLine = $"\nValid: {TimeZoneInfo.ConvertTime(Sent, CentralTime):ddd MMM d h:mm tt zzz}";
+            if (expiresAt.HasValue)
+                expiresLine = $"\nExpires: {TimeZoneInfo.ConvertTime(expiresAt.Value, CentralTime):ddd MMM d h:mm tt zzz}";
+        }
+        else
+        {
+            issuedLine = $"\nIssued: {Sent.ToLocalTime():ddd MMM d h:mm tt zzz}";
+            if (expiresAt.HasValue)
+                expiresLine = $"\nExpires: {expiresAt.Value.ToLocalTime():ddd MMM d h:mm tt zzz}";
+        }
 
         string issuedBy = !string.IsNullOrWhiteSpace(SenderName)
             ? $"\nIssued by: {SenderName}"
@@ -65,6 +78,15 @@ public class NwsAlert
             string withInstruction = body + $"\n\n{Instruction}";
             if (withInstruction.Length <= maxLength)
                 body = withInstruction;
+        }
+
+        // Append IEM attribution for SPC outlook map images
+        if (IsSpcOutlook)
+        {
+            const string attribution = "\n\nImages generated via Iowa State University (https://mesonet.agron.iastate.edu/)";
+            string withAttribution = body + attribution;
+            if (withAttribution.Length <= maxLength)
+                body = withAttribution;
         }
 
         // Truncate with ellipsis if still over limit

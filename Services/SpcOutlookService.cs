@@ -63,7 +63,10 @@ public class SpcOutlookService
 
         var results = new List<NwsAlert>();
         foreach (var day in new[] { 1, 2 })
-            results.AddRange(await CheckDayAsync(day, locations));
+        {
+            var alert = await CheckDayAsync(day, locations);
+            if (alert != null) results.Add(alert);
+        }
 
         return results;
     }
@@ -103,10 +106,8 @@ public class SpcOutlookService
         return resolved;
     }
 
-    private async Task<List<NwsAlert>> CheckDayAsync(int day, List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)> locations)
+    private async Task<NwsAlert?> CheckDayAsync(int day, List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)> locations)
     {
-        var alerts = new List<NwsAlert>();
-
         try
         {
             using var catDoc  = await FetchLayerAsync($"day{day}otlk_cat.lyr.geojson");
@@ -114,34 +115,57 @@ public class SpcOutlookService
             using var windDoc = await FetchLayerAsync($"day{day}otlk_wind.lyr.geojson");
             using var hailDoc = await FetchLayerAsync($"day{day}otlk_hail.lyr.geojson");
 
-            if (catDoc == null) return alerts;
+            if (catDoc == null) return null;
 
             var catFeatures  = catDoc.RootElement.GetProperty("features");
             var tornFeatures = tornDoc?.RootElement.GetProperty("features");
             var windFeatures = windDoc?.RootElement.GetProperty("features");
             var hailFeatures = hailDoc?.RootElement.GetProperty("features");
 
+            // One alert per day: find the highest risk across all monitored locations.
+            int bestDn = -1;
+            string? bestLabel = null, bestLabel2 = null;
+            DateTimeOffset? bestIssue = null, bestExpire = null;
+            string? bestWfo = null, bestState = null;
+            double? maxTorn = null, maxWind = null, maxHail = null;
+
             foreach (var loc in locations)
             {
-                var (label, label2, issue, expire) = FindCategorical(catFeatures, loc.Lon, loc.Lat);
-                if (label == null) continue; // "None" — not in any risk category, no alert
+                var (dn, label, label2, issue, expire) = FindCategorical(catFeatures, loc.Lon, loc.Lat);
+                if (label == null) continue;
 
-                var tornPct = FindMaxProbability(tornFeatures, loc.Lon, loc.Lat);
-                var windPct = FindMaxProbability(windFeatures, loc.Lon, loc.Lat);
-                var hailPct = FindMaxProbability(hailFeatures, loc.Lon, loc.Lat);
+                maxTorn = MaxNullable(maxTorn, FindMaxProbability(tornFeatures, loc.Lon, loc.Lat));
+                maxWind = MaxNullable(maxWind, FindMaxProbability(windFeatures, loc.Lon, loc.Lat));
+                maxHail = MaxNullable(maxHail, FindMaxProbability(hailFeatures, loc.Lon, loc.Lat));
 
-                var alert = BuildAlert(day, loc.Code, loc.Name, loc.Wfo, loc.State, label, label2!, issue, expire, tornPct, windPct, hailPct);
-                if (alert != null) alerts.Add(alert);
-                else _logger.LogWarning("Spc: Skipping Day {Day} outlook for {Code} — both ISSUE_ISO and EXPIRE_ISO are absent.", day, loc.Code);
+                if (dn > bestDn)
+                {
+                    bestDn     = dn;
+                    bestLabel  = label;
+                    bestLabel2 = label2;
+                    bestIssue  = issue;
+                    bestExpire = expire;
+                    bestWfo    = loc.Wfo;
+                    bestState  = loc.State;
+                }
             }
+
+            if (bestLabel == null) return null;
+
+            var alert = BuildAlert(day, bestWfo, bestState, bestLabel, bestLabel2!, bestIssue, bestExpire, maxTorn, maxWind, maxHail);
+            if (alert == null)
+                _logger.LogWarning("Spc: Skipping Day {Day} outlook — both ISSUE_ISO and EXPIRE_ISO are absent.", day);
+            return alert;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Spc: Failed to check Day {Day} outlook.", day);
+            return null;
         }
-
-        return alerts;
     }
+
+    private static double? MaxNullable(double? a, double? b) =>
+        a == null ? b : b == null ? a : Math.Max(a.Value, b.Value);
 
     private async Task<JsonDocument?> FetchLayerAsync(string fileName)
     {
@@ -164,7 +188,7 @@ public class SpcOutlookService
         }
     }
 
-    private static (string? Label, string? Label2, DateTimeOffset? Issue, DateTimeOffset? Expire) FindCategorical(
+    private static (int Dn, string? Label, string? Label2, DateTimeOffset? Issue, DateTimeOffset? Expire) FindCategorical(
         JsonElement features, double lon, double lat)
     {
         int bestDn = -1;
@@ -186,7 +210,7 @@ public class SpcOutlookService
             expire = ParseIso(props, "EXPIRE_ISO");
         }
 
-        return (label, label2, issue, expire);
+        return (bestDn, label, label2, issue, expire);
     }
 
     private static double? FindMaxProbability(JsonElement? features, double lon, double lat)
@@ -212,7 +236,7 @@ public class SpcOutlookService
     private static DateTimeOffset? ParseIso(JsonElement props, string key) =>
         props.TryGetProperty(key, out var el) && DateTimeOffset.TryParse(el.GetString(), out var dt) ? dt : null;
 
-    private static NwsAlert? BuildAlert(int day, string code, string name, string? wfo, string? state, string label, string label2,
+    private static NwsAlert? BuildAlert(int day, string? wfo, string? state, string label, string label2,
         DateTimeOffset? issue, DateTimeOffset? expire, double? tornPct, double? windPct, double? hailPct)
     {
         string severity = label switch
@@ -235,10 +259,10 @@ public class SpcOutlookService
 
         return new NwsAlert
         {
-            Id           = $"SPC-Day{day}-{code}-{issueStamp}",
+            Id           = $"SPC-Day{day}-{issueStamp}",
             Event        = $"SPC Day {day} Convective Outlook",
-            Headline     = $"{name}: {label2} ({label}) — Day {day} Outlook",
-            AreaDesc     = name,
+            Headline     = $"{label2} ({label}) — Day {day} Convective Outlook",
+            AreaDesc     = "Monitored Area",
             Severity     = severity,
             SenderName   = "NOAA Storm Prediction Center",
             Instruction  = instruction,
