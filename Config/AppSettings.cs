@@ -415,10 +415,10 @@ public class SpcSettings
     public int CheckIntervalSeconds { get; set; } = 1800;
 
     /// <summary>
-    /// Windows time zone ID used to format Valid/Expires times on SPC outlook posts.
-    /// Run `tzutil /l` in a Windows command prompt to list all valid IDs.
-    /// Examples: "Central Standard Time", "Eastern Standard Time", "Mountain Standard Time", "Pacific Standard Time"
+    /// IANA time zone ID used to format Valid/Expires times on SPC outlook posts.
+    /// Works on both Windows and Linux. Examples: "America/Chicago", "America/New_York",
+    /// "America/Denver", "America/Los_Angeles". See README for a full US reference table.
     /// </summary>
-    public string TimeZone { get; set; } = "Central Standard Time";
+    public string TimeZone { get; set; } = "America/Chicago";
 }
 

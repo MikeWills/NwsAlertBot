@@ -49,10 +49,10 @@ public class SpcOutlookService
             catch { logger.LogWarning("Spc: Unknown TimeZone \"{Id}\"; falling back to Central Standard Time.", id); }
         }
 
-        try { return TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time"); }
+        try { return TimeZoneInfo.FindSystemTimeZoneById("America/Chicago"); }
         catch
         {
-            logger.LogWarning("Spc: Central Standard Time not found (non-Windows OS?); using UTC. Set Spc.TimeZone to an IANA ID such as \"America/Chicago\".");
+            logger.LogWarning("Spc: Could not load America/Chicago as fallback timezone; using UTC. Set Spc.TimeZone to a valid IANA ID such as \"America/Chicago\".");
             return TimeZoneInfo.Utc;
         }
     }
