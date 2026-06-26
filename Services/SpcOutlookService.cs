@@ -94,11 +94,13 @@ public class SpcOutlookService
             resolved.Add((code, code, centroid.Value.Lat, centroid.Value.Lon, info.Cwa, info.State));
         }
 
-        _locations = resolved;
         if (resolved.Count > 0)
+        {
+            _locations = resolved;
             _logger.LogInformation("Spc: Resolved {Count} monitored location(s) for outlook checks.", resolved.Count);
+        }
 
-        return _locations;
+        return resolved;
     }
 
     private async Task<List<NwsAlert>> CheckDayAsync(int day, List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)> locations)
@@ -128,7 +130,9 @@ public class SpcOutlookService
                 var windPct = FindMaxProbability(windFeatures, loc.Lon, loc.Lat);
                 var hailPct = FindMaxProbability(hailFeatures, loc.Lon, loc.Lat);
 
-                alerts.Add(BuildAlert(day, loc.Code, loc.Name, loc.Wfo, loc.State, label, label2!, issue, expire, tornPct, windPct, hailPct));
+                var alert = BuildAlert(day, loc.Code, loc.Name, loc.Wfo, loc.State, label, label2!, issue, expire, tornPct, windPct, hailPct);
+                if (alert != null) alerts.Add(alert);
+                else _logger.LogWarning("Spc: Skipping Day {Day} outlook for {Code} — both ISSUE_ISO and EXPIRE_ISO are absent.", day, loc.Code);
             }
         }
         catch (Exception ex)
@@ -172,7 +176,7 @@ public class SpcOutlookService
             if (!PointInGeometry(feature.GetProperty("geometry"), lon, lat)) continue;
 
             var props = feature.GetProperty("properties");
-            int dn = props.GetProperty("DN").GetInt32();
+            if (!props.TryGetProperty("DN", out var dnEl) || !dnEl.TryGetInt32(out int dn)) continue;
             if (dn <= bestDn) continue;
 
             bestDn = dn;
@@ -208,7 +212,7 @@ public class SpcOutlookService
     private static DateTimeOffset? ParseIso(JsonElement props, string key) =>
         props.TryGetProperty(key, out var el) && DateTimeOffset.TryParse(el.GetString(), out var dt) ? dt : null;
 
-    private static NwsAlert BuildAlert(int day, string code, string name, string? wfo, string? state, string label, string label2,
+    private static NwsAlert? BuildAlert(int day, string code, string name, string? wfo, string? state, string label, string label2,
         DateTimeOffset? issue, DateTimeOffset? expire, double? tornPct, double? windPct, double? hailPct)
     {
         string severity = label switch
@@ -223,7 +227,11 @@ public class SpcOutlookService
         static string FormatPct(double? p) => p.HasValue ? $"{p.Value * 100:0}%" : "None";
 
         string instruction = $"Tornado: {FormatPct(tornPct)}\nWind: {FormatPct(windPct)}\nHail: {FormatPct(hailPct)}";
-        string issueStamp = (issue ?? DateTimeOffset.UtcNow).ToString("yyyyMMddHHmm");
+        // Prefer ISSUE_ISO for the dedup ID; fall back to EXPIRE_ISO (stable for the outlook period).
+        // Never use UtcNow — it changes every minute and would re-post the same outlook every poll cycle.
+        var stamp = issue ?? expire;
+        if (stamp == null) return null;
+        string issueStamp = stamp.Value.ToString("yyyyMMddHHmm");
 
         return new NwsAlert
         {

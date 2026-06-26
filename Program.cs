@@ -102,8 +102,12 @@ var host = Host.CreateDefaultBuilder(args)
         logging.AddConsole();
         logging.SetMinimumLevel(LogLevel.Information);
         // Telegram embeds the bot token in the URL path (required by the Bot API).
-        // Suppress HttpClient request/response logging for this client to keep the token out of logs.
+        // Bluesky, X, and Mastodon fetch the Mapbox map image via GetByteArrayAsync, which logs the
+        // full URL including the Mapbox access token. Suppress request-URL logging for all four.
         logging.AddFilter("System.Net.Http.HttpClient.TelegramService", LogLevel.Warning);
+        logging.AddFilter("System.Net.Http.HttpClient.BlueskyService",  LogLevel.Warning);
+        logging.AddFilter("System.Net.Http.HttpClient.XService",        LogLevel.Warning);
+        logging.AddFilter("System.Net.Http.HttpClient.MastodonService", LogLevel.Warning);
     })
     .Build();
 

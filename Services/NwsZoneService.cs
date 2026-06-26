@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
@@ -7,11 +8,13 @@ namespace NwsAlertBot.Services;
 /// Fetches zone/county geometry and metadata from the NWS zones API.
 /// Shared by MapService (bounding-box fallback) and SpcOutlookService (location resolution
 /// and outlook image URLs) so the fetch + zone-type derivation logic lives in exactly one place.
+/// Results are cached in memory for the lifetime of the process.
 /// </summary>
 public class NwsZoneService
 {
     private readonly HttpClient _http;
     private readonly ILogger<NwsZoneService> _logger;
+    private readonly ConcurrentDictionary<string, ZoneInfo?> _cache = new();
 
     public NwsZoneService(HttpClient http, ILogger<NwsZoneService> logger)
     {
@@ -36,6 +39,10 @@ public class NwsZoneService
     public async Task<ZoneInfo?> GetZoneInfoAsync(string code)
     {
         if (code.Length < 3) return null;
+        code = code.ToUpperInvariant();
+
+        if (_cache.TryGetValue(code, out var cached)) return cached;
+
         var zoneType = code[2] == 'C' ? "county" : "forecast";
 
         try
@@ -61,7 +68,9 @@ public class NwsZoneService
             }
 
             // Clone so the element survives disposal of its parent JsonDocument.
-            return new ZoneInfo(geo.Clone(), cwa, state);
+            var info = new ZoneInfo(geo.Clone(), cwa, state);
+            _cache[code] = info;
+            return info;
         }
         catch (Exception ex)
         {

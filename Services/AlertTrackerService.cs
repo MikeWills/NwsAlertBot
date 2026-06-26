@@ -10,7 +10,10 @@ public class AlertTrackerService
 {
     private readonly string _filePath;
     private readonly ILogger<AlertTrackerService> _logger;
-    private readonly HashSet<string> _postedIds = new();
+
+    // List preserves insertion order for deterministic pruning; set provides O(1) lookup.
+    private readonly List<string> _orderedIds = new();
+    private readonly HashSet<string> _idSet = new();
     private readonly object _lock = new();
 
     public AlertTrackerService(ILogger<AlertTrackerService> logger, string filePath = "posted_alerts.txt")
@@ -23,14 +26,15 @@ public class AlertTrackerService
     public bool HasBeenPosted(string alertId)
     {
         lock (_lock)
-            return _postedIds.Contains(alertId);
+            return _idSet.Contains(alertId);
     }
 
     public void MarkPosted(string alertId)
     {
         lock (_lock)
         {
-            _postedIds.Add(alertId);
+            if (_idSet.Add(alertId))
+                _orderedIds.Add(alertId);
             Save();
         }
     }
@@ -42,10 +46,11 @@ public class AlertTrackerService
         {
             foreach (var line in File.ReadAllLines(_filePath))
             {
-                if (!string.IsNullOrWhiteSpace(line))
-                    _postedIds.Add(line.Trim());
+                var id = line.Trim();
+                if (!string.IsNullOrWhiteSpace(id) && _idSet.Add(id))
+                    _orderedIds.Add(id);
             }
-            _logger.LogInformation("Loaded {Count} previously posted alert IDs.", _postedIds.Count);
+            _logger.LogInformation("Loaded {Count} previously posted alert IDs.", _orderedIds.Count);
         }
         catch (Exception ex)
         {
@@ -57,7 +62,7 @@ public class AlertTrackerService
     {
         try
         {
-            File.WriteAllLines(_filePath, _postedIds);
+            File.WriteAllLines(_filePath, _orderedIds);
         }
         catch (Exception ex)
         {
@@ -66,20 +71,21 @@ public class AlertTrackerService
     }
 
     /// <summary>
-    /// Prune old entries. Call periodically to keep the file from growing forever.
-    /// Only keeps IDs from the last 7 days based on file line count (simple heuristic).
+    /// Removes the oldest half of tracked IDs when the count exceeds maxEntries.
+    /// Uses insertion order so recently-posted IDs are always retained.
     /// </summary>
     public void PruneOldEntries(int maxEntries = 10000)
     {
         lock (_lock)
         {
-            if (_postedIds.Count > maxEntries)
+            if (_orderedIds.Count > maxEntries)
             {
-                var trimmed = _postedIds.TakeLast(maxEntries / 2).ToHashSet();
-                _postedIds.Clear();
-                foreach (var id in trimmed) _postedIds.Add(id);
+                int removeCount = _orderedIds.Count - maxEntries / 2;
+                for (int i = 0; i < removeCount; i++)
+                    _idSet.Remove(_orderedIds[i]);
+                _orderedIds.RemoveRange(0, removeCount);
                 Save();
-                _logger.LogInformation("Pruned alert tracker to {Count} entries.", _postedIds.Count);
+                _logger.LogInformation("Pruned alert tracker to {Count} entries.", _orderedIds.Count);
             }
         }
     }

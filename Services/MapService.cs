@@ -136,9 +136,10 @@ public class MapService
         double maxLon = double.MinValue, maxLat = double.MinValue;
         bool found = false;
 
-        foreach (var code in codes)
+        var geos = await Task.WhenAll(codes.Select(c => _zones.GetGeometryAsync(c)));
+
+        foreach (var geo in geos)
         {
-            var geo = await _zones.GetGeometryAsync(code);
             if (geo == null) continue;
 
             var bbox = ExtractBbox(geo.Value.GetRawText());

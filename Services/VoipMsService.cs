@@ -7,7 +7,7 @@ using NwsAlertBot.Models;
 namespace NwsAlertBot.Services;
 
 /// <summary>
-/// Sends SMS alerts via the VoIP.ms REST API (no SDK — API key in query string over HTTPS).
+/// Sends SMS alerts via the VoIP.ms REST API (no SDK — credentials POSTed as form body over HTTPS).
 /// API docs: https://voip.ms/m/apidocs.php (method: sendSMS)
 /// Message body limited to 160 characters (single SMS segment).
 /// </summary>

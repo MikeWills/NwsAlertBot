@@ -64,7 +64,8 @@ public class BlueskyService
             {
                 _accessJwt = "";
                 await AuthenticateAsync();
-                (success, _) = await CreatePostAsync(text, label, imageUrl);
+                if (!string.IsNullOrEmpty(_accessJwt))
+                    (success, _) = await CreatePostAsync(text, label, imageUrl);
             }
 
             return success;

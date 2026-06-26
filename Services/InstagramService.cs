@@ -89,7 +89,7 @@ public class InstagramService
             return "";
         }
 
-        var doc = JsonDocument.Parse(body);
+        using var doc = JsonDocument.Parse(body);
         return doc.RootElement.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "";
     }
 
