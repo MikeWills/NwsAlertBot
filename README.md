@@ -704,14 +704,17 @@ Uses the same Meta Developer app as Facebook.
   attached to the status — no extra setup needed.
 
 ### Discord (Webhook — channel posts)
-- No developer account required — uses an Incoming Webhook
+- No developer account required — uses Incoming Webhooks
 - In your server: **Server Settings → Integrations → Webhooks → New Webhook**
 - Pick the channel the webhook should post to, then **Copy Webhook URL**
-- Set `WebhookUrl` in `appsettings.json` to that URL
+- Add each URL to the `WebhookUrls` list in `appsettings.json` — one entry per channel/server
 - Optionally set `Username` to override the display name shown for these messages
+- All webhooks receive every alert concurrently
 - Free, no rate limit concerns for typical alert volumes
 - Each alert is posted as a rich embed, color-coded by severity (red = Extreme, orange = Severe,
   yellow = Moderate, green = Minor)
+- **Note:** if you had `WebhookUrl` (singular) in your local config from a previous version,
+  rename it to `WebhookUrls` and wrap the value in a JSON array: `["https://..."]`
 - API docs: https://discord.com/developers/docs/resources/webhook#execute-webhook
 
 ### Discord DM (Bot — direct messages to users)

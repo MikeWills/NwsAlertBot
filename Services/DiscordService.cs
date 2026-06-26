@@ -55,12 +55,20 @@ public class DiscordService
     {
         if (!_settings.Enabled) return false;
 
-        if (string.IsNullOrWhiteSpace(_settings.WebhookUrl))
+        var urls = _settings.WebhookUrls.Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+        if (urls.Count == 0)
         {
-            _logger.LogWarning("Discord: WebhookUrl is not configured. Skipping {Label}.", label);
+            _logger.LogWarning("Discord: No WebhookUrls configured. Skipping {Label}.", label);
             return false;
         }
 
+        var tasks = urls.Select(url => PostToWebhookAsync(url, content, embed, label));
+        var results = await Task.WhenAll(tasks);
+        return results.Any(r => r);
+    }
+
+    private async Task<bool> PostToWebhookAsync(string url, string? content, object? embed, string label)
+    {
         try
         {
             var payload = new Dictionary<string, object?>();
@@ -69,7 +77,7 @@ public class DiscordService
             if (!string.IsNullOrWhiteSpace(_settings.Username)) payload["username"] = _settings.Username;
 
             var json = JsonSerializer.Serialize(payload);
-            using var request = new HttpRequestMessage(HttpMethod.Post, _settings.WebhookUrl)
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };

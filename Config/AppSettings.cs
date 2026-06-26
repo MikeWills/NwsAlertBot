@@ -301,10 +301,12 @@ public class DiscordSettings
     public bool Enabled { get; set; } = false;
 
     /// <summary>
-    /// Discord Incoming Webhook URL. Create one in your server:
+    /// One or more Discord Incoming Webhook URLs. Each URL posts to a different
+    /// channel or server. Create one in your server:
     /// Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL
+    /// Example: ["https://discord.com/api/webhooks/..."]
     /// </summary>
-    public string WebhookUrl { get; set; } = "";
+    public List<string> WebhookUrls { get; set; } = new();
 
     /// <summary>
     /// Optional: override the display name shown for messages posted by this webhook.
