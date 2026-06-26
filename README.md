@@ -99,6 +99,19 @@ All configuration lives in `appsettings.json`.
 | `Urgency` | Comma-separated urgency levels to include | `""` (all) |
 | `Certainty` | Comma-separated certainty levels to include | `""` (all) |
 | `EventTypes` | Comma-separated event names to include | `""` (all) |
+| `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS and SPC). Works on Windows and Linux. | `"America/Chicago"` |
+
+**US IANA timezone IDs:**
+
+| Region | ID |
+|---|---|
+| Eastern | `America/New_York` |
+| Central | `America/Chicago` |
+| Mountain | `America/Denver` |
+| Mountain (no DST — Arizona) | `America/Phoenix` |
+| Pacific | `America/Los_Angeles` |
+| Alaska | `America/Anchorage` |
+| Hawaii | `Pacific/Honolulu` |
 
 Each platform block also accepts:
 
@@ -116,8 +129,7 @@ State are ignored. If Counties are specified, State is ignored.
 ```json
 "Spc": {
   "Enabled": false,
-  "CheckIntervalSeconds": 1800,
-  "TimeZone": "America/Chicago"
+  "CheckIntervalSeconds": 1800
 }
 ```
 
@@ -125,19 +137,6 @@ State are ignored. If Counties are specified, State is ignored.
 |---|---|---|
 | `Enabled` | Whether to monitor SPC Day 1/Day 2 Convective Outlooks | `false` |
 | `CheckIntervalSeconds` | Minimum seconds between SPC outlook checks | `1800` |
-| `TimeZone` | IANA timezone ID for formatting Valid/Expires times on SPC outlook posts. Works on Windows and Linux. | `"America/Chicago"` |
-
-**US IANA timezone IDs:**
-
-| Region | ID |
-|---|---|
-| Eastern | `America/New_York` |
-| Central | `America/Chicago` |
-| Mountain | `America/Denver` |
-| Mountain (no DST — Arizona) | `America/Phoenix` |
-| Pacific | `America/Los_Angeles` |
-| Alaska | `America/Anchorage` |
-| Hawaii | `Pacific/Honolulu` |
 
 ---
 

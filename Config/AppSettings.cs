@@ -73,6 +73,14 @@ public class NwsSettings
     /// NOTE: If you set Severity above, you likely don't need this too.
     /// </summary>
     public string EventTypes { get; set; } = "";
+
+    /// <summary>
+    /// IANA time zone ID used to format Issued/Valid/Expires times on all alert posts
+    /// (both NWS and SPC). Works on Windows and Linux. Examples: "America/Chicago",
+    /// "America/New_York", "America/Denver", "America/Los_Angeles".
+    /// See README for a full US reference table.
+    /// </summary>
+    public string TimeZone { get; set; } = "America/Chicago";
 }
 
 public class FacebookSettings
@@ -414,11 +422,5 @@ public class SpcSettings
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 1800;
 
-    /// <summary>
-    /// IANA time zone ID used to format Valid/Expires times on SPC outlook posts.
-    /// Works on both Windows and Linux. Examples: "America/Chicago", "America/New_York",
-    /// "America/Denver", "America/Los_Angeles". See README for a full US reference table.
-    /// </summary>
-    public string TimeZone { get; set; } = "America/Chicago";
 }
 

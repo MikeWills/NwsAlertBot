@@ -17,12 +17,30 @@ public class NwsAlertService
     private readonly HttpClient _http;
     private readonly NwsSettings _settings;
     private readonly ILogger<NwsAlertService> _logger;
+    private readonly TimeZoneInfo _timeZone;
 
     public NwsAlertService(HttpClient http, NwsSettings settings, ILogger<NwsAlertService> logger)
     {
         _http = http;
         _settings = settings;
         _logger = logger;
+        _timeZone = ResolveTimeZone(settings.TimeZone, logger);
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string id, ILogger logger)
+    {
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch { logger.LogWarning("Nws: Unknown TimeZone \"{Id}\"; falling back to America/Chicago.", id); }
+        }
+
+        try { return TimeZoneInfo.FindSystemTimeZoneById("America/Chicago"); }
+        catch
+        {
+            logger.LogWarning("Nws: Could not load America/Chicago as fallback timezone; using UTC. Set Nws.TimeZone to a valid IANA ID such as \"America/Chicago\".");
+            return TimeZoneInfo.Utc;
+        }
     }
 
     public async Task<List<NwsAlert>> GetActiveAlertsAsync()
@@ -50,20 +68,21 @@ public class NwsAlertService
 
                 var alert = new NwsAlert
                 {
-                    Id          = GetString(props, "id"),
-                    Event       = GetString(props, "event"),
-                    Headline    = GetString(props, "headline"),
-                    Description = GetString(props, "description"),
-                    Instruction = GetString(props, "instruction"),
-                    AreaDesc    = GetString(props, "areaDesc"),
-                    Severity    = GetString(props, "severity"),
-                    Urgency     = GetString(props, "urgency"),
-                    Certainty   = GetString(props, "certainty"),
-                    SenderName  = GetString(props, "senderName"),
-                    MessageType = GetString(props, "messageType"),
-                    Sent        = GetDateTimeOffset(props, "sent"),
-                    Expires     = GetNullableDateTimeOffset(props, "expires"),
-                    Ends        = GetNullableDateTimeOffset(props, "ends"),
+                    Id              = GetString(props, "id"),
+                    Event           = GetString(props, "event"),
+                    Headline        = GetString(props, "headline"),
+                    Description     = GetString(props, "description"),
+                    Instruction     = GetString(props, "instruction"),
+                    AreaDesc        = GetString(props, "areaDesc"),
+                    Severity        = GetString(props, "severity"),
+                    Urgency         = GetString(props, "urgency"),
+                    Certainty       = GetString(props, "certainty"),
+                    SenderName      = GetString(props, "senderName"),
+                    MessageType     = GetString(props, "messageType"),
+                    Sent            = GetDateTimeOffset(props, "sent"),
+                    Expires         = GetNullableDateTimeOffset(props, "expires"),
+                    Ends            = GetNullableDateTimeOffset(props, "ends"),
+                    DisplayTimeZone = _timeZone,
                 };
 
                 if (feature.TryGetProperty("geometry", out var geo) && geo.ValueKind != JsonValueKind.Null)

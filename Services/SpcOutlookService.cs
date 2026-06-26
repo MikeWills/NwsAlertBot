@@ -38,7 +38,7 @@ public class SpcOutlookService
         _nwsSettings = nwsSettings;
         _zones = zones;
         _logger = logger;
-        _timeZone = ResolveTimeZone(settings.TimeZone, logger);
+        _timeZone = ResolveTimeZone(nwsSettings.TimeZone, logger);
     }
 
     private static TimeZoneInfo ResolveTimeZone(string id, ILogger logger)
@@ -46,7 +46,7 @@ public class SpcOutlookService
         if (!string.IsNullOrWhiteSpace(id))
         {
             try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-            catch { logger.LogWarning("Spc: Unknown TimeZone \"{Id}\"; falling back to Central Standard Time.", id); }
+            catch { logger.LogWarning("Spc: Unknown TimeZone \"{Id}\"; falling back to America/Chicago.", id); }
         }
 
         try { return TimeZoneInfo.FindSystemTimeZoneById("America/Chicago"); }
