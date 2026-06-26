@@ -1188,7 +1188,28 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
-- **Security/correctness fixes (code review):**
+- **Security/correctness fixes (code review — second pass):**
+  - `AlertTrackerService`: replaced bare `HashSet<string>` with a `List` + `HashSet` pair so the
+    prune operation always evicts the oldest entries. The previous `TakeLast` on an unordered set was
+    non-deterministic and could discard recently-posted IDs, causing re-posts after a prune.
+  - `SpcOutlookService`: fixed three bugs — (1) a transient NWS zone API failure at startup no longer
+    permanently disables SPC monitoring for the process lifetime; (2) a malformed `DN` field in SPC
+    GeoJSON no longer aborts the entire day's outlook check; (3) the deduplication ID no longer falls
+    back to `UtcNow` when `ISSUE_ISO` is absent (it now uses `EXPIRE_ISO` instead, which is stable for
+    the outlook period — avoiding a re-post every 30 minutes).
+  - `BlueskyService`: added null check on `_accessJwt` after retry re-authentication so a failed
+    re-auth attempt doesn't cause a wasted API call with an empty bearer token.
+  - `NwsZoneService`: zone codes are now uppercased before use so lowercase entries in config
+    (e.g. `"moc217"`) are handled correctly. Added an in-memory result cache so each zone is fetched
+    at most once per session — eliminates redundant NWS API calls across `MapService` and
+    `SpcOutlookService`.
+  - `MapService`: zone fetches for alert bounding boxes are now parallelized with `Task.WhenAll`,
+    removing the serial per-county delay (previously 2–5 seconds for multi-county alerts).
+  - `InstagramService`: fixed missing `using` on `JsonDocument` in `CreateMediaContainerAsync`.
+  - `Program.cs`: added `HttpClient` request-URL log suppression for Bluesky, X, and Mastodon —
+    those services fetch the Mapbox map image via `GetByteArrayAsync`, which logged the full URL
+    including the Mapbox access token. (Telegram was fixed in the first pass; these three were missed.)
+- **Security/correctness fixes (code review — first pass):**
   - VoIP.ms: switched from GET+querystring to POST+form-body so API credentials are no longer
     included in request URLs (which were logged at `Information` level by the HttpClient pipeline).
   - Telegram: suppressed `HttpClient` infrastructure logging for `TelegramService` — Telegram's Bot
