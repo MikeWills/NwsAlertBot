@@ -29,8 +29,8 @@ public class NwsAlert
     /// <summary>True when this alert was synthesized by SpcOutlookService rather than fetched from the NWS API.</summary>
     public bool IsSpcOutlook { get; set; }
 
-    private static readonly TimeZoneInfo CentralTime =
-        TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
+    /// <summary>Time zone used to format Valid/Expires on SPC outlook posts. Set from Spc.TimeZone config.</summary>
+    public TimeZoneInfo? DisplayTimeZone { get; set; }
 
     /// <summary>
     /// Formats a social media post. Truncates to fit within the given character limit.
@@ -46,11 +46,11 @@ public class NwsAlert
         string expiresLine = "";
         var expiresAt = Ends ?? Expires;
 
-        if (IsSpcOutlook)
+        if (IsSpcOutlook && DisplayTimeZone != null)
         {
-            issuedLine = $"\nValid: {TimeZoneInfo.ConvertTime(Sent, CentralTime):ddd MMM d h:mm tt zzz}";
+            issuedLine = $"\nValid: {TimeZoneInfo.ConvertTime(Sent, DisplayTimeZone):ddd MMM d h:mm tt}";
             if (expiresAt.HasValue)
-                expiresLine = $"\nExpires: {TimeZoneInfo.ConvertTime(expiresAt.Value, CentralTime):ddd MMM d h:mm tt zzz}";
+                expiresLine = $"\nExpires: {TimeZoneInfo.ConvertTime(expiresAt.Value, DisplayTimeZone):ddd MMM d h:mm tt}";
         }
         else
         {

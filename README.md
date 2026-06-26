@@ -116,7 +116,8 @@ State are ignored. If Counties are specified, State is ignored.
 ```json
 "Spc": {
   "Enabled": false,
-  "CheckIntervalSeconds": 1800
+  "CheckIntervalSeconds": 1800,
+  "TimeZone": "Central Standard Time"
 }
 ```
 
@@ -124,6 +125,21 @@ State are ignored. If Counties are specified, State is ignored.
 |---|---|---|
 | `Enabled` | Whether to monitor SPC Day 1/Day 2 Convective Outlooks | `false` |
 | `CheckIntervalSeconds` | Minimum seconds between SPC outlook checks | `1800` |
+| `TimeZone` | Windows timezone ID for formatting Valid/Expires times on SPC outlook posts | `"Central Standard Time"` |
+
+**US timezone IDs** (use exactly as shown — these are Windows timezone IDs, not IANA names):
+
+| Region | ID |
+|---|---|
+| Eastern | `Eastern Standard Time` |
+| Central | `Central Standard Time` |
+| Mountain | `Mountain Standard Time` |
+| Mountain (no DST — Arizona) | `US Mountain Standard Time` |
+| Pacific | `Pacific Standard Time` |
+| Alaska | `Alaskan Standard Time` |
+| Hawaii | `Hawaiian Standard Time` |
+
+Run `tzutil /l` in a Windows command prompt for the full list.
 
 ---
 

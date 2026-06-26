@@ -29,6 +29,7 @@ public class SpcOutlookService
 
     private List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)>? _locations;
     private DateTimeOffset _lastCheckedUtc = DateTimeOffset.MinValue;
+    private readonly TimeZoneInfo _timeZone;
 
     public SpcOutlookService(HttpClient http, SpcSettings settings, NwsSettings nwsSettings, NwsZoneService zones, ILogger<SpcOutlookService> logger)
     {
@@ -37,6 +38,17 @@ public class SpcOutlookService
         _nwsSettings = nwsSettings;
         _zones = zones;
         _logger = logger;
+        _timeZone = ResolveTimeZone(settings.TimeZone, logger);
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string id, ILogger logger)
+    {
+        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+        catch
+        {
+            logger.LogWarning("Spc: Unknown TimeZone \"{Id}\"; falling back to UTC.", id);
+            return TimeZoneInfo.Utc;
+        }
     }
 
     public bool IsEnabled => _settings.Enabled;
@@ -152,7 +164,7 @@ public class SpcOutlookService
 
             if (bestLabel == null) return null;
 
-            var alert = BuildAlert(day, bestWfo, bestState, bestLabel, bestLabel2!, bestIssue, bestExpire, maxTorn, maxWind, maxHail);
+            var alert = BuildAlert(day, bestWfo, bestState, bestLabel, bestLabel2!, bestIssue, bestExpire, maxTorn, maxWind, maxHail, _timeZone);
             if (alert == null)
                 _logger.LogWarning("Spc: Skipping Day {Day} outlook — both ISSUE_ISO and EXPIRE_ISO are absent.", day);
             return alert;
@@ -237,7 +249,7 @@ public class SpcOutlookService
         props.TryGetProperty(key, out var el) && DateTimeOffset.TryParse(el.GetString(), out var dt) ? dt : null;
 
     private static NwsAlert? BuildAlert(int day, string? wfo, string? state, string label, string label2,
-        DateTimeOffset? issue, DateTimeOffset? expire, double? tornPct, double? windPct, double? hailPct)
+        DateTimeOffset? issue, DateTimeOffset? expire, double? tornPct, double? windPct, double? hailPct, TimeZoneInfo timeZone)
     {
         string severity = label switch
         {
@@ -269,8 +281,9 @@ public class SpcOutlookService
             // Day 2 valid period starts ~24h before EXPIRE_ISO; ISSUE_ISO is just when SPC published it.
             Sent         = day == 2 && expire.HasValue ? expire.Value.AddDays(-1) : (issue ?? DateTimeOffset.UtcNow),
             Expires      = expire,
-            MapImageUrl  = BuildOutlookImageUrl(day, wfo, state),
-            IsSpcOutlook = true,
+            MapImageUrl      = BuildOutlookImageUrl(day, wfo, state),
+            IsSpcOutlook     = true,
+            DisplayTimeZone  = timeZone,
         };
     }
 

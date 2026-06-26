@@ -413,5 +413,12 @@ public class SpcSettings
     /// often than every few minutes has no benefit. Default 1800 (30 min).
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 1800;
+
+    /// <summary>
+    /// Windows time zone ID used to format Valid/Expires times on SPC outlook posts.
+    /// Run `tzutil /l` in a Windows command prompt to list all valid IDs.
+    /// Examples: "Central Standard Time", "Eastern Standard Time", "Mountain Standard Time", "Pacific Standard Time"
+    /// </summary>
+    public string TimeZone { get; set; } = "Central Standard Time";
 }
 
