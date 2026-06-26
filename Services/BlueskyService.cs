@@ -57,14 +57,14 @@ public class BlueskyService
 
             if (string.IsNullOrEmpty(_accessJwt)) return false;
 
-            bool success = await CreatePostAsync(text, label, imageUrl);
+            var (success, isAuthFailure) = await CreatePostAsync(text, label, imageUrl);
 
-            // Retry once on auth failure
-            if (!success)
+            // Retry once only on auth expiry (401), not on rate limits or content errors
+            if (!success && isAuthFailure)
             {
                 _accessJwt = "";
                 await AuthenticateAsync();
-                success = await CreatePostAsync(text, label, imageUrl);
+                (success, _) = await CreatePostAsync(text, label, imageUrl);
             }
 
             return success;
@@ -107,7 +107,7 @@ public class BlueskyService
         }
     }
 
-    private async Task<bool> CreatePostAsync(string text, string label, string? imageUrl)
+    private async Task<(bool Success, bool IsAuthFailure)> CreatePostAsync(string text, string label, string? imageUrl)
     {
         var record = new Dictionary<string, object?>
         {
@@ -147,11 +147,11 @@ public class BlueskyService
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Bluesky: Posted {Label}.", label);
-            return true;
+            return (true, false);
         }
 
         _logger.LogError("Bluesky: Post failed. Status={Status} Body={Body}", response.StatusCode, body);
-        return false;
+        return (false, response.StatusCode == System.Net.HttpStatusCode.Unauthorized);
     }
 
     /// <summary>

@@ -74,12 +74,4 @@ public class NwsAlert
         return body;
     }
 
-    public int SeverityRank => Severity?.ToLower() switch
-    {
-        "extreme" => 4,
-        "severe"  => 3,
-        "moderate"=> 2,
-        "minor"   => 1,
-        _         => 0
-    };
 }

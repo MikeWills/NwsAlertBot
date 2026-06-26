@@ -1188,6 +1188,19 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Security/correctness fixes (code review):**
+  - VoIP.ms: switched from GET+querystring to POST+form-body so API credentials are no longer
+    included in request URLs (which were logged at `Information` level by the HttpClient pipeline).
+  - Telegram: suppressed `HttpClient` infrastructure logging for `TelegramService` — Telegram's Bot
+    API embeds the bot token in the URL path by design, so request URL logging was leaking the token.
+  - `StartupConfirmationService`: disabled platforms are now excluded from the pending list instead
+    of producing a misleading "delivery failed — check credentials" warning on every startup.
+  - `SocialMediaOrchestrator`: SPC outlooks now contribute to the `newCount` returned by `RunAsync`,
+    so a new SPC outlook will engage accelerated polling mode (same as NWS alerts).
+  - `BlueskyService`: re-authentication retry now only triggers on HTTP 401 Unauthorized, not on
+    rate-limit, content-policy, or transient errors.
+  - Removed unused `AppSettings` class (all settings were bound per-section directly) and the
+    unused `NwsAlert.SeverityRank` property.
 - Added an [Image Smoke Test](#image-smoke-test) dev tool (`ImageSmokeTestService`, run via
   `dotnet run -- --smoke-test-image`) — posts one synthetic alert with a real test image to every
   enabled image-capable platform and reports pass/fail, since startup confirmation never

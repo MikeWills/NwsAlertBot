@@ -69,7 +69,7 @@ public class StartupConfirmationService
     public async Task RunAsync(CancellationToken ct = default)
     {
         var platforms = BuildPlatformList();
-        var pending = platforms.Where(p => !IsConfirmed(p.Name)).ToList();
+        var pending = platforms.Where(p => p.Enabled && !IsConfirmed(p.Name)).ToList();
 
         if (pending.Count == 0)
         {
@@ -97,21 +97,21 @@ public class StartupConfirmationService
     // Private helpers
     // -------------------------------------------------------------------------
 
-    private record PlatformEntry(string Name, Func<string, Task<bool>> Send);
+    private record PlatformEntry(string Name, bool Enabled, Func<string, Task<bool>> Send);
 
     private List<PlatformEntry> BuildPlatformList() => new()
     {
-        new("Facebook",  msg => _facebook.SendConfirmationAsync(msg)),
-        new("Instagram", msg => _instagram.SendConfirmationAsync(msg)),
-        new("X",         msg => _x.SendConfirmationAsync(msg)),
-        new("Bluesky",   msg => _bluesky.SendConfirmationAsync(msg)),
-        new("Mastodon",  msg => _mastodon.SendConfirmationAsync(msg)),
-        new("Pushover",  msg => _pushover.SendConfirmationAsync(msg)),
-        new("Twilio",    msg => _twilio.SendConfirmationAsync(msg)),
-        new("Discord",   msg => _discord.SendConfirmationAsync(msg)),
-        new("DiscordDm", msg => _discordDm.SendConfirmationAsync(msg)),
-        new("Telegram",  msg => _telegram.SendConfirmationAsync(msg)),
-        new("VoipMs",    msg => _voipMs.SendConfirmationAsync(msg)),
+        new("Facebook",  _facebook.IsEnabled,  msg => _facebook.SendConfirmationAsync(msg)),
+        new("Instagram", _instagram.IsEnabled, msg => _instagram.SendConfirmationAsync(msg)),
+        new("X",         _x.IsEnabled,         msg => _x.SendConfirmationAsync(msg)),
+        new("Bluesky",   _bluesky.IsEnabled,   msg => _bluesky.SendConfirmationAsync(msg)),
+        new("Mastodon",  _mastodon.IsEnabled,  msg => _mastodon.SendConfirmationAsync(msg)),
+        new("Pushover",  _pushover.IsEnabled,  msg => _pushover.SendConfirmationAsync(msg)),
+        new("Twilio",    _twilio.IsEnabled,    msg => _twilio.SendConfirmationAsync(msg)),
+        new("Discord",   _discord.IsEnabled,   msg => _discord.SendConfirmationAsync(msg)),
+        new("DiscordDm", _discordDm.IsEnabled, msg => _discordDm.SendConfirmationAsync(msg)),
+        new("Telegram",  _telegram.IsEnabled,  msg => _telegram.SendConfirmationAsync(msg)),
+        new("VoipMs",    _voipMs.IsEnabled,    msg => _voipMs.SendConfirmationAsync(msg)),
     };
 
     private static string BuildConfirmationMessage() =>

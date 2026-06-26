@@ -1,23 +1,5 @@
 namespace NwsAlertBot.Config;
 
-public class AppSettings
-{
-    public NwsSettings Nws { get; set; } = new();
-    public FacebookSettings Facebook { get; set; } = new();
-    public InstagramSettings Instagram { get; set; } = new();
-    public XSettings X { get; set; } = new();
-    public BlueskySettings Bluesky { get; set; } = new();
-    public MastodonSettings Mastodon { get; set; } = new();
-    public PushoverSettings Pushover { get; set; } = new();
-    public TwilioSettings Twilio { get; set; } = new();
-    public VoipMsSettings VoipMs { get; set; } = new();
-    public DiscordSettings Discord { get; set; } = new();
-    public DiscordDmSettings DiscordDm { get; set; } = new();
-    public TelegramSettings Telegram { get; set; } = new();
-    public MapSettings Map { get; set; } = new();
-    public SpcSettings Spc { get; set; } = new();
-}
-
 public class NwsSettings
 {
     /// <summary>

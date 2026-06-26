@@ -68,15 +68,18 @@ public class VoipMsService
     {
         try
         {
-            var url = $"{ApiUrl}" +
-                $"?api_username={Uri.EscapeDataString(_settings.ApiUsername)}" +
-                $"&api_password={Uri.EscapeDataString(_settings.ApiPassword)}" +
-                $"&method=sendSMS" +
-                $"&did={Uri.EscapeDataString(_settings.Did)}" +
-                $"&dst={Uri.EscapeDataString(toNumber)}" +
-                $"&message={Uri.EscapeDataString(message)}";
+            // POST credentials in the body so they don't appear in URLs logged by HttpClient infrastructure
+            var formFields = new List<KeyValuePair<string, string>>
+            {
+                new("api_username", _settings.ApiUsername),
+                new("api_password", _settings.ApiPassword),
+                new("method",       "sendSMS"),
+                new("did",          _settings.Did),
+                new("dst",          toNumber),
+                new("message",      message),
+            };
 
-            var response = await _http.GetAsync(url);
+            var response = await _http.PostAsync(ApiUrl, new FormUrlEncodedContent(formFields));
             var body     = await response.Content.ReadAsStringAsync();
 
             if (response.IsSuccessStatusCode)
