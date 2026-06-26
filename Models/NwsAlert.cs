@@ -48,9 +48,13 @@ public class NwsAlert
 
         if (IsSpcOutlook && DisplayTimeZone != null)
         {
-            issuedLine = $"\nValid: {TimeZoneInfo.ConvertTime(Sent, DisplayTimeZone):ddd MMM d h:mm tt}";
+            issuedLine = $"\nIssued: {TimeZoneInfo.ConvertTime(Sent, DisplayTimeZone):ddd MMM d h:mm tt}";
             if (expiresAt.HasValue)
-                expiresLine = $"\nExpires: {TimeZoneInfo.ConvertTime(expiresAt.Value, DisplayTimeZone):ddd MMM d h:mm tt}";
+            {
+                var validStart = TimeZoneInfo.ConvertTime(expiresAt.Value.AddDays(-1), DisplayTimeZone);
+                expiresLine = $"\nValid: {validStart:ddd MMM d h:mm tt}" +
+                              $"\nExpires: {TimeZoneInfo.ConvertTime(expiresAt.Value, DisplayTimeZone):ddd MMM d h:mm tt}";
+            }
         }
         else
         {
