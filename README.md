@@ -807,6 +807,25 @@ sc create NwsAlertBot binpath="C:\path\to\NwsAlertBot.exe"
 sc start NwsAlertBot
 ```
 
+### Log Files
+
+The bot writes daily rolling log files to a `logs/` subdirectory of the working directory:
+
+```
+logs/nwsalertbot-20260625.log
+logs/nwsalertbot-20260626.log
+...
+```
+
+Logs are retained for **30 days** and then automatically deleted. The file format includes full timestamps and the source class name, making it easy to grep for specific services:
+
+```
+[2026-06-25 14:32:01 INF] NwsAlertBot.Services.AlertPollingService: Active storm mode engaged — polling every 60s for 4h.
+[2026-06-25 14:32:03 ERR] NwsAlertBot.Services.FacebookService: Facebook: Post failed. Status=400
+```
+
+To change the log retention period, update `retainedFileCountLimit` in the `UseSerilog` call in `Program.cs`.
+
 ### Alert Deduplication
 The bot tracks posted alert IDs in `posted_alerts.txt` in the working directory. This file
 persists across restarts so the bot won't re-post alerts after a restart. The file is pruned

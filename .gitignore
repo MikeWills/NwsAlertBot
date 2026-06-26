@@ -8,6 +8,9 @@ obj/
 # Alert deduplication state (runtime data, not source)
 posted_alerts.txt
 
+# Log files (rolling daily logs written by Serilog)
+logs/
+
 # Local setup notes
 tailscale-setup.md
 

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Serilog;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using NwsAlertBot.Config;
@@ -96,19 +97,23 @@ var host = Host.CreateDefaultBuilder(args)
         // Background polling loop
         services.AddHostedService<AlertPollingService>();
     })
-    .ConfigureLogging(logging =>
-    {
-        logging.ClearProviders();
-        logging.AddConsole();
-        logging.SetMinimumLevel(LogLevel.Information);
-        // Telegram embeds the bot token in the URL path (required by the Bot API).
-        // Bluesky, X, and Mastodon fetch the Mapbox map image via GetByteArrayAsync, which logs the
-        // full URL including the Mapbox access token. Suppress request-URL logging for all four.
-        logging.AddFilter("System.Net.Http.HttpClient.TelegramService", LogLevel.Warning);
-        logging.AddFilter("System.Net.Http.HttpClient.BlueskyService",  LogLevel.Warning);
-        logging.AddFilter("System.Net.Http.HttpClient.XService",        LogLevel.Warning);
-        logging.AddFilter("System.Net.Http.HttpClient.MastodonService", LogLevel.Warning);
-    })
+    .UseSerilog((_, _, config) => config
+        .MinimumLevel.Information()
+        // Suppress noisy framework namespaces
+        .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("System",    Serilog.Events.LogEventLevel.Warning)
+        // Suppress HttpClient request-URL logs that would expose API tokens in log files
+        .MinimumLevel.Override("System.Net.Http.HttpClient.TelegramService", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("System.Net.Http.HttpClient.BlueskyService",  Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("System.Net.Http.HttpClient.XService",        Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("System.Net.Http.HttpClient.MastodonService", Serilog.Events.LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+        .WriteTo.File(
+            path: "logs/nwsalertbot-.log",
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 30,
+            outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}"))
     .Build();
 
 // Dev tool: posts a synthetic alert with a test image to every enabled image-capable platform,
