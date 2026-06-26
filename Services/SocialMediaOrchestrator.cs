@@ -97,16 +97,15 @@ public class SocialMediaOrchestrator
             _logger.LogInformation("Posted {Count} new alert(s).", newCount);
 
         if (_spc.IsEnabled)
-            newCount += await CheckSpcOutlooksAsync(ct);
+            await CheckSpcOutlooksAsync(ct);
 
         _tracker.PruneOldEntries();
         return newCount;
     }
 
-    private async Task<int> CheckSpcOutlooksAsync(CancellationToken ct)
+    private async Task CheckSpcOutlooksAsync(CancellationToken ct)
     {
         var outlookAlerts = await _spc.GetOutlookAlertsAsync();
-        int count = 0;
 
         foreach (var alert in outlookAlerts)
         {
@@ -118,10 +117,7 @@ public class SocialMediaOrchestrator
 
             await PostToAllPlatformsAsync(alert);
             _tracker.MarkPosted(alert.Id);
-            count++;
         }
-
-        return count;
     }
 
     private async Task PostToAllPlatformsAsync(NwsAlert alert)
