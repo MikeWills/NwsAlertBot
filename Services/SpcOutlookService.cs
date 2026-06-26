@@ -266,7 +266,8 @@ public class SpcOutlookService
             Severity     = severity,
             SenderName   = "NOAA Storm Prediction Center",
             Instruction  = instruction,
-            Sent         = issue ?? DateTimeOffset.UtcNow,
+            // Day 2 valid period starts ~24h before EXPIRE_ISO; ISSUE_ISO is just when SPC published it.
+            Sent         = day == 2 && expire.HasValue ? expire.Value.AddDays(-1) : (issue ?? DateTimeOffset.UtcNow),
             Expires      = expire,
             MapImageUrl  = BuildOutlookImageUrl(day, wfo, state),
             IsSpcOutlook = true,
