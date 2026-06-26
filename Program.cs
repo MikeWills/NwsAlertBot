@@ -15,6 +15,20 @@ using NwsAlertBot.Services;
 
 LocalConfigSync.Run();
 
+// Write a startup separator to both the console and the daily log file so it's
+// easy to find where a new run begins when reviewing logs.
+{
+    var startLine = $"Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+    Console.WriteLine();
+    Console.WriteLine("==============================");
+    Console.WriteLine(startLine);
+    Console.WriteLine();
+
+    Directory.CreateDirectory("logs");
+    File.AppendAllText($"logs/nwsalertbot-{DateTime.Now:yyyyMMdd}.log",
+        $"\n==============================\n{startLine}\n\n");
+}
+
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration(config =>
     {
