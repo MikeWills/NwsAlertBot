@@ -43,10 +43,16 @@ public class SpcOutlookService
 
     private static TimeZoneInfo ResolveTimeZone(string id, ILogger logger)
     {
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+        if (!string.IsNullOrWhiteSpace(id))
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch { logger.LogWarning("Spc: Unknown TimeZone \"{Id}\"; falling back to Central Standard Time.", id); }
+        }
+
+        try { return TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time"); }
         catch
         {
-            logger.LogWarning("Spc: Unknown TimeZone \"{Id}\"; falling back to UTC.", id);
+            logger.LogWarning("Spc: Central Standard Time not found (non-Windows OS?); using UTC. Set Spc.TimeZone to an IANA ID such as \"America/Chicago\".");
             return TimeZoneInfo.Utc;
         }
     }
