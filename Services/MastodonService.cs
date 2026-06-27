@@ -39,10 +39,10 @@ public class MastodonService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostStatusAsync(alert.FormatPost(maxLength: CharLimit), alert.Event, alert.MapImageUrl);
+        return await PostStatusAsync(alert.FormatPost(maxLength: CharLimit), alert.Event, alert.MapImageBytes);
     }
 
-    private async Task<bool> PostStatusAsync(string status, string label, string? imageUrl = null)
+    private async Task<bool> PostStatusAsync(string status, string label, byte[]? imageBytes = null)
     {
         if (!_settings.Enabled) return false;
 
@@ -50,8 +50,8 @@ public class MastodonService
         {
             string instanceUrl = _settings.InstanceUrl.TrimEnd('/');
 
-            string? mediaId = !string.IsNullOrEmpty(imageUrl)
-                ? await UploadMediaAsync(instanceUrl, imageUrl, label)
+            string? mediaId = imageBytes != null
+                ? await UploadMediaAsync(instanceUrl, imageBytes, label)
                 : null;
 
             var formFields = new List<KeyValuePair<string, string>>
@@ -89,12 +89,10 @@ public class MastodonService
     /// Uploads an image via the media endpoint and returns its id (to attach via media_ids[]
     /// on the status), or null on failure (the status is still posted as text-only).
     /// </summary>
-    private async Task<string?> UploadMediaAsync(string instanceUrl, string imageUrl, string label)
+    private async Task<string?> UploadMediaAsync(string instanceUrl, byte[] imageBytes, string label)
     {
         try
         {
-            var imageBytes = await _http.GetByteArrayAsync(imageUrl);
-
             using var content = new MultipartFormDataContent();
             var fileContent = new ByteArrayContent(imageBytes);
             fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");

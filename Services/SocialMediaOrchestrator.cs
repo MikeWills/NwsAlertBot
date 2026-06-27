@@ -15,6 +15,7 @@ public class SocialMediaOrchestrator
     private readonly SpcOutlookService _spc;
     private readonly AlertTrackerService _tracker;
     private readonly MapService _map;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly FacebookService _facebook;
     private readonly InstagramService _instagram;
     private readonly XService _x;
@@ -34,6 +35,7 @@ public class SocialMediaOrchestrator
         SpcOutlookService spc,
         AlertTrackerService tracker,
         MapService map,
+        IHttpClientFactory httpClientFactory,
         FacebookService facebook,
         InstagramService instagram,
         XService x,
@@ -47,12 +49,13 @@ public class SocialMediaOrchestrator
         VoipMsService voipMs,
         ILogger<SocialMediaOrchestrator> logger)
     {
-        _nwsSettings = nwsSettings;
-        _nws       = nws;
-        _spc       = spc;
-        _tracker   = tracker;
-        _map       = map;
-        _facebook  = facebook;
+        _nwsSettings      = nwsSettings;
+        _nws              = nws;
+        _spc              = spc;
+        _tracker          = tracker;
+        _map              = map;
+        _httpClientFactory = httpClientFactory;
+        _facebook         = facebook;
         _instagram = instagram;
         _x         = x;
         _bluesky   = bluesky;
@@ -88,6 +91,7 @@ public class SocialMediaOrchestrator
                 alert.MessageType, alert.Severity, alert.Event, alert.AreaDesc);
 
             alert.MapImageUrl = await _map.GetMapUrlAsync(alert);
+            await DownloadMapImageAsync(alert);
 
             await PostToAllPlatformsAsync(alert);
             _tracker.MarkPosted(alert.Id);
@@ -125,6 +129,7 @@ public class SocialMediaOrchestrator
             _logger.LogInformation("New SPC outlook: [{Severity}] {Event} — {AreaDesc}",
                 alert.Severity, alert.Event, alert.AreaDesc);
 
+            await DownloadMapImageAsync(alert);
             await PostToAllPlatformsAsync(alert);
             _tracker.MarkPosted(alert.Id);
         }
@@ -168,6 +173,19 @@ public class SocialMediaOrchestrator
 
         if (tasks.Length > 0)
             await Task.WhenAll(tasks);
+    }
+
+    private async Task DownloadMapImageAsync(NwsAlert alert)
+    {
+        if (string.IsNullOrEmpty(alert.MapImageUrl)) return;
+        try
+        {
+            alert.MapImageBytes = await _httpClientFactory.CreateClient().GetByteArrayAsync(alert.MapImageUrl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Map image download failed for {Event}; platforms will post without image.", alert.Event);
+        }
     }
 
     private static bool PassesFilter(string? value, string? allowList)

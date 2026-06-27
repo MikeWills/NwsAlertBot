@@ -43,10 +43,10 @@ public class BlueskyService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostTextAsync(alert.FormatPost(maxLength: CharLimit), alert.Event, alert.MapImageUrl);
+        return await PostTextAsync(alert.FormatPost(maxLength: CharLimit), alert.Event, alert.MapImageBytes);
     }
 
-    private async Task<bool> PostTextAsync(string text, string label, string? imageUrl = null)
+    private async Task<bool> PostTextAsync(string text, string label, byte[]? imageBytes = null)
     {
         if (!_settings.Enabled) return false;
 
@@ -57,7 +57,7 @@ public class BlueskyService
 
             if (string.IsNullOrEmpty(_accessJwt)) return false;
 
-            var (success, isAuthFailure) = await CreatePostAsync(text, label, imageUrl);
+            var (success, isAuthFailure) = await CreatePostAsync(text, label, imageBytes);
 
             // Retry once only on auth expiry (401), not on rate limits or content errors
             if (!success && isAuthFailure)
@@ -65,7 +65,7 @@ public class BlueskyService
                 _accessJwt = "";
                 await AuthenticateAsync();
                 if (!string.IsNullOrEmpty(_accessJwt))
-                    (success, _) = await CreatePostAsync(text, label, imageUrl);
+                    (success, _) = await CreatePostAsync(text, label, imageBytes);
             }
 
             return success;
@@ -108,7 +108,7 @@ public class BlueskyService
         }
     }
 
-    private async Task<(bool Success, bool IsAuthFailure)> CreatePostAsync(string text, string label, string? imageUrl)
+    private async Task<(bool Success, bool IsAuthFailure)> CreatePostAsync(string text, string label, byte[]? imageBytes)
     {
         var record = new Dictionary<string, object?>
         {
@@ -117,9 +117,9 @@ public class BlueskyService
             ["createdAt"] = DateTimeOffset.UtcNow.ToString("o"),
         };
 
-        if (!string.IsNullOrEmpty(imageUrl))
+        if (imageBytes != null)
         {
-            var blob = await UploadBlobAsync(imageUrl, label);
+            var blob = await UploadBlobAsync(imageBytes, label);
             if (blob != null)
             {
                 record["embed"] = new Dictionary<string, object?>
@@ -159,12 +159,10 @@ public class BlueskyService
     /// Uploads image bytes to the PDS via uploadBlob and returns the resulting blob reference
     /// (to be embedded in the post record's "embed.images[].image" field), or null on failure.
     /// </summary>
-    private async Task<JsonElement?> UploadBlobAsync(string imageUrl, string label)
+    private async Task<JsonElement?> UploadBlobAsync(byte[] imageBytes, string label)
     {
         try
         {
-            var imageBytes = await _http.GetByteArrayAsync(imageUrl);
-
             using var content = new ByteArrayContent(imageBytes);
             content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
 

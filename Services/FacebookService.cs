@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -38,32 +39,40 @@ public class FacebookService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostMessageAsync(alert.FormatPost(maxLength: 63206), alert.Event, alert.MapImageUrl);
+
+        return await PostMessageAsync(alert.FormatPost(maxLength: 63206), alert.Event, alert.MapImageBytes);
     }
 
-    private async Task<bool> PostMessageAsync(string message, string label, string? imageUrl = null)
+    private async Task<bool> PostMessageAsync(string message, string label, byte[]? imageBytes = null)
     {
         if (!_settings.Enabled) return false;
 
         try
         {
-            // With an image, post to /photos (url + caption) instead of /feed (message-only)
-            // so the map renders inline rather than as a link preview.
-            bool hasImage = !string.IsNullOrEmpty(imageUrl);
-            var url = hasImage
-                ? $"https://graph.facebook.com/{GraphApiVersion}/{_settings.PageId}/photos"
-                : $"https://graph.facebook.com/{GraphApiVersion}/{_settings.PageId}/feed";
+            HttpResponseMessage response;
 
-            object payload = hasImage
-                ? new { url = imageUrl, caption = message, access_token = _settings.PageAccessToken }
-                : new { message, access_token = _settings.PageAccessToken };
+            if (imageBytes != null)
+            {
+                // Post to /photos with the image as multipart source so the map renders inline.
+                var url = $"https://graph.facebook.com/{GraphApiVersion}/{_settings.PageId}/photos";
 
-            var content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json");
+                using var form = new MultipartFormDataContent();
+                var imageContent = new ByteArrayContent(imageBytes);
+                imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                form.Add(imageContent, "source", "map.png");
+                form.Add(new StringContent(message), "caption");
+                form.Add(new StringContent(_settings.PageAccessToken), "access_token");
 
-            var response = await _http.PostAsync(url, content);
+                response = await _http.PostAsync(url, form);
+            }
+            else
+            {
+                var url = $"https://graph.facebook.com/{GraphApiVersion}/{_settings.PageId}/feed";
+                var payload = new { message, access_token = _settings.PageAccessToken };
+                var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                response = await _http.PostAsync(url, content);
+            }
+
             var body = await response.Content.ReadAsStringAsync();
 
             if (response.IsSuccessStatusCode)
@@ -72,8 +81,7 @@ public class FacebookService
                 return true;
             }
 
-            _logger.LogError("Facebook: Post failed. Status={Status} Body={Body}",
-                response.StatusCode, body);
+            _logger.LogError("Facebook: Post failed. Status={Status} Body={Body}", response.StatusCode, body);
             return false;
         }
         catch (Exception ex)

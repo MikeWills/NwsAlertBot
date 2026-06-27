@@ -779,14 +779,15 @@ The Mapbox map area is determined by:
 
 | Platform | Map behavior |
 |---|---|
-| Facebook | Posted to `/photos` (URL + caption) instead of `/feed`, so the map renders inline. No image download needed — Facebook fetches the URL itself. |
-| Instagram | Uses the map URL instead of the static `ImageUrl`. Falls back to `ImageUrl` if no map is available. |
+| Facebook | Image is downloaded and uploaded as multipart `source` to `/photos`. If download fails, the post still goes to `/feed` as text-only. |
+| Instagram | Uses the map URL instead of the static `ImageUrl`. Falls back to `ImageUrl` if no map is available. Instagram Graph API requires a public URL — direct upload is not supported. |
 | X (Twitter) | Image is downloaded and uploaded via the v1.1 media endpoint, then attached to the tweet by `media_id`. If upload fails, the tweet still posts as text-only. |
 | Bluesky | Image is downloaded and uploaded via `uploadBlob`, then attached as an `app.bsky.embed.images` embed. If upload fails, the post still goes out as text-only. |
 | Mastodon | Image is downloaded and uploaded via the media endpoint, then attached by `media_ids[]`. If upload fails, the status still posts as text-only. |
-| Discord | Map appears as the embed image below the alert text. |
-| Telegram | Sent as a photo (`sendPhoto`) with the alert text as the caption (1,024-character limit) instead of a plain text message. |
-| Twilio | Sent as MMS via the `MediaUrl` field — Twilio fetches the URL itself, no download needed. |
+| Discord | Image is downloaded and uploaded as a file attachment (`files[0]`), then referenced in the embed via `attachment://map.png`. If download fails, the embed posts without the image. |
+| Discord DM | Same as Discord webhook — image is downloaded and sent as a file attachment. If download fails, the embed posts without the image. |
+| Telegram | Image is downloaded and uploaded via multipart `sendPhoto`. If download fails, falls back to `sendMessage` using the full 4,096-character limit instead of the 1,024-character caption limit. |
+| Twilio | Sent as MMS via the `MediaUrl` field — Twilio fetches the URL itself. Direct upload is not supported by the Twilio REST API. |
 | Pushover, VoIP.ms | No change — text-only. |
 
 ---
@@ -1068,6 +1069,8 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 ---
 
 ## Recent Changes
+
+- **Image handling: single download + direct upload for all platforms that support it** — previously each platform service that needed the map image fetched it independently (up to 7 simultaneous downloads of the same URL per alert). Now the orchestrator downloads the image once before dispatching and stores the bytes on `NwsAlert.MapImageBytes`; each service uses those bytes directly. Combined with the earlier switch from URL-embedding to direct upload for Discord, Discord DM, Telegram, and Facebook, all platforms that accept raw image bytes (X, Bluesky, Mastodon, Discord, Discord DM, Telegram, Facebook) now upload the bytes they already have. Instagram and Twilio remain URL-based — their APIs require a public URL and do not support direct byte upload.
 
 - **Security/correctness fixes (code review — second pass):**
   - `AlertTrackerService`: replaced bare `HashSet<string>` with a `List` + `HashSet` pair so the

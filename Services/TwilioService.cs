@@ -34,7 +34,15 @@ public class TwilioService
     public async Task<bool> SendAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await SendToAllAsync(BuildSmsText(alert), alert.Event, alert.MapImageUrl);
+        // Cache-bust the map URL so Twilio's servers don't serve a stale cached MMS image.
+        return await SendToAllAsync(BuildSmsText(alert), alert.Event, CacheBust(alert.MapImageUrl, alert.Id));
+    }
+
+    private static string? CacheBust(string? url, string alertId)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        string sep = url.Contains('?') ? "&" : "?";
+        return url + $"{sep}_cb={Uri.EscapeDataString(alertId)}";
     }
 
     private async Task<bool> SendToAllAsync(string message, string label, string? mediaUrl = null)

@@ -25,6 +25,7 @@ public class ImageSmokeTestService
     private readonly TwilioService    _twilio;
     private readonly DiscordService   _discord;
     private readonly TelegramService  _telegram;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<ImageSmokeTestService> _logger;
 
     public ImageSmokeTestService(
@@ -36,32 +37,45 @@ public class ImageSmokeTestService
         TwilioService    twilio,
         DiscordService   discord,
         TelegramService  telegram,
+        IHttpClientFactory httpClientFactory,
         ILogger<ImageSmokeTestService> logger)
     {
-        _facebook  = facebook;
-        _instagram = instagram;
-        _x         = x;
-        _bluesky   = bluesky;
-        _mastodon  = mastodon;
-        _twilio    = twilio;
-        _discord   = discord;
-        _telegram  = telegram;
-        _logger    = logger;
+        _facebook          = facebook;
+        _instagram         = instagram;
+        _x                 = x;
+        _bluesky           = bluesky;
+        _mastodon          = mastodon;
+        _twilio            = twilio;
+        _discord           = discord;
+        _telegram          = telegram;
+        _httpClientFactory = httpClientFactory;
+        _logger            = logger;
     }
 
     public async Task RunAsync()
     {
+        byte[]? imageBytes = null;
+        try
+        {
+            imageBytes = await _httpClientFactory.CreateClient().GetByteArrayAsync(TestImageUrl);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ImageSmokeTest: Could not download test image. Platforms that require bytes will post without an image.");
+        }
+
         var alert = new NwsAlert
         {
-            Id          = $"smoketest-image-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
-            Event       = "Image Smoke Test",
-            Headline    = "🧪 NWS Alert Bot — image smoke test",
-            AreaDesc    = "Test Area",
-            Severity    = "Severe",
-            SenderName  = "NwsAlertBot",
-            Instruction = "This is an automated test post verifying image attachment works. Please delete it once confirmed.",
-            Sent        = DateTimeOffset.UtcNow,
-            MapImageUrl = TestImageUrl,
+            Id            = $"smoketest-image-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+            Event         = "Image Smoke Test",
+            Headline      = "🧪 NWS Alert Bot — image smoke test",
+            AreaDesc      = "Test Area",
+            Severity      = "Severe",
+            SenderName    = "NwsAlertBot",
+            Instruction   = "This is an automated test post verifying image attachment works. Please delete it once confirmed.",
+            Sent          = DateTimeOffset.UtcNow,
+            MapImageUrl   = TestImageUrl,
+            MapImageBytes = imageBytes,
         };
 
         var platforms = new (string Name, bool Enabled, Func<Task<bool>> Action)[]

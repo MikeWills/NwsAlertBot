@@ -40,16 +40,16 @@ public class XService
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await PostTextAsync(alert.FormatPost(maxLength: 280), alert.Event, alert.MapImageUrl);
+        return await PostTextAsync(alert.FormatPost(maxLength: 280), alert.Event, alert.MapImageBytes);
     }
 
-    private async Task<bool> PostTextAsync(string text, string label, string? imageUrl = null)
+    private async Task<bool> PostTextAsync(string text, string label, byte[]? imageBytes = null)
     {
         if (!_settings.Enabled) return false;
 
         try
         {
-            string? mediaId = !string.IsNullOrEmpty(imageUrl) ? await UploadMediaAsync(imageUrl, label) : null;
+            string? mediaId = imageBytes != null ? await UploadMediaAsync(imageBytes, label) : null;
 
             object tweetBody = mediaId != null
                 ? new { text, media = new { media_ids = new[] { mediaId } } }
@@ -89,12 +89,10 @@ public class XService
     /// Multipart fields are not part of the OAuth1.0a signature base for this endpoint, so the
     /// same header-only signing used for the tweet itself applies here too.
     /// </summary>
-    private async Task<string?> UploadMediaAsync(string imageUrl, string label)
+    private async Task<string?> UploadMediaAsync(byte[] imageBytes, string label)
     {
         try
         {
-            var imageBytes = await _http.GetByteArrayAsync(imageUrl);
-
             using var content = new MultipartFormDataContent();
             content.Add(new ByteArrayContent(imageBytes), "media", "map.png");
 

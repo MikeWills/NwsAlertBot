@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -38,9 +39,9 @@ public class DiscordDmService
     public Task<bool> SendConfirmationAsync(string message) =>
         SendToAllUsersAsync(content: message, embed: null, label: "confirmation");
 
-    public Task<bool> PostAlertAsync(NwsAlert alert)
+    public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
-        if (!_settings.Enabled) return Task.FromResult(false);
+        if (!_settings.Enabled) return false;
 
         var embed = new Dictionary<string, object?>
         {
@@ -50,13 +51,11 @@ public class DiscordDmService
         };
         if (!string.IsNullOrWhiteSpace(alert.SenderName))
             embed["footer"] = new { text = alert.SenderName };
-        if (!string.IsNullOrEmpty(alert.MapImageUrl))
-            embed["image"] = new { url = alert.MapImageUrl };
 
-        return SendToAllUsersAsync(content: null, embed: embed, label: alert.Event);
+        return await SendToAllUsersAsync(content: null, embed: embed, label: alert.Event, imageBytes: alert.MapImageBytes);
     }
 
-    private async Task<bool> SendToAllUsersAsync(string? content, object? embed, string label)
+    private async Task<bool> SendToAllUsersAsync(string? content, Dictionary<string, object?>? embed, string label, byte[]? imageBytes = null)
     {
         if (!_settings.Enabled) return false;
 
@@ -72,30 +71,57 @@ public class DiscordDmService
             return false;
         }
 
-        var tasks = _settings.UserIds.Select(userId => SendToUserAsync(userId, content, embed, label));
+        var tasks = _settings.UserIds.Select(userId => SendToUserAsync(userId, content, embed, label, imageBytes));
         var results = await Task.WhenAll(tasks);
         return results.Any(r => r);
     }
 
-    private async Task<bool> SendToUserAsync(string userId, string? content, object? embed, string label)
+    private async Task<bool> SendToUserAsync(string userId, string? content, Dictionary<string, object?>? embed, string label, byte[]? imageBytes)
     {
         try
         {
             var channelId = await GetOrCreateDmChannelAsync(userId);
             if (channelId == null) return false;
 
-            var payload = new Dictionary<string, object?>();
-            if (!string.IsNullOrWhiteSpace(content)) payload["content"] = content;
-            if (embed is not null) payload["embeds"] = new[] { embed };
+            string messageUrl = $"{ApiBase}/channels/{channelId}/messages";
+            HttpResponseMessage response;
 
-            var json = JsonSerializer.Serialize(payload);
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{ApiBase}/channels/{channelId}/messages")
+            if (imageBytes != null)
             {
-                Content = new StringContent(json, Encoding.UTF8, "application/json")
-            };
-            request.Headers.Add("Authorization", $"Bot {_settings.BotToken}");
+                var embedWithImage = new Dictionary<string, object?>(embed ?? new())
+                {
+                    ["image"] = new { url = "attachment://map.png" }
+                };
 
-            var response = await _http.SendAsync(request);
+                var payloadObj = new Dictionary<string, object?>();
+                if (!string.IsNullOrWhiteSpace(content)) payloadObj["content"] = content;
+                payloadObj["embeds"] = new[] { embedWithImage };
+
+                using var form = new MultipartFormDataContent();
+                form.Add(new StringContent(JsonSerializer.Serialize(payloadObj), Encoding.UTF8, "application/json"), "payload_json");
+                var imageContent = new ByteArrayContent(imageBytes);
+                imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                form.Add(imageContent, "files[0]", "map.png");
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, messageUrl) { Content = form };
+                request.Headers.Add("Authorization", $"Bot {_settings.BotToken}");
+                response = await _http.SendAsync(request);
+            }
+            else
+            {
+                var payload = new Dictionary<string, object?>();
+                if (!string.IsNullOrWhiteSpace(content)) payload["content"] = content;
+                if (embed is not null) payload["embeds"] = new[] { embed };
+
+                var json = JsonSerializer.Serialize(payload);
+                using var request = new HttpRequestMessage(HttpMethod.Post, messageUrl)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+                request.Headers.Add("Authorization", $"Bot {_settings.BotToken}");
+                response = await _http.SendAsync(request);
+            }
+
             if (response.IsSuccessStatusCode)
             {
                 _logger.LogInformation("DiscordDm: Sent {Label} to user {UserId}.", label, userId);

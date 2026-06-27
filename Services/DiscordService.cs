@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -31,11 +32,11 @@ public class DiscordService
     public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
 
     public Task<bool> SendConfirmationAsync(string message) =>
-        SendAsync(message, embed: null, label: "confirmation");
+        SendAsync(content: message, embed: null, label: "confirmation");
 
-    public Task<bool> PostAlertAsync(NwsAlert alert)
+    public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
-        if (!_settings.Enabled) return Task.FromResult(false);
+        if (!_settings.Enabled) return false;
 
         var embed = new Dictionary<string, object?>
         {
@@ -45,13 +46,11 @@ public class DiscordService
         };
         if (!string.IsNullOrWhiteSpace(alert.SenderName))
             embed["footer"] = new { text = alert.SenderName };
-        if (!string.IsNullOrEmpty(alert.MapImageUrl))
-            embed["image"] = new { url = alert.MapImageUrl };
 
-        return SendAsync(content: null, embed: embed, label: alert.Event);
+        return await SendAsync(content: null, embed: embed, label: alert.Event, imageBytes: alert.MapImageBytes);
     }
 
-    private async Task<bool> SendAsync(string? content, object? embed, string label)
+    private async Task<bool> SendAsync(string? content, Dictionary<string, object?>? embed, string label, byte[]? imageBytes = null)
     {
         if (!_settings.Enabled) return false;
 
@@ -62,27 +61,51 @@ public class DiscordService
             return false;
         }
 
-        var tasks = urls.Select(url => PostToWebhookAsync(url, content, embed, label));
+        var tasks = urls.Select(url => PostToWebhookAsync(url, content, embed, label, imageBytes));
         var results = await Task.WhenAll(tasks);
         return results.Any(r => r);
     }
 
-    private async Task<bool> PostToWebhookAsync(string url, string? content, object? embed, string label)
+    private async Task<bool> PostToWebhookAsync(string webhookUrl, string? content, Dictionary<string, object?>? embed, string label, byte[]? imageBytes)
     {
         try
         {
-            var payload = new Dictionary<string, object?>();
-            if (!string.IsNullOrWhiteSpace(content)) payload["content"] = content;
-            if (embed is not null) payload["embeds"] = new[] { embed };
-            if (!string.IsNullOrWhiteSpace(_settings.Username)) payload["username"] = _settings.Username;
+            HttpResponseMessage response;
 
-            var json = JsonSerializer.Serialize(payload);
-            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            if (imageBytes != null)
             {
-                Content = new StringContent(json, Encoding.UTF8, "application/json")
-            };
+                var embedWithImage = new Dictionary<string, object?>(embed ?? new())
+                {
+                    ["image"] = new { url = "attachment://map.png" }
+                };
 
-            var response = await _http.SendAsync(request);
+                var payloadObj = new Dictionary<string, object?>();
+                if (!string.IsNullOrWhiteSpace(content)) payloadObj["content"] = content;
+                payloadObj["embeds"] = new[] { embedWithImage };
+                if (!string.IsNullOrWhiteSpace(_settings.Username)) payloadObj["username"] = _settings.Username;
+
+                using var form = new MultipartFormDataContent();
+                form.Add(new StringContent(JsonSerializer.Serialize(payloadObj), Encoding.UTF8, "application/json"), "payload_json");
+                var imageContent = new ByteArrayContent(imageBytes);
+                imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                form.Add(imageContent, "files[0]", "map.png");
+
+                response = await _http.PostAsync(webhookUrl, form);
+            }
+            else
+            {
+                var payload = new Dictionary<string, object?>();
+                if (!string.IsNullOrWhiteSpace(content)) payload["content"] = content;
+                if (embed is not null) payload["embeds"] = new[] { embed };
+                if (!string.IsNullOrWhiteSpace(_settings.Username)) payload["username"] = _settings.Username;
+
+                var json = JsonSerializer.Serialize(payload);
+                using var request = new HttpRequestMessage(HttpMethod.Post, webhookUrl)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+                response = await _http.SendAsync(request);
+            }
 
             if (response.IsSuccessStatusCode)
             {

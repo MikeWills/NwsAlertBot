@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -32,44 +33,70 @@ public class TelegramService
     public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
 
     public Task<bool> SendConfirmationAsync(string message) =>
-        SendAsync(message, photoUrl: null, label: "confirmation");
+        SendMessageAsync(message, "confirmation");
 
     public Task<bool> SendAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return Task.FromResult(false);
-
-        bool hasPhoto = !string.IsNullOrEmpty(alert.MapImageUrl);
-        string text = alert.FormatPost(hasPhoto ? CaptionLimit : MessageLimit);
-        return SendAsync(text, alert.MapImageUrl, label: alert.Event);
+        return PostAlertInternalAsync(alert);
     }
 
-    private async Task<bool> SendAsync(string text, string? photoUrl, string label)
+    private Task<bool> PostAlertInternalAsync(NwsAlert alert)
     {
-        if (!_settings.Enabled) return false;
+        if (alert.MapImageBytes != null)
+            return SendPhotoAsync(alert.MapImageBytes, alert.FormatPost(CaptionLimit), alert.Event);
 
-        if (string.IsNullOrWhiteSpace(_settings.BotToken) || string.IsNullOrWhiteSpace(_settings.ChatId))
-        {
-            _logger.LogWarning("Telegram: BotToken or ChatId is not configured. Skipping {Label}.", label);
-            return false;
-        }
+        return SendMessageAsync(alert.FormatPost(MessageLimit), alert.Event);
+    }
+
+    private async Task<bool> SendPhotoAsync(byte[] imageBytes, string caption, string label)
+    {
+        if (!ValidateConfig(label)) return false;
 
         try
         {
-            bool hasPhoto = !string.IsNullOrWhiteSpace(photoUrl);
-            string method = hasPhoto ? "sendPhoto" : "sendMessage";
-            string url = $"https://api.telegram.org/bot{_settings.BotToken}/{method}";
+            string url = $"https://api.telegram.org/bot{_settings.BotToken}/sendPhoto";
 
-            var payload = new Dictionary<string, object?> { ["chat_id"] = _settings.ChatId };
-            if (hasPhoto)
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(_settings.ChatId), "chat_id");
+            var imageContent = new ByteArrayContent(imageBytes);
+            imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+            form.Add(imageContent, "photo", "map.png");
+            form.Add(new StringContent(caption), "caption");
+
+            var response = await _http.PostAsync(url, form);
+
+            if (response.IsSuccessStatusCode)
             {
-                payload["photo"] = photoUrl;
-                payload["caption"] = text;
+                _logger.LogInformation("Telegram: Sent {Label}.", label);
+                return true;
             }
-            else
+
+            var body = await response.Content.ReadAsStringAsync();
+            _logger.LogError("Telegram: Send failed. Status={Status} Body={Body}", response.StatusCode, body);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Telegram: Exception sending {Label}.", label);
+            return false;
+        }
+    }
+
+    private async Task<bool> SendMessageAsync(string text, string label)
+    {
+        if (!ValidateConfig(label)) return false;
+
+        try
+        {
+            string url = $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage";
+
+            var payload = new Dictionary<string, object?>
             {
-                payload["text"] = text;
-                payload["disable_web_page_preview"] = true;
-            }
+                ["chat_id"] = _settings.ChatId,
+                ["text"] = text,
+                ["disable_web_page_preview"] = true
+            };
 
             var json = JsonSerializer.Serialize(payload);
             using var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -94,5 +121,15 @@ public class TelegramService
             _logger.LogError(ex, "Telegram: Exception sending {Label}.", label);
             return false;
         }
+    }
+
+    private bool ValidateConfig(string label)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.BotToken) || string.IsNullOrWhiteSpace(_settings.ChatId))
+        {
+            _logger.LogWarning("Telegram: BotToken or ChatId is not configured. Skipping {Label}.", label);
+            return false;
+        }
+        return true;
     }
 }
