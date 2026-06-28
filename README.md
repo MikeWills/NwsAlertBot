@@ -123,8 +123,9 @@ Each platform block also accepts:
 | `EventTypes` | Comma-separated NWS event names for this platform only. Leave empty to receive all event types. | `""` (all) |
 | `IncludeSpcOutlooks` | Whether SPC Convective Outlook alerts are posted to this platform. Requires `Spc.Enabled = true`. | `true` |
 
-**Geographic priority:** `Zones` > `Counties` > `State`. If Zones are specified, Counties and
-State are ignored. If Counties are specified, State is ignored.
+**Geographic filter:** `Zones` and `Counties` are combined into a single NWS API query — both
+sets of UGC codes are always sent together. `State` is used only when neither `Zones` nor
+`Counties` is configured.
 
 `Spc` (see [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)):
 
@@ -162,8 +163,8 @@ issued by zone, others by county. If you use only one type, you may miss certain
 "Counties": ["MOC217", "MOC039"]
 ```
 
-When both are specified, the bot queries zones first, then counties separately, and deduplicates
-by alert ID before posting.
+When both are specified, the bot sends all zone and county codes together in a single NWS API
+query — the API accepts mixed UGC codes (`MNZxxx` and `MNCxxx`) in the same list.
 
 > **Note:** In flat terrain (most of the Midwest, Great Plains, Southeast), zone and county
 > boundaries are nearly identical and one set is usually sufficient. In mountainous areas
@@ -740,10 +741,14 @@ supports images. SPC Convective Outlook posts get their own image independently 
 — see [Outlook map image](#how-it-works) above — through the same `MapImageUrl` field, so the
 platform behavior table below applies to both.
 
-The Mapbox map area is determined by:
-1. The **alert's own GeoJSON geometry polygon** (included in most NWS alerts)
+The map area and polygon overlay are determined by:
+1. The **alert's own GeoJSON geometry polygon** (included in most NWS alerts) — drawn as a
+   semi-transparent orange fill with a dark outline so the affected area is clearly visible.
+   Coordinates are rounded to 2-decimal-place precision (~1 km) before URL-encoding so even
+   large multi-county polygons fit within Mapbox's URL limit.
 2. **Fallback:** the union bounding box of your configured zones/counties, fetched once from the
-   NWS zone API on first use and cached for the life of the process
+   NWS zone API on first use and cached for the life of the process. No polygon overlay is drawn
+   in this case — only the map extent is set.
 
 ### Setup
 
@@ -1069,6 +1074,29 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 ---
 
 ## Recent Changes
+
+- **Map: alert polygon overlay** — the Mapbox static map now draws the affected alert area as a
+  semi-transparent orange polygon with a dark stroke. Coordinates are rounded to 2-decimal-place
+  precision (~1 km) and consecutive duplicate points removed before URL-encoding, so even large
+  multi-county polygons fit within Mapbox's 8192-byte URL limit. Falls back to the plain
+  bounding-box map only when no geometry is available.
+
+- **NWS text: teletype line-wrap normalization** — NWS alert text (headline, description,
+  instruction) uses hard line breaks at ~70 characters inherited from legacy teletype formatting.
+  These mid-sentence wraps are now collapsed into spaces at parse time while intentional paragraph
+  breaks (blank lines) are preserved. "stay out of\nthe sun" now reads "stay out of the sun"
+  on every platform.
+
+- **NWS geographic filter: zones + counties now combined** — previously only `Zones` were sent to
+  the NWS API (with `Counties` silently ignored when both were configured). Both lists are now
+  combined into a single `zone=` query parameter, since the NWS API accepts mixed UGC codes
+  (`MNZxxx` and `MNCxxx`) in the same list. Configure both for complete coverage — some alert
+  types are issued by zone, others by county. Same fix applied to the map fallback bounding box.
+
+- **NWS API: resilient secondary query** — if the primary alert URL fails (e.g. bad config value,
+  transient NWS outage), the `AdditionalEventTypes` secondary query now still runs and can return
+  results. Previously, a primary failure silently aborted the secondary query too. The failed
+  request URL is now logged at Error level so config typos are immediately visible in the log.
 
 - **SPC outlook: fix tornado/wind/hail display for areas below explicit probability thresholds** — SPC only draws tornado probability polygons starting at 2% and wind/hail polygons starting at 5%. For any area in a categorical risk but below those thresholds, the bot previously displayed "None". It now displays "< 2%" for tornado and "< 5%" for wind/hail, matching SPC's actual convention. (The tornado layer also includes a background feature with `LABEL = "Less Than 2% All Areas"` that the parser skipped; the fix handles this implicitly via the corrected null default.)
 
