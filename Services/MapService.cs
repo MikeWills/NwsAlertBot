@@ -49,13 +49,29 @@ public class MapService
                 _logger.LogInformation("Map: Using alert geometry polygon for {Id}.", alert.Id);
         }
 
-        // Priority 2: union of the alert's geocode UGC zones/counties
+        // Priority 2: UGC zone/county geometries, limited to codes within our monitoring area.
+        // Large alerts (e.g. statewide heat warnings) may have 40+ zones; fetching all of them
+        // produces a MultiPolygon that exceeds the Mapbox URL limit even after simplification.
+        // Since NWS only returns this alert because it covers our configured zones, intersecting
+        // the alert's UGC list with our configured codes gives an accurate, focused overlay.
+        // If the intersection is empty (e.g. alert uses county codes, config uses zone codes for
+        // the same area), fall back to all configured codes — the alert covers them by definition.
         if (bbox == null && alert.GeocodeUgc.Count > 0)
         {
-            _logger.LogInformation("Map: No alert geometry; fetching geometry for {Count} UGC code(s).", alert.GeocodeUgc.Count);
-            (bbox, overlay) = await GetBboxAndOverlayAsync(alert.GeocodeUgc);
+            var configured = new HashSet<string>(
+                _nwsSettings.Zones.Concat(_nwsSettings.Counties), StringComparer.OrdinalIgnoreCase);
+            var relevant = alert.GeocodeUgc.Where(c => configured.Contains(c)).ToList();
+            var codesToUse = relevant.Count > 0
+                ? relevant
+                : _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
+
+            _logger.LogInformation(
+                "Map: No alert geometry; using {Use} of {Total} UGC code(s) for overlay.",
+                codesToUse.Count, alert.GeocodeUgc.Count);
+
+            (bbox, overlay) = await GetBboxAndOverlayAsync(codesToUse);
             if (bbox != null)
-                _logger.LogInformation("Map: Built overlay from {Count} UGC code geometry(s) for {Id}.", alert.GeocodeUgc.Count, alert.Id);
+                _logger.LogInformation("Map: Built overlay from {Count} code geometry(s) for {Id}.", codesToUse.Count, alert.Id);
             else
                 _logger.LogWarning("Map: UGC code geometry fetch returned nothing for {Id}.", alert.Id);
         }
