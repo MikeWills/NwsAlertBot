@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NwsAlertBot.Config;
@@ -115,12 +116,12 @@ public class MapService
         {
             if (_fallbackBbox != null) return _fallbackBbox;
 
-            var codes = _nwsSettings.Zones.Count > 0 ? _nwsSettings.Zones : _nwsSettings.Counties;
+            var codes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
             if (codes.Count == 0) return null;
 
             _fallbackBbox = await GetBboxForCodesAsync(codes);
             if (_fallbackBbox != null)
-                _logger.LogInformation("Map: Cached fallback bounding box for {Count} configured zone(s).", codes.Count);
+                _logger.LogInformation("Map: Cached fallback bounding box for {Count} configured zone(s)/county(s).", codes.Count);
 
             return _fallbackBbox;
         }
@@ -166,28 +167,126 @@ public class MapService
         double east  = bbox[2] + lonPad;
         double north = bbox[3] + latPad;
 
-        string bboxStr     = $"[{west:F4},{south:F4},{east:F4},{north:F4}]";
-        string dimensions  = $"{_settings.Width}x{_settings.Height}";
-        string baseUrl     = $"https://api.mapbox.com/styles/v1/{_settings.Style}/static/";
-        string suffix      = $"?access_token={_settings.AccessToken}";
+        string bboxStr    = $"[{west:F4},{south:F4},{east:F4},{north:F4}]";
+        string dimensions = $"{_settings.Width}x{_settings.Height}";
+        string baseUrl    = $"https://api.mapbox.com/styles/v1/{_settings.Style}/static/";
+        string suffix     = $"?access_token={_settings.AccessToken}";
 
         // Overlay the alert polygon using Mapbox simplestyle GeoJSON.
-        // The Mapbox Static Images API has an 8192-byte URL limit; skip the overlay
-        // if the encoded GeoJSON would push the URL over that limit.
+        // Coordinates are rounded to 2 decimal places (~1 km precision) and consecutive
+        // duplicate points removed to keep the URL well within Mapbox's 8192-byte limit.
         if (!string.IsNullOrEmpty(geometryJson))
         {
-            string feature = $"{{\"type\":\"Feature\",\"properties\":{{" +
-                             $"\"fill\":\"#ff6600\",\"fill-opacity\":0.3," +
-                             $"\"stroke\":\"#cc4400\",\"stroke-width\":2,\"stroke-opacity\":0.9" +
-                             $"}},\"geometry\":{geometryJson}}}";
-            string encoded = Uri.EscapeDataString(feature);
-            string candidate = $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
-            if (candidate.Length <= 8000)
-                return candidate;
+            string? simplified = SimplifyGeometry(geometryJson);
+            if (simplified != null)
+            {
+                string feature = $"{{\"type\":\"Feature\",\"properties\":{{" +
+                                 $"\"fill\":\"#ff6600\",\"fill-opacity\":0.3," +
+                                 $"\"stroke\":\"#cc4400\",\"stroke-width\":2,\"stroke-opacity\":0.9" +
+                                 $"}},\"geometry\":{simplified}}}";
+                string encoded   = Uri.EscapeDataString(feature);
+                string candidate = $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
+                if (candidate.Length <= 8000)
+                    return candidate;
+            }
         }
 
-        // Mapbox Static Images API — bounding-box auto-fit
+        // Mapbox Static Images API — bounding-box auto-fit (no overlay)
         // https://docs.mapbox.com/api/maps/static-images/
         return $"{baseUrl}{bboxStr}/{dimensions}{suffix}";
+    }
+
+    /// <summary>
+    /// Returns a simplified GeoJSON geometry string with coordinates rounded to 2 decimal
+    /// places and consecutive duplicate points removed, or null if parsing fails.
+    /// </summary>
+    private static string? SimplifyGeometry(string geometryJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(geometryJson);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var typeEl) ||
+                !root.TryGetProperty("coordinates", out var coords))
+                return null;
+
+            return typeEl.GetString() switch
+            {
+                "Polygon" => BuildPolygonJson(SimplifyRings(coords)),
+                "MultiPolygon" => BuildMultiPolygonJson(
+                    coords.EnumerateArray()
+                          .Select(p => SimplifyRings(p))
+                          .Where(r => r.Count > 0)
+                          .ToList()),
+                _ => null
+            };
+        }
+        catch { return null; }
+    }
+
+    private static string? BuildPolygonJson(List<List<(double Lon, double Lat)>> rings)
+    {
+        if (rings.Count == 0) return null;
+        return $"{{\"type\":\"Polygon\",\"coordinates\":{SerializeRings(rings)}}}";
+    }
+
+    private static string? BuildMultiPolygonJson(List<List<List<(double Lon, double Lat)>>> polygons)
+    {
+        if (polygons.Count == 0) return null;
+        var sb = new StringBuilder("{\"type\":\"MultiPolygon\",\"coordinates\":[");
+        for (int i = 0; i < polygons.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append(SerializeRings(polygons[i]));
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Rounds each coordinate to 2 decimal places and drops consecutive duplicate points.
+    /// Skips rings that collapse to fewer than 4 points (the GeoJSON minimum for a closed ring).
+    /// </summary>
+    private static List<List<(double Lon, double Lat)>> SimplifyRings(JsonElement rings)
+    {
+        var result = new List<List<(double Lon, double Lat)>>();
+        foreach (var ring in rings.EnumerateArray())
+        {
+            var pts = new List<(double Lon, double Lat)>();
+            (double Lon, double Lat) prev = (double.NaN, double.NaN);
+            foreach (var pt in ring.EnumerateArray())
+            {
+                double lon = Math.Round(pt[0].GetDouble(), 2);
+                double lat = Math.Round(pt[1].GetDouble(), 2);
+                if (lon == prev.Lon && lat == prev.Lat) continue;
+                pts.Add((lon, lat));
+                prev = (lon, lat);
+            }
+            // Ensure ring is closed (GeoJSON requires first == last)
+            if (pts.Count >= 2 && (pts[0].Lon != pts[^1].Lon || pts[0].Lat != pts[^1].Lat))
+                pts.Add(pts[0]);
+            if (pts.Count >= 4)
+                result.Add(pts);
+        }
+        return result;
+    }
+
+    private static string SerializeRings(List<List<(double Lon, double Lat)>> rings)
+    {
+        var sb = new StringBuilder("[");
+        for (int i = 0; i < rings.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append('[');
+            var ring = rings[i];
+            for (int j = 0; j < ring.Count; j++)
+            {
+                if (j > 0) sb.Append(',');
+                sb.Append($"[{ring[j].Lon:F2},{ring[j].Lat:F2}]");
+            }
+            sb.Append(']');
+        }
+        sb.Append(']');
+        return sb.ToString();
     }
 }
