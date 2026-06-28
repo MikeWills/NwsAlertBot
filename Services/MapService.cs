@@ -369,8 +369,8 @@ public class MapService
     private static string BuildIemUrl(NwsAlert alert, string iemPhenomena) =>
         $"https://mesonet.agron.iastate.edu/plotting/auto/plot/208/" +
         $"network=WFO::wfo={alert.VtecWfo}::year={alert.Sent.Year}::" +
-        $"phenomena={iemPhenomena}::significance={alert.VtecSignificance}::" +
-        $"etn={alert.VtecEtn}::opt=single::nexrad=auto.png?_={alert.Sent.ToUnixTimeSeconds()}";
+        $"phenomenav={iemPhenomena}::significancev={alert.VtecSignificance}::" +
+        $"etn={alert.VtecEtn}::opt=single::n=auto.png?_={alert.Sent.ToUnixTimeSeconds()}";
 
     private static string BuildFeatureJson(string geometryJson) =>
         $"{{\"type\":\"Feature\",\"properties\":{{" +
