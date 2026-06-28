@@ -50,7 +50,23 @@ public class MapService
     /// </summary>
     public async Task<string?> GetMapUrlAsync(NwsAlert alert)
     {
-        if (!_settings.Enabled || string.IsNullOrEmpty(_settings.AccessToken)) return null;
+        if (!_settings.Enabled) return null;
+
+        // IEM autoplot #208: generates a PNG with the exact warning polygon, county lines,
+        // and NEXRAD radar. Available for any alert with a VTEC code (the vast majority of
+        // NWS alerts). Skip for CAN/EXP actions — those events display incorrectly on IEM.
+        if (alert.VtecWfo != null && alert.VtecPhenomena != null &&
+            alert.VtecSignificance != null && alert.VtecEtn != null &&
+            alert.VtecAction is not ("CAN" or "EXP"))
+        {
+            _logger.LogInformation(
+                "Map: Using IEM autoplot for {Action}.{Wfo}.{Phenom}.{Sig} #{Etn}.",
+                alert.VtecAction, alert.VtecWfo, alert.VtecPhenomena, alert.VtecSignificance, alert.VtecEtn);
+            return BuildIemUrl(alert);
+        }
+
+        // Fallback: Mapbox static image (used for non-VTEC events or CAN/EXP messages)
+        if (string.IsNullOrEmpty(_settings.AccessToken)) return null;
 
         double[]? bbox    = null;
         string?   overlay = null; // dissolved/combined geometry for primary overlay attempt
@@ -259,6 +275,12 @@ public class MapService
 
         return $"{baseUrl}{bboxStr}/{dimensions}{suffix}";
     }
+
+    private static string BuildIemUrl(NwsAlert alert) =>
+        $"https://mesonet.agron.iastate.edu/plotting/auto/plot/208/" +
+        $"wfo={alert.VtecWfo}::year={alert.Sent.Year}::" +
+        $"phenomenav={alert.VtecPhenomena}::significancev={alert.VtecSignificance}::" +
+        $"etn={alert.VtecEtn}::opt=single::nexrad=auto.png";
 
     private static string BuildFeatureJson(string geometryJson) =>
         $"{{\"type\":\"Feature\",\"properties\":{{" +

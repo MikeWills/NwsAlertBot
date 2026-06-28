@@ -135,6 +135,27 @@ public class NwsAlertService
                 }
             }
 
+            if (props.TryGetProperty("parameters", out var parameters) &&
+                parameters.TryGetProperty("VTEC", out var vtecArray) &&
+                vtecArray.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var vtecEl in vtecArray.EnumerateArray())
+                {
+                    var vtecStr = vtecEl.GetString();
+                    if (string.IsNullOrEmpty(vtecStr)) continue;
+                    var m = VtecPattern.Match(vtecStr);
+                    if (!m.Success) continue;
+
+                    alert.VtecAction = m.Groups["action"].Value;
+                    var rawWfo = m.Groups["wfo"].Value;
+                    alert.VtecWfo = rawWfo.Length == 4 && rawWfo[0] == 'K' ? rawWfo[1..] : rawWfo;
+                    alert.VtecPhenomena = m.Groups["phenom"].Value;
+                    alert.VtecSignificance = m.Groups["sig"].Value;
+                    alert.VtecEtn = int.Parse(m.Groups["etn"].Value);
+                    break; // use the first (primary) VTEC string only
+                }
+            }
+
             alerts.Add(alert);
         }
 
@@ -201,6 +222,12 @@ public class NwsAlertService
     /// Collapses NWS teletype-style mid-sentence line wraps into spaces while
     /// preserving intentional paragraph breaks (two or more consecutive newlines).
     /// </summary>
+    // Matches the fixed-position segments of a P-VTEC string:
+    // /O.NEW.KMPX.HT.W.0001.260628T0000Z-260630T0000Z/
+    private static readonly Regex VtecPattern = new(
+        @"/[A-Z]\.(?<action>[A-Z]+)\.(?<wfo>[A-Z]{4})\.(?<phenom>[A-Z]{2})\.(?<sig>[A-Z])\.(?<etn>\d{4})\.",
+        RegexOptions.Compiled);
+
     private static string NormalizeNwsText(string text)
     {
         if (string.IsNullOrEmpty(text)) return text;

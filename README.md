@@ -741,18 +741,21 @@ supports images. SPC Convective Outlook posts get their own image independently 
 — see [Outlook map image](#how-it-works) above — through the same `MapImageUrl` field, so the
 platform behavior table below applies to both.
 
-The map area and polygon overlay are determined by:
-1. The **alert's own GeoJSON geometry polygon** (most NWS alerts include one) — drawn as a
-   semi-transparent blue fill with a dark outline.
-2. **UGC zone/county geometries** — when an alert returns no polygon (common for large statewide
-   alerts), the bot fetches geometry for each UGC zone/county code from the NWS zone API, limited
-   to codes that overlap your configured monitoring area. Shared county borders are dissolved so
-   only the outer perimeter of the combined area is drawn — adjacent counties appear as a single
-   unified shape rather than individual polygons. Falls back to individual county polygons if the
-   dissolve step fails, then to a convex hull approximation if the geometry is still too large
-   to inline in the Mapbox URL.
-3. **Bounding box only** — if no geometry is available, the map extent is set from your configured
-   zones/counties with no overlay drawn.
+Map images are generated from two sources depending on the alert type:
+
+**IEM (primary — most NWS alerts):** The bot parses the VTEC code from each NWS alert
+(`parameters.VTEC`) and requests a pre-rendered PNG from Iowa State University's IEM Autoplot
+service (plot #208). The image shows the exact NWS warning polygon, county boundary lines, and
+a NEXRAD radar overlay — no geometry math, no URL size limit. Requires no API key. Used for
+any alert with a VTEC code where the action is not CAN or EXP.
+
+**Mapbox (fallback — non-VTEC events and cancelled/expired alerts):** Used when no VTEC code
+is present. The map area and overlay are determined by:
+1. The **alert's own GeoJSON geometry polygon** (most NWS alerts include one).
+2. **Dissolved county perimeter** — when no polygon is in the alert, the bot fetches geometry
+   for each UGC zone/county code from the NWS zone API and dissolves shared borders so only the
+   outer perimeter of the combined area is drawn.
+3. **Bounding box only** — if no geometry is available at all.
 
 ### Setup
 
@@ -1079,13 +1082,14 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
-- **Map: dissolved county perimeter overlay** — for alerts with no inline polygon (e.g. statewide
-  heat warnings), the bot fetches geometry for each relevant UGC zone/county from the NWS zone API
-  and dissolves shared borders using edge-counting, so only the outer perimeter of the combined
-  monitoring area is drawn. This is significantly smaller than a full MultiPolygon (shared borders
-  appear in exactly one polygon after dissolve) and fits within Mapbox's URL limit. Falls back to
-  individual county polygons then to a convex hull if the dissolved geometry is still too large.
-  Overlay color is blue (`#0066CC`) for color-blind accessibility.
+- **Map: IEM autoplot as primary map source** — the bot now parses the VTEC code from each NWS
+  alert and requests a pre-rendered PNG from IEM Autoplot #208. The image shows the exact NWS
+  warning polygon, county boundary lines, and NEXRAD radar. No Mapbox token or geometry math
+  required for VTEC events. Mapbox is retained as fallback for non-VTEC events.
+
+- **Map: dissolved county perimeter overlay (Mapbox fallback)** — when falling back to Mapbox
+  for events without a VTEC code, shared county borders are dissolved so only the outer perimeter
+  of the combined area is drawn, fitting within Mapbox's URL limit.
 
 - **NWS text: teletype line-wrap normalization** — NWS alert text (headline, description,
   instruction) uses hard line breaks at ~70 characters inherited from legacy teletype formatting.

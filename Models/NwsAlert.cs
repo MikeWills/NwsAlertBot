@@ -23,6 +23,21 @@ public class NwsAlert
     /// <summary>UGC zone/county codes from the alert's geocode block (e.g. ["MNZ083", "MNC013"]).</summary>
     public List<string> GeocodeUgc { get; set; } = new();
 
+    /// <summary>VTEC action code parsed from parameters.VTEC (e.g. "NEW", "CON", "EXT", "CAN", "EXP"). Null when no VTEC string is present.</summary>
+    public string? VtecAction { get; set; }
+
+    /// <summary>3-letter WFO code from the VTEC string, K-prefix stripped (e.g. "MPX"). Null when no VTEC string is present.</summary>
+    public string? VtecWfo { get; set; }
+
+    /// <summary>2-letter VTEC phenomena code (e.g. "HT" for heat, "TO" for tornado, "SV" for severe thunderstorm). Null when no VTEC string is present.</summary>
+    public string? VtecPhenomena { get; set; }
+
+    /// <summary>1-letter VTEC significance code (e.g. "W" for warning, "A" for watch, "Y" for advisory). Null when no VTEC string is present.</summary>
+    public string? VtecSignificance { get; set; }
+
+    /// <summary>VTEC event tracking number. Null when no VTEC string is present.</summary>
+    public int? VtecEtn { get; set; }
+
     /// <summary>Mapbox static map image URL populated by MapService before posting. Null when map generation is disabled or geometry is unavailable.</summary>
     public string? MapImageUrl { get; set; }
 
