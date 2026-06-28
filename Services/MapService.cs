@@ -8,8 +8,9 @@ namespace NwsAlertBot.Services;
 
 /// <summary>
 /// Generates Mapbox Static Images API URLs showing the affected area of each alert.
-/// Overlay geometry priority: alert's own GeoJSON polygon → alert's UGC zone/county geometries.
-/// Bounding box falls back to configured zones/counties if neither source has geometry.
+/// Overlay geometry priority: alert's own GeoJSON polygon → convex hull of alert's UGC
+/// zone/county geometries. Bounding box falls back to configured zones/counties if neither
+/// source has geometry.
 /// </summary>
 public class MapService
 {
@@ -20,6 +21,11 @@ public class MapService
 
     private double[]? _fallbackBbox;
     private readonly SemaphoreSlim _fallbackLock = new(1, 1);
+
+    // Overlay colors — blue palette chosen for color-blind accessibility
+    // (most color blindness affects red-green perception; blue is universally distinguishable)
+    private const string FillColor   = "#0066CC";
+    private const string StrokeColor = "#003D99";
 
     public MapService(MapSettings settings, NwsSettings nwsSettings, NwsZoneService zones, ILogger<MapService> logger)
     {
@@ -49,11 +55,12 @@ public class MapService
                 _logger.LogInformation("Map: Using alert geometry polygon for {Id}.", alert.Id);
         }
 
-        // Priority 2: UGC zone/county geometries, limited to codes within our monitoring area.
-        // Large alerts (e.g. statewide heat warnings) may have 40+ zones; fetching all of them
-        // produces a MultiPolygon that exceeds the Mapbox URL limit even after simplification.
+        // Priority 2: convex hull of UGC zone/county geometries, limited to codes within our
+        // monitoring area. Large alerts (e.g. statewide warnings) may list 40+ zones; a convex
+        // hull of all their combined points produces a single compact polygon that fits in the
+        // Mapbox URL limit regardless of how many zones are involved.
         // Since NWS only returns this alert because it covers our configured zones, intersecting
-        // the alert's UGC list with our configured codes gives an accurate, focused overlay.
+        // the alert's UGC list with our configured codes gives a focused, accurate overlay.
         // If the intersection is empty (e.g. alert uses county codes, config uses zone codes for
         // the same area), fall back to all configured codes — the alert covers them by definition.
         if (bbox == null && alert.GeocodeUgc.Count > 0)
@@ -71,13 +78,13 @@ public class MapService
 
             (bbox, overlay) = await GetBboxAndOverlayAsync(codesToUse);
             if (bbox != null)
-                _logger.LogInformation("Map: Built overlay from {Count} code geometry(s) for {Id}.", codesToUse.Count, alert.Id);
+                _logger.LogInformation("Map: Built convex hull overlay from {Count} code(s) for {Id}.", codesToUse.Count, alert.Id);
             else
                 _logger.LogWarning("Map: UGC code geometry fetch returned nothing for {Id}.", alert.Id);
         }
 
-        // Priority 3: configured zones/counties bbox only — no overlay (this is the monitoring
-        // area, not the alert area, so drawing it as a polygon would be misleading)
+        // Priority 3: configured zones/counties bbox only — no overlay (the monitoring area is
+        // not the same as the alert area, so drawing it as a polygon would be misleading)
         if (bbox == null)
         {
             bbox = await GetFallbackBboxAsync();
@@ -103,7 +110,7 @@ public class MapService
         double minLon = double.MaxValue, minLat = double.MaxValue;
         double maxLon = double.MinValue, maxLat = double.MinValue;
         bool found = false;
-        var geoStrings = new List<string>();
+        var allPoints = new List<(double Lon, double Lat)>();
 
         var geos = await Task.WhenAll(codes.Select(c => _zones.GetGeometryAsync(c)));
 
@@ -120,11 +127,13 @@ public class MapService
             if (b[2] > maxLon) maxLon = b[2];
             if (b[3] > maxLat) maxLat = b[3];
             found = true;
-            geoStrings.Add(raw);
+            CollectPoints(raw, allPoints);
         }
 
         if (!found) return (null, null);
-        return (new[] { minLon, minLat, maxLon, maxLat }, CombineGeometries(geoStrings));
+
+        string? overlay = ConvexHullJson(allPoints);
+        return (new[] { minLon, minLat, maxLon, maxLat }, overlay);
     }
 
     private async Task<double[]?> GetFallbackBboxAsync()
@@ -172,9 +181,8 @@ public class MapService
         string baseUrl    = $"https://api.mapbox.com/styles/v1/{_settings.Style}/static/";
         string suffix     = $"?access_token={_settings.AccessToken}";
 
-        // Overlay the alert polygon using Mapbox simplestyle GeoJSON.
-        // Try precision=2 (~1 km) first; if the URL exceeds 8000 chars, retry at precision=1
-        // (~10 km) which dramatically reduces point count for large multi-zone alerts.
+        // Zone-based overlays come in as pre-computed convex hulls (already compact).
+        // Alert-geometry overlays may still be large; try precision=2 then precision=1.
         if (!string.IsNullOrEmpty(geometryJson))
         {
             foreach (int precision in new[] { 2, 1 })
@@ -183,8 +191,8 @@ public class MapService
                 if (simplified == null) break;
 
                 string feature = $"{{\"type\":\"Feature\",\"properties\":{{" +
-                                 $"\"fill\":\"#ff6600\",\"fill-opacity\":0.3," +
-                                 $"\"stroke\":\"#cc4400\",\"stroke-width\":2,\"stroke-opacity\":0.9" +
+                                 $"\"fill\":\"{FillColor}\",\"fill-opacity\":0.3," +
+                                 $"\"stroke\":\"{StrokeColor}\",\"stroke-width\":2,\"stroke-opacity\":0.9" +
                                  $"}},\"geometry\":{simplified}}}";
                 string encoded   = Uri.EscapeDataString(feature);
                 string candidate = $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
@@ -252,50 +260,99 @@ public class MapService
         catch { return null; }
     }
 
-    /// <summary>
-    /// Merges one or more GeoJSON geometry strings into a single geometry string at precision=2.
-    /// Multiple geometries are combined into a MultiPolygon.
-    /// </summary>
-    private static string? CombineGeometries(List<string> geometries)
+    private static void CollectPoints(string geometryJson, List<(double Lon, double Lat)> points)
     {
-        if (geometries.Count == 0) return null;
-        if (geometries.Count == 1) return geometries[0];
-
-        var allPolygons = new List<List<List<(double Lon, double Lat)>>>();
-
-        foreach (var geo in geometries)
+        try
         {
-            try
-            {
-                using var doc = JsonDocument.Parse(geo);
-                var root = doc.RootElement;
-                if (!root.TryGetProperty("type", out var typeEl) ||
-                    !root.TryGetProperty("coordinates", out var coords)) continue;
+            using var doc = JsonDocument.Parse(geometryJson);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var typeEl) ||
+                !root.TryGetProperty("coordinates", out var coords)) return;
 
-                switch (typeEl.GetString())
-                {
-                    case "Polygon":
-                        var rings = SimplifyRings(coords, 2);
-                        if (rings.Count > 0) allPolygons.Add(rings);
-                        break;
-                    case "MultiPolygon":
-                        foreach (var polygon in coords.EnumerateArray())
-                        {
-                            var pRings = SimplifyRings(polygon, 2);
-                            if (pRings.Count > 0) allPolygons.Add(pRings);
-                        }
-                        break;
-                }
+            void VisitRing(JsonElement ring)
+            {
+                foreach (var pt in ring.EnumerateArray())
+                    if (pt.GetArrayLength() >= 2)
+                        points.Add((pt[0].GetDouble(), pt[1].GetDouble()));
             }
-            catch { }
+
+            switch (typeEl.GetString())
+            {
+                case "Polygon":
+                    foreach (var ring in coords.EnumerateArray()) VisitRing(ring);
+                    break;
+                case "MultiPolygon":
+                    foreach (var polygon in coords.EnumerateArray())
+                        foreach (var ring in polygon.EnumerateArray()) VisitRing(ring);
+                    break;
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Computes the convex hull of the given points using Graham scan and returns it as a
+    /// GeoJSON Polygon string, or null if fewer than 3 distinct points are available.
+    /// The hull is a single compact polygon — always well within Mapbox's URL length limit.
+    /// </summary>
+    private static string? ConvexHullJson(List<(double Lon, double Lat)> points)
+    {
+        var hull = GrahamScan(points);
+        if (hull == null || hull.Count < 3) return null;
+
+        hull.Add(hull[0]); // close the ring
+
+        var sb = new StringBuilder("{\"type\":\"Polygon\",\"coordinates\":[[");
+        for (int i = 0; i < hull.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append($"[{hull[i].Lon:F2},{hull[i].Lat:F2}]");
+        }
+        sb.Append("]]}");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Graham scan convex hull. Returns the hull vertices in counter-clockwise order,
+    /// or null if fewer than 3 points are provided.
+    /// </summary>
+    private static List<(double Lon, double Lat)>? GrahamScan(List<(double Lon, double Lat)> points)
+    {
+        if (points.Count < 3) return null;
+
+        // Pivot: lowest latitude (southernmost), break ties by leftmost longitude
+        var pivot = points.MinBy(p => (p.Lat, p.Lon));
+
+        // Sort remaining points by polar angle from pivot, then by distance
+        var sorted = points
+            .Where(p => p != pivot)
+            .OrderBy(p => Math.Atan2(p.Lat - pivot.Lat, p.Lon - pivot.Lon))
+            .ThenBy(p => DistSq(pivot, p))
+            .ToList();
+
+        var hull = new List<(double Lon, double Lat)> { pivot };
+
+        foreach (var pt in sorted)
+        {
+            // Remove points that make a clockwise turn (or are collinear)
+            while (hull.Count >= 2 && Cross(hull[^2], hull[^1], pt) <= 0)
+                hull.RemoveAt(hull.Count - 1);
+            hull.Add(pt);
         }
 
-        return BuildMultiPolygonJson(allPolygons);
+        return hull.Count >= 3 ? hull : null;
     }
+
+    private static double Cross((double Lon, double Lat) o, (double Lon, double Lat) a, (double Lon, double Lat) b)
+        => (a.Lon - o.Lon) * (b.Lat - o.Lat) - (a.Lat - o.Lat) * (b.Lon - o.Lon);
+
+    private static double DistSq((double Lon, double Lat) a, (double Lon, double Lat) b)
+        => (a.Lon - b.Lon) * (a.Lon - b.Lon) + (a.Lat - b.Lat) * (a.Lat - b.Lat);
 
     /// <summary>
     /// Returns a simplified GeoJSON geometry string with coordinates rounded to
     /// <paramref name="precision"/> decimal places and consecutive duplicate points removed.
+    /// Used for alert-owned geometry (Priority 1); zone overlays use convex hull instead.
     /// </summary>
     private static string? SimplifyGeometry(string geometryJson, int precision)
     {
@@ -340,11 +397,6 @@ public class MapService
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Rounds each coordinate to <paramref name="precision"/> decimal places and drops
-    /// consecutive duplicate points. Skips rings that collapse to fewer than 4 points
-    /// (the GeoJSON minimum for a closed ring).
-    /// </summary>
     private static List<List<(double Lon, double Lat)>> SimplifyRings(JsonElement rings, int precision)
     {
         var result = new List<List<(double Lon, double Lat)>>();
@@ -360,7 +412,6 @@ public class MapService
                 pts.Add((lon, lat));
                 prev = (lon, lat);
             }
-            // Ensure ring is closed (GeoJSON requires first == last)
             if (pts.Count >= 2 && (pts[0].Lon != pts[^1].Lon || pts[0].Lat != pts[^1].Lat))
                 pts.Add(pts[0]);
             if (pts.Count >= 4)
