@@ -70,12 +70,13 @@ public class MapService
             alert.VtecSignificance != null && alert.VtecEtn != null &&
             alert.VtecAction is not ("CAN" or "EXP"))
         {
-            if (await IsIemVtecEventAvailableAsync(alert))
+            var iemPhenom = await ResolveIemPhenomenaAsync(alert);
+            if (iemPhenom != null)
             {
                 _logger.LogInformation(
-                    "Map: Using IEM autoplot for {Action}.{Wfo}.{Phenom}.{Sig} #{Etn}.",
-                    alert.VtecAction, alert.VtecWfo, alert.VtecPhenomena, alert.VtecSignificance, alert.VtecEtn);
-                return BuildIemUrl(alert);
+                    "Map: Using IEM autoplot for {Action}.{Wfo}.{Phenom}.{Sig} #{Etn} (IEM code: {IemPhenom}).",
+                    alert.VtecAction, alert.VtecWfo, alert.VtecPhenomena, alert.VtecSignificance, alert.VtecEtn, iemPhenom);
+                return BuildIemUrl(alert, iemPhenom);
             }
 
             _logger.LogWarning(
@@ -88,33 +89,58 @@ public class MapService
         return await GetMapboxUrlAsync(alert);
     }
 
-    /// <summary>
-    /// Queries IEM's VTEC JSON API to confirm the event is in their database before
-    /// requesting the autoplot PNG. IEM returns HTTP 200 with a demo image for unknown
-    /// events, so the pre-flight check prevents posting wrong maps.
-    /// </summary>
-    private async Task<bool> IsIemVtecEventAvailableAsync(NwsAlert alert)
-    {
-        try
+    // IEM sometimes uses a different phenomena code than NWS does in the VTEC string.
+    // For example, NWS issues "HT.W" (Heat Warning) but IEM stores it as "XH" (Extreme Heat).
+    // This table maps (NwsCode, Significance) → IEM alternative to try when the NWS code isn't found.
+    private static readonly IReadOnlyDictionary<(string, string), string> IemPhenomenaAliases =
+        new Dictionary<(string, string), string>
         {
-            // IEM's VTEC API uses the 4-letter WFO format (e.g. KMPX, not MPX)
-            var wfo4 = alert.VtecWfo!.Length == 3 ? "K" + alert.VtecWfo : alert.VtecWfo;
-            var url  = "https://mesonet.agron.iastate.edu/json/vtec_event.py" +
-                       $"?year={alert.Sent.Year}&wfo={wfo4}" +
-                       $"&phenomena={alert.VtecPhenomena}&significance={alert.VtecSignificance}" +
-                       $"&etn={alert.VtecEtn}";
+            { ("HT", "W"), "XH" }, // Heat Warning → Extreme Heat Warning in IEM
+            { ("XH", "W"), "HT" }, // reverse: if XH.W not found, try HT.W
+            { ("EH", "W"), "XH" }, // Excessive Heat Warning → try XH as well
+        };
 
-            var http = _httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(10);
-            var json = await http.GetStringAsync(url);
-            using var doc = JsonDocument.Parse(json);
-            return !doc.RootElement.TryGetProperty("error", out _);
-        }
-        catch (Exception ex)
+    /// <summary>
+    /// Queries IEM's VTEC JSON API to find the phenomena code IEM uses for this event.
+    /// Returns the IEM phenomena code if found, null if the event is not in IEM's database.
+    /// IEM returns HTTP 200 with a demo image for unknown events, so this pre-flight check
+    /// prevents posting the wrong map. IEM may use a different code than the NWS VTEC string
+    /// (e.g. NWS "HT.W" is stored as "XH.W" in IEM), so known aliases are tried as fallbacks.
+    /// </summary>
+    private async Task<string?> ResolveIemPhenomenaAsync(NwsAlert alert)
+    {
+        var http = _httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(10);
+
+        // IEM's VTEC API uses the 4-letter WFO format (e.g. KMPX, not MPX)
+        var wfo4 = alert.VtecWfo!.Length == 3 ? "K" + alert.VtecWfo : alert.VtecWfo;
+
+        // Try the NWS code first, then any known IEM aliases
+        var candidates = new List<string> { alert.VtecPhenomena! };
+        if (IemPhenomenaAliases.TryGetValue((alert.VtecPhenomena!, alert.VtecSignificance!), out var alias))
+            candidates.Add(alias);
+
+        foreach (var phenom in candidates)
         {
-            _logger.LogWarning("Map: IEM VTEC check failed ({Error}); skipping IEM.", ex.Message);
-            return false;
+            try
+            {
+                var url = "https://mesonet.agron.iastate.edu/json/vtec_event.py" +
+                          $"?year={alert.Sent.Year}&wfo={wfo4}" +
+                          $"&phenomena={phenom}&significance={alert.VtecSignificance}" +
+                          $"&etn={alert.VtecEtn}";
+
+                var json = await http.GetStringAsync(url);
+                using var doc = JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("error", out _))
+                    return phenom; // found under this code
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Map: IEM VTEC check failed for {Phenom} ({Error}).", phenom, ex.Message);
+            }
         }
+
+        return null; // not found under any known code
     }
 
     /// <summary>
@@ -337,10 +363,10 @@ public class MapService
         return $"{baseUrl}{bboxStr}/{dimensions}{suffix}";
     }
 
-    private static string BuildIemUrl(NwsAlert alert) =>
+    private static string BuildIemUrl(NwsAlert alert, string iemPhenomena) =>
         $"https://mesonet.agron.iastate.edu/plotting/auto/plot/208/" +
-        $"wfo={alert.VtecWfo}::year={alert.Sent.Year}::" +
-        $"phenomenav={alert.VtecPhenomena}::significancev={alert.VtecSignificance}::" +
+        $"network=WFO::wfo={alert.VtecWfo}::year={alert.Sent.Year}::" +
+        $"phenomena={iemPhenomena}::significance={alert.VtecSignificance}::" +
         $"etn={alert.VtecEtn}::opt=single::nexrad=auto.png?_={alert.Sent.ToUnixTimeSeconds()}";
 
     private static string BuildFeatureJson(string geometryJson) =>
