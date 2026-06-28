@@ -178,31 +178,41 @@ public class SocialMediaOrchestrator
     {
         if (string.IsNullOrEmpty(alert.MapImageUrl)) return;
 
-        // IEM may take a few seconds to render the image for a brand-new event.
-        // Retry up to 3 times with 5-second gaps before giving up.
-        const int maxAttempts = 4;
-        const int retryDelaySeconds = 5;
+        // IEM may take a few seconds to render a brand-new event image — retry with delays.
+        if (await TryDownloadAsync(alert.MapImageUrl, maxAttempts: 4, retryDelay: 5, alert, ct))
+            return;
 
+        // Primary URL failed — fall back to a Mapbox static image if configured.
+        var mapboxUrl = await _map.GetMapboxFallbackUrlAsync(alert);
+        if (mapboxUrl != null)
+        {
+            _logger.LogInformation("Map: Primary image failed; trying Mapbox fallback for {Event}.", alert.Event);
+            if (await TryDownloadAsync(mapboxUrl, maxAttempts: 1, retryDelay: 0, alert, ct))
+                return;
+        }
+
+        _logger.LogWarning("Map: Image unavailable for {Event}; platforms will post without image.", alert.Event);
+    }
+
+    private async Task<bool> TryDownloadAsync(string url, int maxAttempts, int retryDelay, NwsAlert alert, CancellationToken ct)
+    {
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
             {
-                alert.MapImageBytes = await _httpClientFactory.CreateClient().GetByteArrayAsync(alert.MapImageUrl, ct);
-                return;
+                alert.MapImageBytes = await _httpClientFactory.CreateClient().GetByteArrayAsync(url, ct);
+                return true;
             }
             catch (Exception ex) when (attempt < maxAttempts)
             {
                 _logger.LogInformation(
-                    "Map image download attempt {Attempt}/{Max} failed for {Event} ({Error}); retrying in {Delay}s.",
-                    attempt, maxAttempts, alert.Event, ex.Message, retryDelaySeconds);
-                await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds), ct);
+                    "Map: Download attempt {Attempt}/{Max} failed ({Error}); retrying in {Delay}s.",
+                    attempt, maxAttempts, ex.Message, retryDelay);
+                await Task.Delay(TimeSpan.FromSeconds(retryDelay), ct);
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Map image download failed for {Event} after {Max} attempt(s); platforms will post without image.",
-                    alert.Event, maxAttempts);
-            }
+            catch { }
         }
+        return false;
     }
 
     private static bool PassesFilter(string? value, string? allowList)

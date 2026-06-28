@@ -66,11 +66,27 @@ public class MapService
         }
 
         // Fallback: Mapbox static image (used for non-VTEC events or CAN/EXP messages)
+        return await GetMapboxUrlAsync(alert);
+    }
+
+    /// <summary>
+    /// Returns a Mapbox static map URL for the alert, bypassing the IEM check.
+    /// Called when the IEM image download fails after all retries.
+    /// Returns null if Mapbox is not configured or no bounding box is available.
+    /// </summary>
+    public Task<string?> GetMapboxFallbackUrlAsync(NwsAlert alert)
+    {
+        if (string.IsNullOrEmpty(_settings.AccessToken)) return Task.FromResult<string?>(null);
+        return GetMapboxUrlAsync(alert);
+    }
+
+    private async Task<string?> GetMapboxUrlAsync(NwsAlert alert)
+    {
         if (string.IsNullOrEmpty(_settings.AccessToken)) return null;
 
         double[]? bbox    = null;
-        string?   overlay = null; // dissolved/combined geometry for primary overlay attempt
-        string?   hull    = null; // convex hull — last-resort inline fallback
+        string?   overlay = null;
+        string?   hull    = null;
 
         // Priority 1: alert's own GeoJSON geometry
         if (!string.IsNullOrEmpty(alert.GeometryJson))
@@ -82,10 +98,8 @@ public class MapService
         }
 
         // Priority 2: zone/county geometries.
-        // Try the full alert UGC codes first (entire warning area). If those don't fit in the
-        // Mapbox URL limit, fall back to only the configured monitoring codes so at least the
-        // user's area is shown. If the intersection is empty (zone/county code format mismatch),
-        // use all configured codes instead.
+        // Try the full alert UGC codes first (entire warning area). Falls back to configured
+        // monitoring codes if the full set returns no geometry.
         if (bbox == null && alert.GeocodeUgc.Count > 0)
         {
             _logger.LogInformation("Map: No alert geometry; fetching geometry for all {Total} UGC code(s).",
@@ -100,7 +114,6 @@ public class MapService
             }
             else
             {
-                // Full alert area returned no geometry — fall back to configured monitoring codes
                 var configured = new HashSet<string>(
                     _nwsSettings.Zones.Concat(_nwsSettings.Counties), StringComparer.OrdinalIgnoreCase);
                 var fallbackCodes = alert.GeocodeUgc.Where(c => configured.Contains(c)).ToList();
