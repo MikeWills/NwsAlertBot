@@ -131,8 +131,11 @@ public class MapService
 
                 var json = await http.GetStringAsync(url);
                 using var doc = JsonDocument.Parse(json);
-                if (!doc.RootElement.TryGetProperty("error", out _))
-                    return phenom; // found under this code
+                // IEM returns event_exists:false (no error key) when not found —
+                // must check event_exists:true, not just absence of "error"
+                if (doc.RootElement.TryGetProperty("event_exists", out var exists) &&
+                    exists.ValueKind == JsonValueKind.True)
+                    return phenom; // confirmed in IEM's database
             }
             catch (Exception ex)
             {
