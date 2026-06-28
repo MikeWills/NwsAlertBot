@@ -54,7 +54,7 @@ public class MapService
             return null;
         }
 
-        return BuildMapboxUrl(bbox);
+        return BuildMapboxUrl(bbox, alert.GeometryJson);
     }
 
     private double[]? ExtractBbox(string geometryJson)
@@ -155,7 +155,7 @@ public class MapService
         return found ? new[] { minLon, minLat, maxLon, maxLat } : null;
     }
 
-    private string BuildMapboxUrl(double[] bbox)
+    private string BuildMapboxUrl(double[] bbox, string? geometryJson = null)
     {
         // Pad 10% (minimum 0.05°) so the area isn't cropped to its exact edge
         double lonPad = Math.Max((bbox[2] - bbox[0]) * 0.10, 0.05);
@@ -166,11 +166,28 @@ public class MapService
         double east  = bbox[2] + lonPad;
         double north = bbox[3] + latPad;
 
+        string bboxStr     = $"[{west:F4},{south:F4},{east:F4},{north:F4}]";
+        string dimensions  = $"{_settings.Width}x{_settings.Height}";
+        string baseUrl     = $"https://api.mapbox.com/styles/v1/{_settings.Style}/static/";
+        string suffix      = $"?access_token={_settings.AccessToken}";
+
+        // Overlay the alert polygon using Mapbox simplestyle GeoJSON.
+        // The Mapbox Static Images API has an 8192-byte URL limit; skip the overlay
+        // if the encoded GeoJSON would push the URL over that limit.
+        if (!string.IsNullOrEmpty(geometryJson))
+        {
+            string feature = $"{{\"type\":\"Feature\",\"properties\":{{" +
+                             $"\"fill\":\"#ff6600\",\"fill-opacity\":0.3," +
+                             $"\"stroke\":\"#cc4400\",\"stroke-width\":2,\"stroke-opacity\":0.9" +
+                             $"}},\"geometry\":{geometryJson}}}";
+            string encoded = Uri.EscapeDataString(feature);
+            string candidate = $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
+            if (candidate.Length <= 8000)
+                return candidate;
+        }
+
         // Mapbox Static Images API — bounding-box auto-fit
         // https://docs.mapbox.com/api/maps/static-images/
-        return $"https://api.mapbox.com/styles/v1/{_settings.Style}/static/" +
-               $"[{west:F4},{south:F4},{east:F4},{north:F4}]/" +
-               $"{_settings.Width}x{_settings.Height}" +
-               $"?access_token={_settings.AccessToken}";
+        return $"{baseUrl}{bboxStr}/{dimensions}{suffix}";
     }
 }

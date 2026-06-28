@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using NwsAlertBot.Config;
 using NwsAlertBot.Models;
@@ -105,9 +106,9 @@ public class NwsAlertService
             {
                 Id              = GetString(props, "id"),
                 Event           = GetString(props, "event"),
-                Headline        = GetString(props, "headline"),
-                Description     = GetString(props, "description"),
-                Instruction     = GetString(props, "instruction"),
+                Headline        = NormalizeNwsText(GetString(props, "headline")),
+                Description     = NormalizeNwsText(GetString(props, "description")),
+                Instruction     = NormalizeNwsText(GetString(props, "instruction")),
                 AreaDesc        = GetString(props, "areaDesc"),
                 Severity        = GetString(props, "severity"),
                 Urgency         = GetString(props, "urgency"),
@@ -194,6 +195,19 @@ public class NwsAlertService
         qs.Add($"event={Uri.EscapeDataString(_settings.AdditionalEventTypes)}");
 
         return "https://api.weather.gov/alerts/active?" + string.Join("&", qs);
+    }
+
+    /// <summary>
+    /// Collapses NWS teletype-style mid-sentence line wraps into spaces while
+    /// preserving intentional paragraph breaks (two or more consecutive newlines).
+    /// </summary>
+    private static string NormalizeNwsText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+        text = Regex.Replace(text, @"(?<!\n)\n(?!\n)", " ");
+        text = Regex.Replace(text, @"\n{3,}", "\n\n");
+        return text.Trim();
     }
 
     private static string GetString(JsonElement el, string key)
