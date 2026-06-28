@@ -274,9 +274,12 @@ public class SpcOutlookService
             _      => "Minor", // MRGL, TSTM
         };
 
-        static string FormatPct(double? p) => p.HasValue ? $"{p.Value * 100:0}%" : "None";
+        // SPC minimum thresholds: tornado polygons start at 2%, wind/hail at 5%.
+        // No polygon for a point means the probability is below that threshold, not zero.
+        static string FormatTornPct(double? p) => p.HasValue ? $"{p.Value * 100:0}%" : "< 2%";
+        static string FormatWindHailPct(double? p) => p.HasValue ? $"{p.Value * 100:0}%" : "< 5%";
 
-        string instruction = $"Tornado: {FormatPct(tornPct)}\nWind: {FormatPct(windPct)}\nHail: {FormatPct(hailPct)}" +
+        string instruction = $"Tornado: {FormatTornPct(tornPct)}\nWind: {FormatWindHailPct(windPct)}\nHail: {FormatWindHailPct(hailPct)}" +
                              $"\nFor more details: https://www.spc.noaa.gov/products/outlook/day{day}otlk.html";
         // Prefer ISSUE_ISO for the dedup ID; fall back to EXPIRE_ISO (stable for the outlook period).
         // Never use UtcNow — it changes every minute and would re-post the same outlook every poll cycle.

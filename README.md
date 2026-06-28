@@ -1070,6 +1070,8 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **SPC outlook: fix tornado/wind/hail display for areas below explicit probability thresholds** — SPC only draws tornado probability polygons starting at 2% and wind/hail polygons starting at 5%. For any area in a categorical risk but below those thresholds, the bot previously displayed "None". It now displays "< 2%" for tornado and "< 5%" for wind/hail, matching SPC's actual convention. (The tornado layer also includes a background feature with `LABEL = "Less Than 2% All Areas"` that the parser skipped; the fix handles this implicitly via the corrected null default.)
+
 - **Image handling: single download + direct upload for all platforms that support it** — previously each platform service that needed the map image fetched it independently (up to 7 simultaneous downloads of the same URL per alert). Now the orchestrator downloads the image once before dispatching and stores the bytes on `NwsAlert.MapImageBytes`; each service uses those bytes directly. Combined with the earlier switch from URL-embedding to direct upload for Discord, Discord DM, Telegram, and Facebook, all platforms that accept raw image bytes (X, Bluesky, Mastodon, Discord, Discord DM, Telegram, Facebook) now upload the bytes they already have. Instagram and Twilio remain URL-based — their APIs require a public URL and do not support direct byte upload.
 
 - **Security/correctness fixes (code review — second pass):**
