@@ -174,16 +174,34 @@ public class SocialMediaOrchestrator
             await Task.WhenAll(tasks);
     }
 
-    private async Task DownloadMapImageAsync(NwsAlert alert)
+    private async Task DownloadMapImageAsync(NwsAlert alert, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(alert.MapImageUrl)) return;
-        try
+
+        // IEM may take a few seconds to render the image for a brand-new event.
+        // Retry up to 3 times with 5-second gaps before giving up.
+        const int maxAttempts = 4;
+        const int retryDelaySeconds = 5;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            alert.MapImageBytes = await _httpClientFactory.CreateClient().GetByteArrayAsync(alert.MapImageUrl);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Map image download failed for {Event}; platforms will post without image.", alert.Event);
+            try
+            {
+                alert.MapImageBytes = await _httpClientFactory.CreateClient().GetByteArrayAsync(alert.MapImageUrl, ct);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                _logger.LogInformation(
+                    "Map image download attempt {Attempt}/{Max} failed for {Event} ({Error}); retrying in {Delay}s.",
+                    attempt, maxAttempts, alert.Event, ex.Message, retryDelaySeconds);
+                await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds), ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Map image download failed for {Event} after {Max} attempt(s); platforms will post without image.",
+                    alert.Event, maxAttempts);
+            }
         }
     }
 
