@@ -92,6 +92,7 @@ public class SocialMediaOrchestrator
 
             alert.MapImageUrl = await _map.GetMapUrlAsync(alert);
             await DownloadMapImageAsync(alert);
+            await _map.CleanupAsync(alert.Id);
 
             await PostToAllPlatformsAsync(alert);
             _tracker.MarkPosted(alert.Id);

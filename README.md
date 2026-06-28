@@ -742,13 +742,19 @@ supports images. SPC Convective Outlook posts get their own image independently 
 platform behavior table below applies to both.
 
 The map area and polygon overlay are determined by:
-1. The **alert's own GeoJSON geometry polygon** (included in most NWS alerts) — drawn as a
-   semi-transparent orange fill with a dark outline so the affected area is clearly visible.
-   Coordinates are rounded to 2-decimal-place precision (~1 km) before URL-encoding so even
-   large multi-county polygons fit within Mapbox's URL limit.
-2. **Fallback:** the union bounding box of your configured zones/counties, fetched once from the
-   NWS zone API on first use and cached for the life of the process. No polygon overlay is drawn
-   in this case — only the map extent is set.
+1. The **alert's own GeoJSON geometry polygon** (most NWS alerts include one) — drawn as a
+   semi-transparent blue fill with a dark outline.
+2. **UGC zone/county geometries** — when an alert returns no polygon (common for large statewide
+   alerts), the bot fetches geometry for each UGC zone/county code from the NWS zone API, limited
+   to codes that overlap your configured monitoring area. Two overlay modes are supported:
+   - **GitHub Gist mode** (when `GitHubToken` is set): the combined MultiPolygon is uploaded to a
+     temporary private Gist and passed to Mapbox via URL, bypassing the 8000-character URL limit.
+     This draws exact county/zone shapes. The Gist is deleted as soon as the map image is downloaded.
+   - **Inline convex hull mode** (no `GitHubToken`): the convex hull of all zone vertices is
+     computed and encoded directly in the Mapbox URL. This is a single compact polygon that
+     approximates the alert area without any external dependency.
+3. **Bounding box only** — if no geometry is available, the map extent is set from your configured
+   zones/counties with no overlay drawn.
 
 ### Setup
 
@@ -774,6 +780,7 @@ The map area and polygon overlay are determined by:
 | `Style` | Mapbox style ID, format `{username}/{style_id}` | `"mapbox/outdoors-v12"` |
 | `Width` | Image width in pixels (max 1280) | `600` |
 | `Height` | Image height in pixels (max 1280) | `400` |
+| `GitHubToken` | GitHub Personal Access Token with `gist` scope. When set, zone/county overlays are uploaded to a temporary private Gist so exact county shapes are drawn (not a convex hull). Leave empty to use the convex hull inline mode. | `""` |
 
 **Available built-in styles:** `mapbox/outdoors-v12`, `mapbox/streets-v12`, `mapbox/light-v11`,
 `mapbox/dark-v11`, `mapbox/satellite-streets-v12`
@@ -1075,11 +1082,17 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Map: GitHub Gist overlay** — added an optional `Map.GitHubToken` setting. When configured with
+  a GitHub PAT (gist scope), zone/county geometries for large-area alerts (e.g. statewide heat
+  warnings with 40+ UGC codes) are uploaded to a temporary private Gist so Mapbox receives a URL
+  instead of inline GeoJSON, bypassing the 8000-character URL limit and enabling exact county
+  shapes. The Gist is deleted immediately after the map image downloads. Without the token, the
+  bot falls back to a convex hull approximation encoded directly in the URL. Overlay color changed
+  to blue (`#0066CC`) for color-blind accessibility.
+
 - **Map: alert polygon overlay** — the Mapbox static map now draws the affected alert area as a
-  semi-transparent orange polygon with a dark stroke. Coordinates are rounded to 2-decimal-place
-  precision (~1 km) and consecutive duplicate points removed before URL-encoding, so even large
-  multi-county polygons fit within Mapbox's 8192-byte URL limit. Falls back to the plain
-  bounding-box map only when no geometry is available.
+  semi-transparent blue polygon with a dark outline. For large-area alerts with no inline polygon,
+  the bot fetches zone/county geometry from the NWS API and combines it into an overlay.
 
 - **NWS text: teletype line-wrap normalization** — NWS alert text (headline, description,
   instruction) uses hard line breaks at ~70 characters inherited from legacy teletype formatting.

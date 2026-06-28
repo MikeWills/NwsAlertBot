@@ -421,6 +421,16 @@ public class MapSettings
 
     /// <summary>Map image height in pixels. Maximum 1280.</summary>
     public int Height { get; set; } = 400;
+
+    /// <summary>
+    /// Optional GitHub Personal Access Token with the "gist" scope. When set, the bot uploads
+    /// the alert area polygon to a temporary private Gist and passes the raw URL to Mapbox
+    /// instead of inlining the GeoJSON. This bypasses the Mapbox Static Images 8000-character
+    /// URL limit, enabling exact county/zone shapes to be drawn rather than a convex hull.
+    /// The Gist is deleted immediately after the map image is downloaded.
+    /// Leave empty to fall back to the inline convex-hull overlay.
+    /// </summary>
+    public string GitHubToken { get; set; } = "";
 }
 
 public class SpcSettings
