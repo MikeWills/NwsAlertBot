@@ -47,40 +47,44 @@ public class NwsAlertService
 
     public async Task<List<NwsAlert>> GetActiveAlertsAsync()
     {
+        var alerts = new List<NwsAlert>();
+
         try
         {
-            var alerts = await FetchAlertsAsync(BuildUrl());
-
-            if (!string.IsNullOrWhiteSpace(_settings.AdditionalEventTypes))
-            {
-                try
-                {
-                    var additional = await FetchAlertsAsync(BuildAdditionalUrl());
-                    var seen = new HashSet<string>(alerts.Select(a => a.Id), StringComparer.Ordinal);
-                    foreach (var a in additional)
-                        if (seen.Add(a.Id)) alerts.Add(a);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "NWS: Failed to fetch AdditionalEventTypes alerts.");
-                }
-            }
-
-            _logger.LogInformation("NWS returned {Count} qualifying active alerts.", alerts.Count);
-            return alerts;
+            alerts = await FetchAlertsAsync(BuildUrl());
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch NWS alerts.");
-            return new List<NwsAlert>();
         }
+
+        if (!string.IsNullOrWhiteSpace(_settings.AdditionalEventTypes))
+        {
+            try
+            {
+                var additional = await FetchAlertsAsync(BuildAdditionalUrl());
+                var seen = new HashSet<string>(alerts.Select(a => a.Id), StringComparer.Ordinal);
+                foreach (var a in additional)
+                    if (seen.Add(a.Id)) alerts.Add(a);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "NWS: Failed to fetch AdditionalEventTypes alerts.");
+            }
+        }
+
+        _logger.LogInformation("NWS returned {Count} qualifying active alerts.", alerts.Count);
+        return alerts;
     }
 
     private async Task<List<NwsAlert>> FetchAlertsAsync(string url)
     {
-        _logger.LogDebug("NWS request URL: {Url}", url);
         var response = await _http.GetAsync(url);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("NWS request failed. Status={Status} URL={Url}", response.StatusCode, url);
+            response.EnsureSuccessStatusCode();
+        }
         var json = await response.Content.ReadAsStringAsync();
         return ParseAlerts(JsonDocument.Parse(json));
     }
@@ -137,14 +141,16 @@ public class NwsAlertService
     }
 
     /// <summary>
-    /// Appends the geographic filter (zones, counties, or state) to the query string.
+    /// Appends the geographic filter to the query string.
+    /// Zones and counties are combined — both use the NWS "zone" parameter and the API
+    /// accepts a mixed list of UGC zone codes (MNZxxx) and county codes (MNCxxx).
     /// </summary>
     private void AddGeoFilter(List<string> qs)
     {
-        if (_settings.Zones.Count > 0)
-            qs.Add($"zone={string.Join(",", _settings.Zones)}");
-        else if (_settings.Counties.Count > 0)
-            qs.Add($"zone={string.Join(",", _settings.Counties)}");
+        var ugcCodes = _settings.Zones.Concat(_settings.Counties).ToList();
+
+        if (ugcCodes.Count > 0)
+            qs.Add($"zone={string.Join(",", ugcCodes)}");
         else if (!string.IsNullOrWhiteSpace(_settings.State))
             qs.Add($"area={_settings.State.ToUpper()}");
         else
