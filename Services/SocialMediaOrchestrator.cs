@@ -113,7 +113,6 @@ public class SocialMediaOrchestrator
         if (_spc.IsEnabled)
             await CheckSpcOutlooksAsync(ct);
 
-        _tracker.PruneOldEntries();
         return stormCount;
     }
 
