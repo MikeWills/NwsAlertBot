@@ -65,27 +65,43 @@ public class MapService
                 _logger.LogInformation("Map: Using alert geometry polygon for {Id}.", alert.Id);
         }
 
-        // Priority 2: zone/county geometries limited to configured monitoring codes.
-        // Large alerts list 40+ zones; we intersect with our configured codes for a focused overlay.
-        // If intersection is empty (zone/county code format mismatch), use all configured codes.
+        // Priority 2: zone/county geometries.
+        // Try the full alert UGC codes first (entire warning area). If those don't fit in the
+        // Mapbox URL limit, fall back to only the configured monitoring codes so at least the
+        // user's area is shown. If the intersection is empty (zone/county code format mismatch),
+        // use all configured codes instead.
         if (bbox == null && alert.GeocodeUgc.Count > 0)
         {
-            var configured = new HashSet<string>(
-                _nwsSettings.Zones.Concat(_nwsSettings.Counties), StringComparer.OrdinalIgnoreCase);
-            var relevant   = alert.GeocodeUgc.Where(c => configured.Contains(c)).ToList();
-            var codesToUse = relevant.Count > 0
-                ? relevant
-                : _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
+            _logger.LogInformation("Map: No alert geometry; fetching geometry for all {Total} UGC code(s).",
+                alert.GeocodeUgc.Count);
 
-            _logger.LogInformation("Map: No alert geometry; fetching geometry for {Use} of {Total} UGC code(s).",
-                codesToUse.Count, alert.GeocodeUgc.Count);
-
-            (bbox, overlay, hull) = await GetBboxAndOverlayAsync(codesToUse);
+            (bbox, overlay, hull) = await GetBboxAndOverlayAsync(alert.GeocodeUgc);
 
             if (bbox != null)
-                _logger.LogInformation("Map: Built overlay geometry from {Count} code(s) for {Id}.", codesToUse.Count, alert.Id);
+            {
+                _logger.LogInformation("Map: Built overlay geometry from all {Count} UGC code(s) for {Id}.",
+                    alert.GeocodeUgc.Count, alert.Id);
+            }
             else
-                _logger.LogWarning("Map: UGC code geometry fetch returned nothing for {Id}.", alert.Id);
+            {
+                // Full alert area returned no geometry — fall back to configured monitoring codes
+                var configured = new HashSet<string>(
+                    _nwsSettings.Zones.Concat(_nwsSettings.Counties), StringComparer.OrdinalIgnoreCase);
+                var fallbackCodes = alert.GeocodeUgc.Where(c => configured.Contains(c)).ToList();
+                if (fallbackCodes.Count == 0)
+                    fallbackCodes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
+
+                _logger.LogWarning("Map: Full UGC geometry fetch returned nothing; retrying with {Count} configured code(s).",
+                    fallbackCodes.Count);
+
+                (bbox, overlay, hull) = await GetBboxAndOverlayAsync(fallbackCodes);
+
+                if (bbox != null)
+                    _logger.LogInformation("Map: Built fallback overlay from {Count} configured code(s) for {Id}.",
+                        fallbackCodes.Count, alert.Id);
+                else
+                    _logger.LogWarning("Map: UGC code geometry fetch returned nothing for {Id}.", alert.Id);
+            }
         }
 
         // Priority 3: configured zones/counties bbox only — no overlay drawn
@@ -139,12 +155,12 @@ public class MapService
 
         double[] bbox = new[] { minLon, minLat, maxLon, maxLat };
 
-        // Try dissolving shared county borders first; fall back to individual county MultiPolygon.
+        // Try dissolving shared borders first; fall back to individual county MultiPolygon.
         string? dissolved = DissolveGeometries(geoStrings);
-        if (dissolved != null)
-            _logger.LogInformation("Map: Dissolved {Count} county/zone geometries into outer perimeter.", geoStrings.Count);
-        else
-            _logger.LogInformation("Map: Dissolve returned null; using individual county polygons.");
+        _logger.LogInformation(dissolved != null
+            ? "Map: Dissolved {Count} geometries into outer perimeter."
+            : "Map: Dissolve failed; using individual county polygons.",
+            geoStrings.Count);
 
         string? overlay = dissolved ?? CombineGeometries(geoStrings);
         string? hull    = ConvexHullJson(allPoints);
