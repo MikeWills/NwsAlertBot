@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -11,28 +10,23 @@ namespace NwsAlertBot.Services;
 /// Generates Mapbox Static Images API URLs showing the affected area of each alert.
 ///
 /// Overlay geometry priority:
-///   1. Alert's own GeoJSON polygon (when NWS provides one)
-///   2. MultiPolygon of the alert's UGC zone/county geometries (limited to configured zones),
-///      uploaded to a temporary GitHub Gist when GitHubToken is set — this bypasses Mapbox's
-///      8000-char URL limit and draws exact county shapes. Falls back to a convex hull when no
-///      GitHub token is configured.
+///   1. Alert's own GeoJSON polygon (when NWS provides one).
+///   2. Dissolved outer perimeter of the alert's UGC zone/county geometries (limited to
+///      configured monitoring codes). Adjacent counties have their shared borders removed so
+///      only the outer edge of the combined area is drawn. Falls back to a MultiPolygon of
+///      individual county outlines if dissolve fails, then to a convex hull if still too large.
 ///
-/// Bounding box falls back to configured zones/counties if neither source has geometry.
+/// Bounding box falls back to configured zones/counties if no geometry is available.
 /// </summary>
 public class MapService
 {
     private readonly MapSettings _settings;
     private readonly NwsSettings _nwsSettings;
     private readonly NwsZoneService _zones;
-    private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<MapService> _logger;
 
     private double[]? _fallbackBbox;
     private readonly SemaphoreSlim _fallbackLock = new(1, 1);
-
-    // Tracks gist IDs that need deletion after the map image is downloaded.
-    // Keyed by alert ID so the orchestrator can call CleanupAsync after DownloadMapImageAsync.
-    private readonly ConcurrentDictionary<string, string> _pendingGistDeletions = new();
 
     // Overlay colors — blue palette chosen for color-blind accessibility
     private const string FillColor   = "#0066CC";
@@ -42,13 +36,11 @@ public class MapService
         MapSettings settings,
         NwsSettings nwsSettings,
         NwsZoneService zones,
-        IHttpClientFactory httpFactory,
         ILogger<MapService> logger)
     {
         _settings    = settings;
         _nwsSettings = nwsSettings;
         _zones       = zones;
-        _httpFactory = httpFactory;
         _logger      = logger;
     }
 
@@ -60,23 +52,22 @@ public class MapService
     {
         if (!_settings.Enabled || string.IsNullOrEmpty(_settings.AccessToken)) return null;
 
-        double[]? bbox      = null;
-        string? rawOverlay  = null; // full MultiPolygon — used for Gist upload
-        string? hullOverlay = null; // convex hull — used for inline fallback
+        double[]? bbox    = null;
+        string?   overlay = null; // dissolved/combined geometry for primary overlay attempt
+        string?   hull    = null; // convex hull — last-resort inline fallback
 
         // Priority 1: alert's own GeoJSON geometry
         if (!string.IsNullOrEmpty(alert.GeometryJson))
         {
-            bbox       = ExtractBbox(alert.GeometryJson);
-            rawOverlay = alert.GeometryJson;
+            bbox    = ExtractBbox(alert.GeometryJson);
+            overlay = alert.GeometryJson;
             if (bbox != null)
                 _logger.LogInformation("Map: Using alert geometry polygon for {Id}.", alert.Id);
         }
 
-        // Priority 2: zone/county geometries, limited to configured monitoring codes.
+        // Priority 2: zone/county geometries limited to configured monitoring codes.
         // Large alerts list 40+ zones; we intersect with our configured codes for a focused overlay.
-        // If the intersection is empty (zone/county code format mismatch), fall back to all
-        // configured codes — the alert covers them by definition since NWS returned it for our filter.
+        // If intersection is empty (zone/county code format mismatch), use all configured codes.
         if (bbox == null && alert.GeocodeUgc.Count > 0)
         {
             var configured = new HashSet<string>(
@@ -86,11 +77,10 @@ public class MapService
                 ? relevant
                 : _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
 
-            _logger.LogInformation(
-                "Map: No alert geometry; fetching geometry for {Use} of {Total} UGC code(s).",
+            _logger.LogInformation("Map: No alert geometry; fetching geometry for {Use} of {Total} UGC code(s).",
                 codesToUse.Count, alert.GeocodeUgc.Count);
 
-            (bbox, rawOverlay, hullOverlay) = await GetBboxAndOverlayAsync(codesToUse);
+            (bbox, overlay, hull) = await GetBboxAndOverlayAsync(codesToUse);
 
             if (bbox != null)
                 _logger.LogInformation("Map: Built overlay geometry from {Count} code(s) for {Id}.", codesToUse.Count, alert.Id);
@@ -98,12 +88,12 @@ public class MapService
                 _logger.LogWarning("Map: UGC code geometry fetch returned nothing for {Id}.", alert.Id);
         }
 
-        // Priority 3: configured zones/counties bbox only — no overlay
+        // Priority 3: configured zones/counties bbox only — no overlay drawn
         if (bbox == null)
         {
             bbox = await GetFallbackBboxAsync();
             if (bbox != null)
-                _logger.LogInformation("Map: No alert geometry found; using configured zone/county bbox for {Id}.", alert.Id);
+                _logger.LogInformation("Map: No alert geometry; using configured zone/county bbox for {Id}.", alert.Id);
         }
 
         if (bbox == null)
@@ -112,35 +102,14 @@ public class MapService
             return null;
         }
 
-        // Try Gist-based URL first (exact MultiPolygon, no URL size limit)
-        if (!string.IsNullOrEmpty(_settings.GitHubToken) && !string.IsNullOrEmpty(rawOverlay))
-        {
-            var gistUrl = await TryBuildGistMapboxUrlAsync(alert.Id, bbox, rawOverlay);
-            if (gistUrl != null) return gistUrl;
-        }
-
-        // Inline convex hull fallback (always fits in 8000 chars)
-        return BuildMapboxUrl(bbox, hullOverlay);
-    }
-
-    /// <summary>
-    /// Deletes the temporary Gist (if any) created for this alert.
-    /// Call this immediately after the map image has been downloaded.
-    /// </summary>
-    public async Task CleanupAsync(string alertId)
-    {
-        if (_pendingGistDeletions.TryRemove(alertId, out var gistId))
-        {
-            _logger.LogInformation("Map: Deleting temporary Gist {GistId}.", gistId);
-            await DeleteGistAsync(gistId);
-        }
+        return BuildMapboxUrl(bbox, overlay, hull);
     }
 
     // -------------------------------------------------------------------------
     // Bbox + overlay resolution
     // -------------------------------------------------------------------------
 
-    private async Task<(double[]? Bbox, string? RawGeometry, string? HullGeometry)> GetBboxAndOverlayAsync(IList<string> codes)
+    private async Task<(double[]? Bbox, string? Overlay, string? Hull)> GetBboxAndOverlayAsync(IList<string> codes)
     {
         double minLon = double.MaxValue, minLat = double.MaxValue;
         double maxLon = double.MinValue, maxLat = double.MinValue;
@@ -168,10 +137,19 @@ public class MapService
 
         if (!found) return (null, null, null);
 
-        double[] bbox      = new[] { minLon, minLat, maxLon, maxLat };
-        string? raw2       = CombineGeometries(geoStrings);
-        string? hull       = ConvexHullJson(allPoints);
-        return (bbox, raw2, hull);
+        double[] bbox = new[] { minLon, minLat, maxLon, maxLat };
+
+        // Try dissolving shared county borders first; fall back to individual county MultiPolygon.
+        string? dissolved = DissolveGeometries(geoStrings);
+        if (dissolved != null)
+            _logger.LogInformation("Map: Dissolved {Count} county/zone geometries into outer perimeter.", geoStrings.Count);
+        else
+            _logger.LogInformation("Map: Dissolve returned null; using individual county polygons.");
+
+        string? overlay = dissolved ?? CombineGeometries(geoStrings);
+        string? hull    = ConvexHullJson(allPoints);
+
+        return (bbox, overlay, hull);
     }
 
     private async Task<double[]?> GetFallbackBboxAsync()
@@ -203,32 +181,7 @@ public class MapService
     // URL building
     // -------------------------------------------------------------------------
 
-    private async Task<string?> TryBuildGistMapboxUrlAsync(string alertId, double[] bbox, string geometryJson)
-    {
-        string feature = BuildFeatureJson(geometryJson);
-        var (gistId, rawUrl) = await CreateGistAsync(feature);
-        if (gistId == null || rawUrl == null) return null;
-
-        _pendingGistDeletions[alertId] = gistId;
-        _logger.LogInformation("Map: Using Gist {GistId} overlay for {AlertId}.", gistId, alertId);
-
-        double lonPad = Math.Max((bbox[2] - bbox[0]) * 0.10, 0.05);
-        double latPad = Math.Max((bbox[3] - bbox[1]) * 0.10, 0.05);
-        double west   = bbox[0] - lonPad;
-        double south  = bbox[1] - latPad;
-        double east   = bbox[2] + lonPad;
-        double north  = bbox[3] + latPad;
-
-        string bboxStr    = $"[{west:F4},{south:F4},{east:F4},{north:F4}]";
-        string dimensions = $"{_settings.Width}x{_settings.Height}";
-        string baseUrl    = $"https://api.mapbox.com/styles/v1/{_settings.Style}/static/";
-        string suffix     = $"?access_token={_settings.AccessToken}";
-        string encoded    = Uri.EscapeDataString(rawUrl);
-
-        return $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
-    }
-
-    private string BuildMapboxUrl(double[] bbox, string? geometryJson = null)
+    private string BuildMapboxUrl(double[] bbox, string? geometryJson = null, string? hullJson = null)
     {
         double lonPad = Math.Max((bbox[2] - bbox[0]) * 0.10, 0.05);
         double latPad = Math.Max((bbox[3] - bbox[1]) * 0.10, 0.05);
@@ -242,6 +195,7 @@ public class MapService
         string baseUrl    = $"https://api.mapbox.com/styles/v1/{_settings.Style}/static/";
         string suffix     = $"?access_token={_settings.AccessToken}";
 
+        // Try primary overlay geometry (dissolved or combined) at reducing precision
         if (!string.IsNullOrEmpty(geometryJson))
         {
             foreach (int precision in new[] { 2, 1 })
@@ -255,11 +209,33 @@ public class MapService
 
                 if (candidate.Length <= 8000)
                 {
-                    _logger.LogInformation("Map: Inline convex hull overlay at precision={Precision}, length={Length}.", precision, candidate.Length);
+                    _logger.LogInformation("Map: Overlay URL built at precision={Precision}, length={Length}.", precision, candidate.Length);
                     return candidate;
                 }
 
-                _logger.LogInformation("Map: Inline overlay at precision={Precision} is {Length} chars; retrying.", precision, candidate.Length);
+                _logger.LogInformation("Map: Overlay at precision={Precision} is {Length} chars; retrying.", precision, candidate.Length);
+            }
+
+            _logger.LogWarning("Map: Overlay geometry too large even at precision=1; trying convex hull.");
+        }
+
+        // Convex hull fallback — always compact, but loses concave county shapes
+        if (!string.IsNullOrEmpty(hullJson))
+        {
+            foreach (int precision in new[] { 2, 1 })
+            {
+                string? simplified = SimplifyGeometry(hullJson, precision);
+                if (simplified == null) break;
+
+                string feature   = BuildFeatureJson(simplified);
+                string encoded   = Uri.EscapeDataString(feature);
+                string candidate = $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
+
+                if (candidate.Length <= 8000)
+                {
+                    _logger.LogInformation("Map: Convex hull overlay URL built at precision={Precision}, length={Length}.", precision, candidate.Length);
+                    return candidate;
+                }
             }
 
             _logger.LogWarning("Map: Convex hull too large even at precision=1; posting without polygon.");
@@ -275,72 +251,182 @@ public class MapService
         $"}},\"geometry\":{geometryJson}}}";
 
     // -------------------------------------------------------------------------
-    // GitHub Gist
+    // Dissolve: remove shared county borders, return outer perimeter only
     // -------------------------------------------------------------------------
 
-    private async Task<(string? GistId, string? RawUrl)> CreateGistAsync(string featureJson)
+    /// <summary>
+    /// Combines county/zone polygons by dissolving shared borders.
+    /// Uses edge-counting: edges that appear in exactly one polygon are outer boundary edges;
+    /// edges that appear twice are shared borders between adjacent counties and are removed.
+    /// Returns a Polygon or MultiPolygon, or null if the topology reconstruction fails
+    /// (e.g. when NWS zone data for adjacent counties doesn't have matching shared-border coordinates).
+    /// </summary>
+    private static string? DissolveGeometries(List<string> geometries)
     {
-        try
+        if (geometries.Count == 0) return null;
+
+        // Use precision=3 (~111m) for edge matching. This normalizes small floating-point
+        // differences between adjacent county boundary definitions in the NWS zone API.
+        const int matchPrecision = 3;
+
+        // Count how many times each undirected edge appears across all exterior rings.
+        // Canonical form: smaller endpoint first, so (A→B) and (B→A) share the same key.
+        var edgeCount = new Dictionary<((double, double), (double, double)), int>();
+        var edgeDirs  = new Dictionary<((double, double), (double, double)), ((double, double) From, (double, double) To)>();
+
+        foreach (var geo in geometries)
         {
-            var payload = $"{{\"public\":false,\"description\":\"NWS Alert Bot overlay (temporary)\"," +
-                          $"\"files\":{{\"overlay.geojson\":{{\"content\":{JsonSerializer.Serialize(featureJson)}}}}}}}";
-
-            using var client  = _httpFactory.CreateClient();
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.github.com/gists")
+            foreach (var ring in ExtractExteriorRings(geo, matchPrecision))
             {
-                Content = new StringContent(payload, Encoding.UTF8, "application/json")
-            };
-            request.Headers.Add("Authorization", $"token {_settings.GitHubToken}");
-            request.Headers.Add("User-Agent", "NwsAlertBot");
-            request.Headers.Add("Accept", "application/vnd.github.v3+json");
+                for (int i = 0; i < ring.Count - 1; i++)
+                {
+                    var a = (ring[i].Lon, ring[i].Lat);
+                    var b = (ring[i + 1].Lon, ring[i + 1].Lat);
+                    var key = CanonicalEdge(a, b);
 
-            var resp = await client.SendAsync(request);
-            if (!resp.IsSuccessStatusCode)
+                    if (!edgeCount.TryGetValue(key, out int c))
+                    {
+                        edgeCount[key] = 1;
+                        edgeDirs[key]  = (a, b);
+                    }
+                    else
+                    {
+                        edgeCount[key] = c + 1;
+                    }
+                }
+            }
+        }
+
+        // Build directed adjacency from outer edges only (count == 1).
+        // Each outer boundary point should have exactly one outgoing edge.
+        var adj = new Dictionary<(double, double), (double, double)>();
+        foreach (var (key, count) in edgeCount)
+        {
+            if (count != 1) continue;
+            var (from, to) = edgeDirs[key];
+            if (adj.ContainsKey(from))
+                return null; // topology error — multiple outgoing edges from same point
+            adj[from] = to;
+        }
+
+        if (adj.Count == 0) return null;
+
+        // Walk the adjacency chains to reconstruct closed rings.
+        var rings   = new List<List<(double Lon, double Lat)>>();
+        var visited = new HashSet<(double, double)>();
+
+        foreach (var startKey in adj.Keys.ToList())
+        {
+            if (visited.Contains(startKey)) continue;
+
+            var ring    = new List<(double Lon, double Lat)> { (startKey.Item1, startKey.Item2) };
+            var current = startKey;
+            visited.Add(current);
+
+            while (true)
             {
-                _logger.LogWarning("Map: GitHub Gist creation failed. Status={Status}", resp.StatusCode);
-                return (null, null);
+                if (!adj.TryGetValue(current, out var next))
+                    return null; // dead end — shared borders didn't cancel cleanly
+
+                if (next == startKey)
+                {
+                    ring.Add((startKey.Item1, startKey.Item2)); // close the ring
+                    break;
+                }
+
+                if (visited.Contains(next))
+                    return null; // unexpected loop — broken topology
+
+                ring.Add((next.Item1, next.Item2));
+                visited.Add(next);
+                current = next;
             }
 
-            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-            var root = doc.RootElement;
-
-            string? gistId = root.GetProperty("id").GetString();
-            string? rawUrl = root.GetProperty("files")
-                                 .GetProperty("overlay.geojson")
-                                 .GetProperty("raw_url").GetString();
-
-            return (gistId, rawUrl);
+            if (ring.Count >= 4)
+                rings.Add(ring);
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Map: Exception creating GitHub Gist.");
-            return (null, null);
-        }
+
+        if (rings.Count == 0) return null;
+
+        if (rings.Count == 1)
+            return BuildPolygonJson(new List<List<(double Lon, double Lat)>> { rings[0] });
+
+        return BuildMultiPolygonJson(
+            rings.Select(r => new List<List<(double Lon, double Lat)>> { r }).ToList());
     }
 
-    private async Task DeleteGistAsync(string gistId)
+    /// <summary>
+    /// Returns the canonical (undirected) form of an edge: smaller endpoint first.
+    /// </summary>
+    private static ((double, double), (double, double)) CanonicalEdge((double, double) a, (double, double) b)
     {
+        int cmp = a.Item1.CompareTo(b.Item1);
+        if (cmp == 0) cmp = a.Item2.CompareTo(b.Item2);
+        return cmp <= 0 ? (a, b) : (b, a);
+    }
+
+    /// <summary>
+    /// Parses a GeoJSON geometry and returns only the exterior ring of each polygon,
+    /// with coordinates rounded to the given precision. Interior rings (holes) are dropped.
+    /// </summary>
+    private static List<List<(double Lon, double Lat)>> ExtractExteriorRings(string geometryJson, int precision)
+    {
+        var result = new List<List<(double Lon, double Lat)>>();
         try
         {
-            using var client  = _httpFactory.CreateClient();
-            using var request = new HttpRequestMessage(HttpMethod.Delete, $"https://api.github.com/gists/{gistId}");
-            request.Headers.Add("Authorization", $"token {_settings.GitHubToken}");
-            request.Headers.Add("User-Agent", "NwsAlertBot");
-            request.Headers.Add("Accept", "application/vnd.github.v3+json");
+            using var doc = JsonDocument.Parse(geometryJson);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var typeEl) ||
+                !root.TryGetProperty("coordinates", out var coords)) return result;
 
-            await client.SendAsync(request);
+            void AddExteriorRing(JsonElement polygon)
+            {
+                // First element of a polygon's coordinate array is the exterior ring
+                using var ringEnum = polygon.EnumerateArray();
+                if (!ringEnum.MoveNext()) return;
+                var exteriorRingEl = ringEnum.Current;
+
+                var pts = new List<(double Lon, double Lat)>();
+                (double Lon, double Lat) prev = (double.NaN, double.NaN);
+
+                foreach (var pt in exteriorRingEl.EnumerateArray())
+                {
+                    double lon = Math.Round(pt[0].GetDouble(), precision);
+                    double lat = Math.Round(pt[1].GetDouble(), precision);
+                    if (lon == prev.Lon && lat == prev.Lat) continue;
+                    pts.Add((lon, lat));
+                    prev = (lon, lat);
+                }
+
+                // Ensure ring is closed
+                if (pts.Count >= 2 && (pts[0].Lon != pts[^1].Lon || pts[0].Lat != pts[^1].Lat))
+                    pts.Add(pts[0]);
+
+                if (pts.Count >= 4)
+                    result.Add(pts);
+            }
+
+            switch (typeEl.GetString())
+            {
+                case "Polygon":
+                    AddExteriorRing(coords);
+                    break;
+                case "MultiPolygon":
+                    foreach (var polygon in coords.EnumerateArray())
+                        AddExteriorRing(polygon);
+                    break;
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Map: Exception deleting GitHub Gist {GistId}.", gistId);
-        }
+        catch { }
+
+        return result;
     }
 
     // -------------------------------------------------------------------------
     // Geometry helpers
     // -------------------------------------------------------------------------
 
-    private double[]? ExtractBbox(string geometryJson)
+    private static double[]? ExtractBbox(string geometryJson)
     {
         try
         {

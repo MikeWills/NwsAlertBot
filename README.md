@@ -746,13 +746,11 @@ The map area and polygon overlay are determined by:
    semi-transparent blue fill with a dark outline.
 2. **UGC zone/county geometries** — when an alert returns no polygon (common for large statewide
    alerts), the bot fetches geometry for each UGC zone/county code from the NWS zone API, limited
-   to codes that overlap your configured monitoring area. Two overlay modes are supported:
-   - **GitHub Gist mode** (when `GitHubToken` is set): the combined MultiPolygon is uploaded to a
-     temporary private Gist and passed to Mapbox via URL, bypassing the 8000-character URL limit.
-     This draws exact county/zone shapes. The Gist is deleted as soon as the map image is downloaded.
-   - **Inline convex hull mode** (no `GitHubToken`): the convex hull of all zone vertices is
-     computed and encoded directly in the Mapbox URL. This is a single compact polygon that
-     approximates the alert area without any external dependency.
+   to codes that overlap your configured monitoring area. Shared county borders are dissolved so
+   only the outer perimeter of the combined area is drawn — adjacent counties appear as a single
+   unified shape rather than individual polygons. Falls back to individual county polygons if the
+   dissolve step fails, then to a convex hull approximation if the geometry is still too large
+   to inline in the Mapbox URL.
 3. **Bounding box only** — if no geometry is available, the map extent is set from your configured
    zones/counties with no overlay drawn.
 
@@ -780,7 +778,6 @@ The map area and polygon overlay are determined by:
 | `Style` | Mapbox style ID, format `{username}/{style_id}` | `"mapbox/outdoors-v12"` |
 | `Width` | Image width in pixels (max 1280) | `600` |
 | `Height` | Image height in pixels (max 1280) | `400` |
-| `GitHubToken` | GitHub Personal Access Token with `gist` scope. When set, zone/county overlays are uploaded to a temporary private Gist so exact county shapes are drawn (not a convex hull). Leave empty to use the convex hull inline mode. | `""` |
 
 **Available built-in styles:** `mapbox/outdoors-v12`, `mapbox/streets-v12`, `mapbox/light-v11`,
 `mapbox/dark-v11`, `mapbox/satellite-streets-v12`
@@ -1082,17 +1079,13 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
-- **Map: GitHub Gist overlay** — added an optional `Map.GitHubToken` setting. When configured with
-  a GitHub PAT (gist scope), zone/county geometries for large-area alerts (e.g. statewide heat
-  warnings with 40+ UGC codes) are uploaded to a temporary private Gist so Mapbox receives a URL
-  instead of inline GeoJSON, bypassing the 8000-character URL limit and enabling exact county
-  shapes. The Gist is deleted immediately after the map image downloads. Without the token, the
-  bot falls back to a convex hull approximation encoded directly in the URL. Overlay color changed
-  to blue (`#0066CC`) for color-blind accessibility.
-
-- **Map: alert polygon overlay** — the Mapbox static map now draws the affected alert area as a
-  semi-transparent blue polygon with a dark outline. For large-area alerts with no inline polygon,
-  the bot fetches zone/county geometry from the NWS API and combines it into an overlay.
+- **Map: dissolved county perimeter overlay** — for alerts with no inline polygon (e.g. statewide
+  heat warnings), the bot fetches geometry for each relevant UGC zone/county from the NWS zone API
+  and dissolves shared borders using edge-counting, so only the outer perimeter of the combined
+  monitoring area is drawn. This is significantly smaller than a full MultiPolygon (shared borders
+  appear in exactly one polygon after dissolve) and fits within Mapbox's URL limit. Falls back to
+  individual county polygons then to a convex hull if the dissolved geometry is still too large.
+  Overlay color is blue (`#0066CC`) for color-blind accessibility.
 
 - **NWS text: teletype line-wrap normalization** — NWS alert text (headline, description,
   instruction) uses hard line breaks at ~70 characters inherited from legacy teletype formatting.
