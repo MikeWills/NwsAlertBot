@@ -8,8 +8,8 @@ namespace NwsAlertBot.Services;
 
 /// <summary>
 /// Generates Mapbox Static Images API URLs showing the affected area of each alert.
-/// Overlay geometry priority: alert's own GeoJSON polygon → alert's UGC zone/county geometries
-/// → configured zones/counties. Bounding box follows the same priority order.
+/// Overlay geometry priority: alert's own GeoJSON polygon → alert's UGC zone/county geometries.
+/// Bounding box falls back to configured zones/counties if neither source has geometry.
 /// </summary>
 public class MapService
 {
@@ -46,15 +46,18 @@ public class MapService
             bbox    = ExtractBbox(alert.GeometryJson);
             overlay = alert.GeometryJson;
             if (bbox != null)
-                _logger.LogDebug("Map: Using alert geometry polygon for {Id}.", alert.Id);
+                _logger.LogInformation("Map: Using alert geometry polygon for {Id}.", alert.Id);
         }
 
         // Priority 2: union of the alert's geocode UGC zones/counties
         if (bbox == null && alert.GeocodeUgc.Count > 0)
         {
+            _logger.LogInformation("Map: No alert geometry; fetching geometry for {Count} UGC code(s).", alert.GeocodeUgc.Count);
             (bbox, overlay) = await GetBboxAndOverlayAsync(alert.GeocodeUgc);
             if (bbox != null)
-                _logger.LogDebug("Map: Using {Count} alert UGC code(s) for {Id}.", alert.GeocodeUgc.Count, alert.Id);
+                _logger.LogInformation("Map: Built overlay from {Count} UGC code geometry(s) for {Id}.", alert.GeocodeUgc.Count, alert.Id);
+            else
+                _logger.LogWarning("Map: UGC code geometry fetch returned nothing for {Id}.", alert.Id);
         }
 
         // Priority 3: configured zones/counties bbox only — no overlay (this is the monitoring
@@ -63,7 +66,7 @@ public class MapService
         {
             bbox = await GetFallbackBboxAsync();
             if (bbox != null)
-                _logger.LogDebug("Map: Using configured zone/county fallback bbox for {Id}.", alert.Id);
+                _logger.LogInformation("Map: No alert geometry found; using configured zone/county bbox for {Id}.", alert.Id);
         }
 
         if (bbox == null)
@@ -154,24 +157,32 @@ public class MapService
         string suffix     = $"?access_token={_settings.AccessToken}";
 
         // Overlay the alert polygon using Mapbox simplestyle GeoJSON.
-        // Coordinates are rounded to 2 decimal places (~1 km precision) and consecutive
-        // duplicate points removed to keep the URL within Mapbox's 8192-byte limit.
+        // Try precision=2 (~1 km) first; if the URL exceeds 8000 chars, retry at precision=1
+        // (~10 km) which dramatically reduces point count for large multi-zone alerts.
         if (!string.IsNullOrEmpty(geometryJson))
         {
-            string? simplified = SimplifyGeometry(geometryJson);
-            if (simplified != null)
+            foreach (int precision in new[] { 2, 1 })
             {
+                string? simplified = SimplifyGeometry(geometryJson, precision);
+                if (simplified == null) break;
+
                 string feature = $"{{\"type\":\"Feature\",\"properties\":{{" +
                                  $"\"fill\":\"#ff6600\",\"fill-opacity\":0.3," +
                                  $"\"stroke\":\"#cc4400\",\"stroke-width\":2,\"stroke-opacity\":0.9" +
                                  $"}},\"geometry\":{simplified}}}";
                 string encoded   = Uri.EscapeDataString(feature);
                 string candidate = $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
-                if (candidate.Length <= 8000)
-                    return candidate;
 
-                _logger.LogDebug("Map: Overlay URL exceeded 8000 chars ({Length}); posting without polygon.", candidate.Length);
+                if (candidate.Length <= 8000)
+                {
+                    _logger.LogInformation("Map: Overlay URL built at precision={Precision}, length={Length}.", precision, candidate.Length);
+                    return candidate;
+                }
+
+                _logger.LogInformation("Map: Overlay at precision={Precision} is {Length} chars (limit 8000); retrying.", precision, candidate.Length);
             }
+
+            _logger.LogWarning("Map: Overlay geometry too large even at precision=1; posting without polygon.");
         }
 
         return $"{baseUrl}{bboxStr}/{dimensions}{suffix}";
@@ -226,7 +237,7 @@ public class MapService
     }
 
     /// <summary>
-    /// Merges one or more GeoJSON geometry strings into a single geometry string.
+    /// Merges one or more GeoJSON geometry strings into a single geometry string at precision=2.
     /// Multiple geometries are combined into a MultiPolygon.
     /// </summary>
     private static string? CombineGeometries(List<string> geometries)
@@ -248,13 +259,13 @@ public class MapService
                 switch (typeEl.GetString())
                 {
                     case "Polygon":
-                        var rings = SimplifyRings(coords);
+                        var rings = SimplifyRings(coords, 2);
                         if (rings.Count > 0) allPolygons.Add(rings);
                         break;
                     case "MultiPolygon":
                         foreach (var polygon in coords.EnumerateArray())
                         {
-                            var pRings = SimplifyRings(polygon);
+                            var pRings = SimplifyRings(polygon, 2);
                             if (pRings.Count > 0) allPolygons.Add(pRings);
                         }
                         break;
@@ -267,10 +278,10 @@ public class MapService
     }
 
     /// <summary>
-    /// Returns a simplified GeoJSON geometry string with coordinates rounded to 2 decimal
-    /// places and consecutive duplicate points removed, or null if parsing fails.
+    /// Returns a simplified GeoJSON geometry string with coordinates rounded to
+    /// <paramref name="precision"/> decimal places and consecutive duplicate points removed.
     /// </summary>
-    private static string? SimplifyGeometry(string geometryJson)
+    private static string? SimplifyGeometry(string geometryJson, int precision)
     {
         try
         {
@@ -282,10 +293,10 @@ public class MapService
 
             return typeEl.GetString() switch
             {
-                "Polygon"      => BuildPolygonJson(SimplifyRings(coords)),
+                "Polygon"      => BuildPolygonJson(SimplifyRings(coords, precision)),
                 "MultiPolygon" => BuildMultiPolygonJson(
                     coords.EnumerateArray()
-                          .Select(p => SimplifyRings(p))
+                          .Select(p => SimplifyRings(p, precision))
                           .Where(r => r.Count > 0)
                           .ToList()),
                 _ => null
@@ -314,10 +325,11 @@ public class MapService
     }
 
     /// <summary>
-    /// Rounds each coordinate to 2 decimal places and drops consecutive duplicate points.
-    /// Skips rings that collapse to fewer than 4 points (the GeoJSON minimum for a closed ring).
+    /// Rounds each coordinate to <paramref name="precision"/> decimal places and drops
+    /// consecutive duplicate points. Skips rings that collapse to fewer than 4 points
+    /// (the GeoJSON minimum for a closed ring).
     /// </summary>
-    private static List<List<(double Lon, double Lat)>> SimplifyRings(JsonElement rings)
+    private static List<List<(double Lon, double Lat)>> SimplifyRings(JsonElement rings, int precision)
     {
         var result = new List<List<(double Lon, double Lat)>>();
         foreach (var ring in rings.EnumerateArray())
@@ -326,8 +338,8 @@ public class MapService
             (double Lon, double Lat) prev = (double.NaN, double.NaN);
             foreach (var pt in ring.EnumerateArray())
             {
-                double lon = Math.Round(pt[0].GetDouble(), 2);
-                double lat = Math.Round(pt[1].GetDouble(), 2);
+                double lon = Math.Round(pt[0].GetDouble(), precision);
+                double lat = Math.Round(pt[1].GetDouble(), precision);
                 if (lon == prev.Lon && lat == prev.Lat) continue;
                 pts.Add((lon, lat));
                 prev = (lon, lat);
@@ -352,7 +364,7 @@ public class MapService
             for (int j = 0; j < ring.Count; j++)
             {
                 if (j > 0) sb.Append(',');
-                sb.Append($"[{ring[j].Lon:F2},{ring[j].Lat:F2}]");
+                sb.Append($"[{ring[j].Lon},{ring[j].Lat}]");
             }
             sb.Append(']');
         }
