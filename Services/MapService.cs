@@ -293,7 +293,7 @@ public class MapService
         $"https://mesonet.agron.iastate.edu/plotting/auto/plot/208/" +
         $"wfo={alert.VtecWfo}::year={alert.Sent.Year}::" +
         $"phenomenav={alert.VtecPhenomena}::significancev={alert.VtecSignificance}::" +
-        $"etn={alert.VtecEtn}::opt=single::nexrad=auto.png";
+        $"etn={alert.VtecEtn}::opt=single::nexrad=auto.png?_={alert.Sent.ToUnixTimeSeconds()}";
 
     private static string BuildFeatureJson(string geometryJson) =>
         $"{{\"type\":\"Feature\",\"properties\":{{" +
