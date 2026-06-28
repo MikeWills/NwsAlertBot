@@ -7,14 +7,20 @@ using NwsAlertBot.Models;
 namespace NwsAlertBot.Services;
 
 /// <summary>
-/// Generates Mapbox Static Images API URLs showing the affected area of each alert.
+/// Generates map image URLs showing the affected area of each alert.
 ///
-/// Overlay geometry priority:
+/// Primary path (VTEC events): IEM autoplot #208 — server-side PNG with the exact NWS
+/// warning polygon, county boundaries, and NEXRAD radar overlay. IEM's VTEC JSON API is
+/// checked first to confirm the event exists in their database; if not found, falls through
+/// to Mapbox. IEM silently serves a default demo image (HTTP 200) for unknown events, so
+/// the pre-flight JSON check is required to avoid posting wrong maps.
+///
+/// Mapbox fallback: Overlay geometry priority:
 ///   1. Alert's own GeoJSON polygon (when NWS provides one).
-///   2. Dissolved outer perimeter of the alert's UGC zone/county geometries (limited to
-///      configured monitoring codes). Adjacent counties have their shared borders removed so
-///      only the outer edge of the combined area is drawn. Falls back to a MultiPolygon of
-///      individual county outlines if dissolve fails, then to a convex hull if still too large.
+///   2. Dissolved outer perimeter of the alert's UGC zone/county geometries. Adjacent
+///      counties have their shared borders removed so only the outer edge is drawn. Falls
+///      back to a MultiPolygon of individual county outlines if dissolve fails, then to a
+///      convex hull if still too large for the 8000-char URL limit.
 ///
 /// Bounding box falls back to configured zones/counties if no geometry is available.
 /// </summary>
@@ -23,6 +29,7 @@ public class MapService
     private readonly MapSettings _settings;
     private readonly NwsSettings _nwsSettings;
     private readonly NwsZoneService _zones;
+    private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<MapService> _logger;
 
     private double[]? _fallbackBbox;
@@ -36,17 +43,19 @@ public class MapService
         MapSettings settings,
         NwsSettings nwsSettings,
         NwsZoneService zones,
+        IHttpClientFactory httpFactory,
         ILogger<MapService> logger)
     {
         _settings    = settings;
         _nwsSettings = nwsSettings;
         _zones       = zones;
+        _httpFactory = httpFactory;
         _logger      = logger;
     }
 
     /// <summary>
-    /// Returns a Mapbox Static Images URL for the alert's area, or null if map generation
-    /// is disabled, unconfigured, or no bounding box could be determined.
+    /// Returns a map image URL for the alert, or null if map generation is disabled,
+    /// unconfigured, or no bounding box could be determined.
     /// </summary>
     public async Task<string?> GetMapUrlAsync(NwsAlert alert)
     {
@@ -55,18 +64,57 @@ public class MapService
         // IEM autoplot #208: generates a PNG with the exact warning polygon, county lines,
         // and NEXRAD radar. Available for any alert with a VTEC code (the vast majority of
         // NWS alerts). Skip for CAN/EXP actions — those events display incorrectly on IEM.
+        // Pre-flight JSON check required: IEM returns HTTP 200 with a default demo image
+        // for unknown events instead of a 404, so we verify the event exists first.
         if (alert.VtecWfo != null && alert.VtecPhenomena != null &&
             alert.VtecSignificance != null && alert.VtecEtn != null &&
             alert.VtecAction is not ("CAN" or "EXP"))
         {
-            _logger.LogInformation(
-                "Map: Using IEM autoplot for {Action}.{Wfo}.{Phenom}.{Sig} #{Etn}.",
-                alert.VtecAction, alert.VtecWfo, alert.VtecPhenomena, alert.VtecSignificance, alert.VtecEtn);
-            return BuildIemUrl(alert);
+            if (await IsIemVtecEventAvailableAsync(alert))
+            {
+                _logger.LogInformation(
+                    "Map: Using IEM autoplot for {Action}.{Wfo}.{Phenom}.{Sig} #{Etn}.",
+                    alert.VtecAction, alert.VtecWfo, alert.VtecPhenomena, alert.VtecSignificance, alert.VtecEtn);
+                return BuildIemUrl(alert);
+            }
+
+            _logger.LogWarning(
+                "Map: IEM does not have {Phenom}.{Sig} #{Etn} ({Wfo}) — falling back to Mapbox.",
+                alert.VtecPhenomena, alert.VtecSignificance, alert.VtecEtn, alert.VtecWfo);
         }
 
-        // Fallback: Mapbox static image (used for non-VTEC events or CAN/EXP messages)
+        // Fallback: Mapbox static image (used for non-VTEC events, CAN/EXP, or when IEM
+        // doesn't have the event in its VTEC database)
         return await GetMapboxUrlAsync(alert);
+    }
+
+    /// <summary>
+    /// Queries IEM's VTEC JSON API to confirm the event is in their database before
+    /// requesting the autoplot PNG. IEM returns HTTP 200 with a demo image for unknown
+    /// events, so the pre-flight check prevents posting wrong maps.
+    /// </summary>
+    private async Task<bool> IsIemVtecEventAvailableAsync(NwsAlert alert)
+    {
+        try
+        {
+            // IEM's VTEC API uses the 4-letter WFO format (e.g. KMPX, not MPX)
+            var wfo4 = alert.VtecWfo!.Length == 3 ? "K" + alert.VtecWfo : alert.VtecWfo;
+            var url  = "https://mesonet.agron.iastate.edu/json/vtec_event.py" +
+                       $"?year={alert.Sent.Year}&wfo={wfo4}" +
+                       $"&phenomena={alert.VtecPhenomena}&significance={alert.VtecSignificance}" +
+                       $"&etn={alert.VtecEtn}";
+
+            var http = _httpFactory.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(10);
+            var json = await http.GetStringAsync(url);
+            using var doc = JsonDocument.Parse(json);
+            return !doc.RootElement.TryGetProperty("error", out _);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Map: IEM VTEC check failed ({Error}); skipping IEM.", ex.Message);
+            return false;
+        }
     }
 
     /// <summary>
