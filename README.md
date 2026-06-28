@@ -749,6 +749,15 @@ service (plot #208). The image shows the exact NWS warning polygon, county bound
 a NEXRAD radar overlay — no geometry math, no URL size limit. Requires no API key. Used for
 any alert with a VTEC code where the action is not CAN or EXP.
 
+Before requesting the PNG, the bot calls IEM's VTEC JSON API (`/json/vtec_event.py`) to verify
+the event exists in IEM's database. IEM returns HTTP 200 with a fixed default demo image for
+any unknown event — it does not return a 404 — so the pre-flight check is required to avoid
+posting the wrong map. If the event is not found, the bot falls back to Mapbox.
+
+Some NWS phenomena codes differ from IEM's internal codes. Known aliases are tried automatically:
+`HT.W` (Heat Warning) and `EH.W` (Excessive Heat Warning) both map to `XH.W` in IEM (Extreme
+Heat Warning — IEM's code for this product since March 2025).
+
 **Mapbox (fallback — non-VTEC events and cancelled/expired alerts):** Used when no VTEC code
 is present. The map area and overlay are determined by:
 1. The **alert's own GeoJSON geometry polygon** (most NWS alerts include one).
@@ -1081,6 +1090,12 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 ---
 
 ## Recent Changes
+
+- **Map: IEM pre-flight verification + phenomena aliasing** — IEM silently returns a fixed
+  default demo image (HTTP 200) for any unknown event instead of a 404. The bot now calls IEM's
+  VTEC JSON API before requesting the PNG to confirm the event exists (`event_exists: true`);
+  unverified events fall back to Mapbox. Additionally, NWS `HT.W` and `EH.W` are automatically
+  tried as IEM's `XH.W` (Extreme Heat Warning) when the NWS code is not found in IEM's database.
 
 - **Map: IEM autoplot as primary map source** — the bot now parses the VTEC code from each NWS
   alert and requests a pre-rendered PNG from IEM Autoplot #208. The image shows the exact NWS
