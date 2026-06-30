@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -14,8 +15,9 @@ namespace NwsAlertBot.Services;
 /// one monitored location.
 ///
 /// MCDs are issued from KWNS as product type "SWO" on the NWS API. They contain
-/// a LAT...LON polygon in 8-digit DDHHMM-encoded pairs (first 4 digits = lat*100 N,
-/// last 4 = lon*100 W) and a "Valid DDHHMM Z - DDHHMM Z" line for the active window.
+/// a LAT...LON polygon in concatenated lat/lon pairs (first 4 digits = lat×100 N,
+/// next 4–5 digits = lon×100 W) and a "Valid DDHHMM Z - DDHHMM Z" line for the
+/// active window. 8-digit tokens cover lon &lt; 100°W; 9-digit tokens cover lon ≥ 100°W.
 /// Image URL: https://www.spc.noaa.gov/products/md/{year}/mcd{NNNN}.png
 /// </summary>
 public class SpcMcdService
@@ -27,10 +29,10 @@ public class SpcMcdService
     private readonly ILogger<SpcMcdService> _logger;
     private readonly TimeZoneInfo _timeZone;
 
-    private List<(string Code, double Lat, double Lon)>? _locations;
+    private List<(double Lat, double Lon)>? _locations;
     private DateTimeOffset _lastCheckedUtc = DateTimeOffset.MinValue;
-    // Avoid re-fetching products we've already processed (MCD or non-MCD)
-    private readonly HashSet<string> _checkedUuids = new(StringComparer.OrdinalIgnoreCase);
+    // ConcurrentDictionary used as a thread-safe set — Task.WhenAll writes concurrently.
+    private readonly ConcurrentDictionary<string, byte> _checkedUuids = new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly Regex McdNumberRegex = new(
         @"Mesoscale Discussion\s+(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -99,10 +101,7 @@ public class SpcMcdService
         try
         {
             var listing = await FetchProductListingAsync();
-            var newUuids = listing
-                .Where(p => !_checkedUuids.Contains(p.Uuid))
-                .Select(p => p.Uuid)
-                .ToList();
+            var newUuids = listing.Where(uuid => !_checkedUuids.ContainsKey(uuid)).ToList();
 
             if (newUuids.Count > 0)
             {
@@ -124,23 +123,25 @@ public class SpcMcdService
 
     private async Task<NwsAlert?> FetchAndProcessAsync(
         string uuid,
-        List<(string Code, double Lat, double Lon)> locations)
+        List<(double Lat, double Lon)> locations)
     {
         try
         {
             var text = await FetchProductTextAsync(uuid);
-            _checkedUuids.Add(uuid);
-            if (text == null) return null;
+            if (text == null) return null;  // transient error — don't mark seen; retry next cycle
+
+            // Mark seen only after a successful fetch so transient 503s don't permanently suppress.
+            _checkedUuids.TryAdd(uuid, 0);
 
             if (!text.Contains("SWOMCD", StringComparison.OrdinalIgnoreCase)) return null;
 
             var mcdNum = ParseMcdNumber(text);
             if (mcdNum == null) return null;
 
-            var (issueUtc, expireUtc) = ParseValidWindow(text);
+            var now = DateTimeOffset.UtcNow;
+            var (issueUtc, expireUtc) = ParseValidWindow(text, now);
             if (issueUtc == null || expireUtc == null) return null;
 
-            var now = DateTimeOffset.UtcNow;
             if (now < issueUtc.Value || now > expireUtc.Value) return null;
 
             var polygon = ParseLatLon(text);
@@ -160,7 +161,7 @@ public class SpcMcdService
         }
     }
 
-    private async Task<List<(string Uuid, DateTimeOffset IssuanceTime)>> FetchProductListingAsync()
+    private async Task<List<string>> FetchProductListingAsync()
     {
         var response = await _http.GetAsync("https://api.weather.gov/products?type=SWO&limit=50");
         if (!response.IsSuccessStatusCode)
@@ -174,7 +175,7 @@ public class SpcMcdService
         if (!doc.RootElement.TryGetProperty("@graph", out var graph)) return new();
 
         var now = DateTimeOffset.UtcNow;
-        var result = new List<(string, DateTimeOffset)>();
+        var result = new List<string>();
 
         foreach (var item in graph.EnumerateArray())
         {
@@ -183,8 +184,9 @@ public class SpcMcdService
             if (string.IsNullOrEmpty(url)) continue;
             var uuid = url.Split('/').Last();
 
-            // MCDs come only from KWNS (SPC Norman OK)
-            if (item.TryGetProperty("issuingOffice", out var officeEl) &&
+            // MCDs come only from KWNS (SPC Norman OK). Skip items with any other office,
+            // including items where issuingOffice is absent.
+            if (!item.TryGetProperty("issuingOffice", out var officeEl) ||
                 officeEl.GetString() != "KWNS") continue;
 
             DateTimeOffset issuanceTime = now;
@@ -199,7 +201,7 @@ public class SpcMcdService
             // MCDs last at most 3 hours — look back 6 to be safe
             if (now - issuanceTime > TimeSpan.FromHours(6)) continue;
 
-            result.Add((uuid, issuanceTime));
+            result.Add(uuid);
         }
 
         return result;
@@ -215,15 +217,19 @@ public class SpcMcdService
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.TryGetProperty("productText", out var el) ? el.GetString() : null;
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SpcMcd: Failed to fetch product {Uuid}.", uuid);
+            return null;
+        }
     }
 
-    private async Task<List<(string Code, double Lat, double Lon)>> EnsureLocationsAsync()
+    private async Task<List<(double Lat, double Lon)>> EnsureLocationsAsync()
     {
         if (_locations != null) return _locations;
 
         var codes = _nwsSettings.Zones.Count > 0 ? _nwsSettings.Zones : _nwsSettings.Counties;
-        var resolved = new List<(string, double, double)>();
+        var resolved = new List<(double, double)>();
 
         foreach (var code in codes)
         {
@@ -233,20 +239,22 @@ public class SpcMcdService
                 _logger.LogWarning("SpcMcd: Could not resolve geometry for {Code}; skipping.", code);
                 continue;
             }
-            var c = ComputeCentroid(info.Geometry);
+            var c = PolygonGeometry.ComputeCentroid(info.Geometry);
             if (c == null)
             {
                 _logger.LogWarning("SpcMcd: Could not compute centroid for {Code}; skipping.", code);
                 continue;
             }
-            resolved.Add((code, c.Value.Lat, c.Value.Lon));
+            resolved.Add((c.Value.Lat, c.Value.Lon));
         }
 
+        // Cache even when empty — avoids repeated zone API calls on every poll if config is wrong.
+        _locations = resolved;
+
         if (resolved.Count > 0)
-        {
-            _locations = resolved;
             _logger.LogInformation("SpcMcd: Resolved {Count} monitored location(s).", resolved.Count);
-        }
+        else
+            _logger.LogWarning("SpcMcd: No zone/county geometries resolved. Zones and Counties must be configured; State-only config is not supported for MCD polygon checking.");
 
         return resolved;
     }
@@ -257,13 +265,14 @@ public class SpcMcdService
         return m.Success && int.TryParse(m.Groups[1].Value, out var n) ? n : null;
     }
 
-    private static (DateTimeOffset? Issue, DateTimeOffset? Expire) ParseValidWindow(string text)
+    private static (DateTimeOffset? Issue, DateTimeOffset? Expire) ParseValidWindow(string text, DateTimeOffset now)
     {
         var m = ValidTimeRegex.Match(text);
         if (!m.Success) return (null, null);
 
-        var issue  = ParseDdhhmm(m.Groups[1].Value);
-        var expire = ParseDdhhmm(m.Groups[2].Value);
+        // Share the same `now` snapshot for both parses to avoid month-boundary split.
+        var issue  = ParseDdhhmm(m.Groups[1].Value, now);
+        var expire = ParseDdhhmm(m.Groups[2].Value, now);
 
         // Handle midnight crossover (expire before issue after wrapping)
         if (issue != null && expire != null && expire.Value < issue.Value)
@@ -274,19 +283,16 @@ public class SpcMcdService
 
     /// <summary>
     /// Parses a 6-digit DDHHMM UTC string from SPC product valid lines.
-    /// Uses current UTC year/month as context, selecting the candidate closest to now
-    /// to handle month-boundary edge cases.
+    /// The ValidTimeRegex guarantees exactly 6 decimal digits, so length and parse always succeed.
+    /// Uses the caller's UTC snapshot to handle month-boundary edge cases deterministically.
     /// </summary>
-    private static DateTimeOffset? ParseDdhhmm(string ddhhmm)
+    private static DateTimeOffset? ParseDdhhmm(string ddhhmm, DateTimeOffset now)
     {
-        if (ddhhmm.Length != 6) return null;
-        if (!int.TryParse(ddhhmm[..2], out int day))   return null;
-        if (!int.TryParse(ddhhmm[2..4], out int hour)) return null;
-        if (!int.TryParse(ddhhmm[4..6], out int min))  return null;
+        int day  = int.Parse(ddhhmm[..2]);
+        int hour = int.Parse(ddhhmm[2..4]);
+        int min  = int.Parse(ddhhmm[4..6]);
 
-        var now = DateTimeOffset.UtcNow;
         var candidates = new List<DateTimeOffset>();
-
         for (int delta = -1; delta <= 1; delta++)
         {
             try
@@ -297,13 +303,13 @@ public class SpcMcdService
             catch { }
         }
 
-        if (candidates.Count == 0) return null;
-        return candidates.MinBy(c => Math.Abs((c - now).TotalHours));
+        return candidates.Count == 0 ? null : candidates.MinBy(c => Math.Abs((c - now).TotalHours));
     }
 
     /// <summary>
     /// Parses the LAT...LON block from MCD product text.
-    /// Format: 8-digit groups where first 4 digits = lat*100 (N), last 4 = lon*100 (W, negated).
+    /// Tokens are concatenated lat/lon pairs: 4-digit lat×100 + 4-digit lon×100 (8 chars total
+    /// for lon &lt; 100°W) or 4-digit lat×100 + 5-digit lon×100 (9 chars for lon ≥ 100°W).
     /// </summary>
     private static List<(double Lat, double Lon)>? ParseLatLon(string text)
     {
@@ -316,9 +322,11 @@ public class SpcMcdService
         var polygon = new List<(double, double)>();
         foreach (var token in tokens)
         {
-            if (token.Length != 8) continue;
+            // 8-char: lon < 100°W (e.g. 42769694 → 42.76°N, 96.94°W)
+            // 9-char: lon ≥ 100°W (e.g. 399310030 → 39.93°N, 100.30°W)
+            if (token.Length is not (8 or 9)) continue;
             if (!double.TryParse(token[..4], NumberStyles.Integer, CultureInfo.InvariantCulture, out double lat100)) continue;
-            if (!double.TryParse(token[4..8], NumberStyles.Integer, CultureInfo.InvariantCulture, out double lon100)) continue;
+            if (!double.TryParse(token[4..], NumberStyles.Integer, CultureInfo.InvariantCulture, out double lon100)) continue;
             polygon.Add((lat100 / 100.0, -lon100 / 100.0));
         }
 
@@ -341,7 +349,7 @@ public class SpcMcdService
 
     private NwsAlert BuildAlert(string text, int mcdNum, DateTimeOffset issueUtc, DateTimeOffset expireUtc)
     {
-        var areasMatch     = AreasAffectedRegex.Match(text);
+        var areasMatch      = AreasAffectedRegex.Match(text);
         var concerningMatch = ConcerningRegex.Match(text);
 
         string areas = areasMatch.Success
@@ -355,9 +363,8 @@ public class SpcMcdService
             ? $"SPC MCD #{mcdNum} — {concerning}"
             : $"SPC Mesoscale Discussion #{mcdNum}";
 
+        // Instruction body: areas + SPC link. The concerning text is already in Headline.
         string instruction = $"Areas affected: {areas}";
-        if (concerning.Length > 0)
-            instruction += $"\n{concerning}";
         instruction += $"\nhttps://www.spc.noaa.gov/products/md/{issueUtc.Year}/md{mcdNum:D4}.html";
 
         return new NwsAlert
@@ -381,71 +388,4 @@ public class SpcMcdService
 
     private static string Collapse(string s) =>
         Regex.Replace(s.Trim(), @"\s+", " ");
-
-    // --- Polygon centroid (mirrors SpcOutlookService) ---
-
-    private static (double Lat, double Lon)? ComputeCentroid(JsonElement geometry)
-    {
-        var type   = geometry.GetProperty("type").GetString();
-        var coords = geometry.GetProperty("coordinates");
-
-        JsonElement exterior;
-        switch (type)
-        {
-            case "Polygon":
-                exterior = coords[0];
-                break;
-            case "MultiPolygon":
-                JsonElement? largest = null;
-                double bestArea = -1;
-                foreach (var poly in coords.EnumerateArray())
-                {
-                    var ring = poly[0];
-                    double area = Math.Abs(RingSignedArea(ring));
-                    if (area > bestArea) { bestArea = area; largest = ring; }
-                }
-                if (largest == null) return null;
-                exterior = largest.Value;
-                break;
-            default:
-                return null;
-        }
-        return RingCentroid(exterior);
-    }
-
-    private static double RingSignedArea(JsonElement ring)
-    {
-        double area = 0;
-        int n = ring.GetArrayLength();
-        for (int i = 0, j = n - 1; i < n; j = i++)
-        {
-            double xi = ring[i][0].GetDouble(), yi = ring[i][1].GetDouble();
-            double xj = ring[j][0].GetDouble(), yj = ring[j][1].GetDouble();
-            area += xj * yi - xi * yj;
-        }
-        return area / 2.0;
-    }
-
-    private static (double Lat, double Lon)? RingCentroid(JsonElement ring)
-    {
-        double area = RingSignedArea(ring);
-        int n = ring.GetArrayLength();
-        if (Math.Abs(area) < 1e-12)
-        {
-            double sLon = 0, sLat = 0;
-            for (int i = 0; i < n; i++) { sLon += ring[i][0].GetDouble(); sLat += ring[i][1].GetDouble(); }
-            return n == 0 ? null : (sLat / n, sLon / n);
-        }
-        double cx = 0, cy = 0;
-        for (int i = 0, j = n - 1; i < n; j = i++)
-        {
-            double xi = ring[i][0].GetDouble(), yi = ring[i][1].GetDouble();
-            double xj = ring[j][0].GetDouble(), yj = ring[j][1].GetDouble();
-            double cross = xj * yi - xi * yj;
-            cx += (xj + xi) * cross;
-            cy += (yj + yi) * cross;
-        }
-        double factor = 1.0 / (6.0 * area);
-        return (cy * factor, cx * factor);
-    }
 }

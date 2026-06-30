@@ -482,8 +482,9 @@ public class SpcMcdSettings
     /// Whether to monitor SPC Mesoscale Discussions (MCDs) for the monitored area.
     /// When enabled, each poll cycle checks for active MCDs whose polygon covers at
     /// least one configured zone/county centroid and posts them to enabled platforms.
-    /// MCDs respect the per-platform IncludeSpcOutlooks flag and also trigger
-    /// expedited polling the same as severe/extreme NWS alerts.
+    /// Per-platform delivery is controlled by IncludeSpcMcd on each platform's settings
+    /// (independent of IncludeSpcOutlooks). Each new MCD also triggers expedited polling
+    /// the same as severe/extreme NWS alerts.
     /// </summary>
     public bool Enabled { get; set; } = false;
 

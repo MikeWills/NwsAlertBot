@@ -105,7 +105,7 @@ public class SpcOutlookService
                 continue;
             }
 
-            var centroid = ComputeCentroid(info.Geometry);
+            var centroid = PolygonGeometry.ComputeCentroid(info.Geometry);
             if (centroid == null)
             {
                 _logger.LogWarning("Spc: Could not compute a centroid for {Code}; this location will not be monitored.", code);
@@ -115,11 +115,12 @@ public class SpcOutlookService
             resolved.Add((code, code, centroid.Value.Lat, centroid.Value.Lon, info.Cwa, info.State));
         }
 
+        _locations = resolved;
+
         if (resolved.Count > 0)
-        {
-            _locations = resolved;
             _logger.LogInformation("Spc: Resolved {Count} monitored location(s) for outlook checks.", resolved.Count);
-        }
+        else
+            _logger.LogWarning("Spc: No zone/county geometries resolved. Zones and Counties must be configured; State-only config is not supported for SPC outlook polygon checking.");
 
         return resolved;
     }
@@ -364,81 +365,4 @@ public class SpcOutlookService
         return inside;
     }
 
-    // --- Polygon centroid (area-weighted, shoelace formula) ---
-
-    private static (double Lat, double Lon)? ComputeCentroid(JsonElement geometry)
-    {
-        var type = geometry.GetProperty("type").GetString();
-        var coords = geometry.GetProperty("coordinates");
-
-        JsonElement exteriorRing;
-        switch (type)
-        {
-            case "Polygon":
-                exteriorRing = coords[0];
-                break;
-
-            case "MultiPolygon":
-                JsonElement? largest = null;
-                double bestArea = -1;
-                foreach (var poly in coords.EnumerateArray())
-                {
-                    var ring = poly[0];
-                    double area = Math.Abs(RingSignedArea(ring));
-                    if (area > bestArea) { bestArea = area; largest = ring; }
-                }
-                if (largest == null) return null;
-                exteriorRing = largest.Value;
-                break;
-
-            default:
-                return null;
-        }
-
-        return RingCentroid(exteriorRing);
-    }
-
-    private static double RingSignedArea(JsonElement ring)
-    {
-        double area = 0;
-        int n = ring.GetArrayLength();
-        for (int i = 0, j = n - 1; i < n; j = i++)
-        {
-            double xi = ring[i][0].GetDouble(), yi = ring[i][1].GetDouble();
-            double xj = ring[j][0].GetDouble(), yj = ring[j][1].GetDouble();
-            area += xj * yi - xi * yj;
-        }
-        return area / 2.0;
-    }
-
-    private static (double Lat, double Lon)? RingCentroid(JsonElement ring)
-    {
-        double area = RingSignedArea(ring);
-        int n = ring.GetArrayLength();
-
-        if (Math.Abs(area) < 1e-12)
-        {
-            // Degenerate ring — fall back to a simple vertex average.
-            double sumLon = 0, sumLat = 0;
-            for (int i = 0; i < n; i++)
-            {
-                sumLon += ring[i][0].GetDouble();
-                sumLat += ring[i][1].GetDouble();
-            }
-            return n == 0 ? null : (sumLat / n, sumLon / n);
-        }
-
-        double cx = 0, cy = 0;
-        for (int i = 0, j = n - 1; i < n; j = i++)
-        {
-            double xi = ring[i][0].GetDouble(), yi = ring[i][1].GetDouble();
-            double xj = ring[j][0].GetDouble(), yj = ring[j][1].GetDouble();
-            double cross = xj * yi - xi * yj;
-            cx += (xj + xi) * cross;
-            cy += (yj + yi) * cross;
-        }
-
-        double factor = 1.0 / (6.0 * area);
-        return (cy * factor, cx * factor);
-    }
 }

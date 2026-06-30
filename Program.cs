@@ -181,6 +181,8 @@ static class LocalConfigSync
     // Recursively copies keys present in source but absent from local.
     // Missing top-level sections that have an Enabled field are injected as disabled.
     // Sections without Enabled (e.g. Nws) are skipped at the top level.
+    // New nested keys (e.g. IncludeSpcMcd added to an existing platform section) preserve
+    // their base-config default value so feature flags that default to true stay enabled.
     private static void Merge(JsonObject local, JsonObject source, string path, List<string> added)
     {
         foreach (var (key, sourceValue) in source)
@@ -203,7 +205,9 @@ static class LocalConfigSync
             }
             else
             {
-                local[key] = OffDefault(sourceValue);
+                // New key inside an existing section — preserve the base-config value so
+                // feature flags that default to true (e.g. IncludeSpcMcd) stay enabled.
+                local[key] = sourceValue?.DeepClone() ?? JsonValue.Create(false)!;
                 added.Add(fullKey);
             }
         }
