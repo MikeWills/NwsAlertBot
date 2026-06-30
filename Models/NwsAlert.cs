@@ -47,6 +47,9 @@ public class NwsAlert
     /// <summary>True when this alert was synthesized by SpcOutlookService rather than fetched from the NWS API.</summary>
     public bool IsSpcOutlook { get; set; }
 
+    /// <summary>True when this alert was synthesized by SpcMcdService (SPC Mesoscale Discussion).</summary>
+    public bool IsSpcMcd { get; set; }
+
     /// <summary>Time zone used to format Valid/Expires on SPC outlook posts. Set from Spc.TimeZone config.</summary>
     public TimeZoneInfo? DisplayTimeZone { get; set; }
 

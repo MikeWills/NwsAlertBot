@@ -33,6 +33,7 @@ public class XService
     public string MinSeverity => _settings.MinSeverity;
     public string EventTypes => _settings.EventTypes;
     public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
+    public bool IncludeSpcMcd     => _settings.IncludeSpcMcd;
 
     public Task<bool> SendConfirmationAsync(string message) =>
         PostTextAsync(message.Length > 280 ? message[..277] + "..." : message, "confirmation");

@@ -29,6 +29,7 @@ public class PushoverService
     public string MinSeverity => _settings.MinSeverity;
     public string EventTypes => _settings.EventTypes;
     public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
+    public bool IncludeSpcMcd     => _settings.IncludeSpcMcd;
 
     public Task<bool> SendConfirmationAsync(string message) =>
         SendAsync("✅ NWS Alert Bot", message, priority: 0, label: "confirmation");

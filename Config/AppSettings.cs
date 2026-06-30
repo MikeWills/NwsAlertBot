@@ -124,6 +124,9 @@ public class FacebookSettings
 
     /// <summary>Whether to post SPC Convective Outlook alerts to this platform. Requires Spc.Enabled = true.</summary>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <summary>Whether to post SPC Mesoscale Discussion alerts to this platform. Requires SpcMcd.Enabled = true.</summary>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class InstagramSettings
@@ -145,6 +148,9 @@ public class InstagramSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class XSettings
@@ -163,6 +169,9 @@ public class XSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class BlueskySettings
@@ -179,6 +188,9 @@ public class BlueskySettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class MastodonSettings
@@ -195,6 +207,9 @@ public class MastodonSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class PushoverSettings
@@ -245,6 +260,9 @@ public class PushoverSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class TwilioSettings
@@ -275,6 +293,9 @@ public class TwilioSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class DiscordDmSettings
@@ -303,6 +324,9 @@ public class DiscordDmSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class DiscordSettings
@@ -331,6 +355,9 @@ public class DiscordSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class TelegramSettings
@@ -358,6 +385,9 @@ public class TelegramSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class VoipMsSettings
@@ -395,6 +425,9 @@ public class VoipMsSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcOutlooks"/>
     public bool IncludeSpcOutlooks { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
+    public bool IncludeSpcMcd { get; set; } = true;
 }
 
 public class MapSettings
@@ -441,5 +474,24 @@ public class SpcSettings
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 1800;
 
+}
+
+public class SpcMcdSettings
+{
+    /// <summary>
+    /// Whether to monitor SPC Mesoscale Discussions (MCDs) for the monitored area.
+    /// When enabled, each poll cycle checks for active MCDs whose polygon covers at
+    /// least one configured zone/county centroid and posts them to enabled platforms.
+    /// MCDs respect the per-platform IncludeSpcOutlooks flag and also trigger
+    /// expedited polling the same as severe/extreme NWS alerts.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Minimum seconds between checks for active MCDs against the NWS products API.
+    /// MCDs can be issued and expire within 1-3 hours, so frequent checks are fine.
+    /// Default 300 (5 min) — matches the regular poll interval.
+    /// </summary>
+    public int CheckIntervalSeconds { get; set; } = 300;
 }
 

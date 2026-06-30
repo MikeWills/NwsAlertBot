@@ -13,6 +13,7 @@ public class SocialMediaOrchestrator
     private readonly NwsSettings _nwsSettings;
     private readonly NwsAlertService _nws;
     private readonly SpcOutlookService _spc;
+    private readonly SpcMcdService _spcMcd;
     private readonly AlertTrackerService _tracker;
     private readonly MapService _map;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -33,6 +34,7 @@ public class SocialMediaOrchestrator
         NwsSettings nwsSettings,
         NwsAlertService nws,
         SpcOutlookService spc,
+        SpcMcdService spcMcd,
         AlertTrackerService tracker,
         MapService map,
         IHttpClientFactory httpClientFactory,
@@ -52,6 +54,7 @@ public class SocialMediaOrchestrator
         _nwsSettings      = nwsSettings;
         _nws              = nws;
         _spc              = spc;
+        _spcMcd           = spcMcd;
         _tracker          = tracker;
         _map              = map;
         _httpClientFactory = httpClientFactory;
@@ -113,6 +116,9 @@ public class SocialMediaOrchestrator
         if (_spc.IsEnabled)
             await CheckSpcOutlooksAsync(ct);
 
+        if (_spcMcd.IsEnabled)
+            stormCount += await CheckSpcMcdsAsync(ct);
+
         return stormCount;
     }
 
@@ -134,26 +140,52 @@ public class SocialMediaOrchestrator
         }
     }
 
+    /// <summary>
+    /// Returns the number of new MCDs posted (each counts as one storm-triggering event
+    /// for expedited polling, since MCDs indicate active or developing severe weather).
+    /// </summary>
+    private async Task<int> CheckSpcMcdsAsync(CancellationToken ct)
+    {
+        var mcdAlerts = await _spcMcd.GetMcdAlertsAsync();
+        int count = 0;
+
+        foreach (var alert in mcdAlerts)
+        {
+            if (ct.IsCancellationRequested) break;
+            if (_tracker.HasBeenPosted(alert.Id)) continue;
+
+            _logger.LogInformation("New SPC MCD: {Event} — {AreaDesc}", alert.Event, alert.AreaDesc);
+
+            await DownloadMapImageAsync(alert);
+            await PostToAllPlatformsAsync(alert);
+            _tracker.MarkPosted(alert.Id);
+            count++;
+        }
+
+        return count;
+    }
+
     private async Task PostToAllPlatformsAsync(NwsAlert alert)
     {
-        var all = new (string Name, bool Enabled, bool IncludeSpc, string MinSeverity, string EventTypes, Func<Task<bool>> Action)[]
+        var all = new (string Name, bool Enabled, bool IncludeSpc, bool IncludeMcd, string MinSeverity, string EventTypes, Func<Task<bool>> Action)[]
         {
-            ("Facebook",  _facebook.IsEnabled,  _facebook.IncludeSpcOutlooks,  _facebook.MinSeverity,  _facebook.EventTypes,  () => _facebook.PostAlertAsync(alert)),
-            ("Instagram", _instagram.IsEnabled, _instagram.IncludeSpcOutlooks, _instagram.MinSeverity, _instagram.EventTypes, () => _instagram.PostAlertAsync(alert)),
-            ("X",         _x.IsEnabled,         _x.IncludeSpcOutlooks,         _x.MinSeverity,         _x.EventTypes,         () => _x.PostAlertAsync(alert)),
-            ("Bluesky",   _bluesky.IsEnabled,   _bluesky.IncludeSpcOutlooks,   _bluesky.MinSeverity,   _bluesky.EventTypes,   () => _bluesky.PostAlertAsync(alert)),
-            ("Mastodon",  _mastodon.IsEnabled,  _mastodon.IncludeSpcOutlooks,  _mastodon.MinSeverity,  _mastodon.EventTypes,  () => _mastodon.PostAlertAsync(alert)),
-            ("Pushover",  _pushover.IsEnabled,  _pushover.IncludeSpcOutlooks,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
-            ("Twilio",    _twilio.IsEnabled,    _twilio.IncludeSpcOutlooks,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
-            ("Discord",   _discord.IsEnabled,   _discord.IncludeSpcOutlooks,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
-            ("DiscordDm", _discordDm.IsEnabled, _discordDm.IncludeSpcOutlooks, _discordDm.MinSeverity, _discordDm.EventTypes, () => _discordDm.PostAlertAsync(alert)),
-            ("Telegram",  _telegram.IsEnabled,  _telegram.IncludeSpcOutlooks,  _telegram.MinSeverity,  _telegram.EventTypes,  () => _telegram.SendAlertAsync(alert)),
-            ("VoipMs",    _voipMs.IsEnabled,    _voipMs.IncludeSpcOutlooks,    _voipMs.MinSeverity,    _voipMs.EventTypes,    () => _voipMs.SendAlertAsync(alert)),
+            ("Facebook",  _facebook.IsEnabled,  _facebook.IncludeSpcOutlooks,  _facebook.IncludeSpcMcd,  _facebook.MinSeverity,  _facebook.EventTypes,  () => _facebook.PostAlertAsync(alert)),
+            ("Instagram", _instagram.IsEnabled, _instagram.IncludeSpcOutlooks, _instagram.IncludeSpcMcd, _instagram.MinSeverity, _instagram.EventTypes, () => _instagram.PostAlertAsync(alert)),
+            ("X",         _x.IsEnabled,         _x.IncludeSpcOutlooks,         _x.IncludeSpcMcd,         _x.MinSeverity,         _x.EventTypes,         () => _x.PostAlertAsync(alert)),
+            ("Bluesky",   _bluesky.IsEnabled,   _bluesky.IncludeSpcOutlooks,   _bluesky.IncludeSpcMcd,   _bluesky.MinSeverity,   _bluesky.EventTypes,   () => _bluesky.PostAlertAsync(alert)),
+            ("Mastodon",  _mastodon.IsEnabled,  _mastodon.IncludeSpcOutlooks,  _mastodon.IncludeSpcMcd,  _mastodon.MinSeverity,  _mastodon.EventTypes,  () => _mastodon.PostAlertAsync(alert)),
+            ("Pushover",  _pushover.IsEnabled,  _pushover.IncludeSpcOutlooks,  _pushover.IncludeSpcMcd,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
+            ("Twilio",    _twilio.IsEnabled,    _twilio.IncludeSpcOutlooks,    _twilio.IncludeSpcMcd,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
+            ("Discord",   _discord.IsEnabled,   _discord.IncludeSpcOutlooks,   _discord.IncludeSpcMcd,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
+            ("DiscordDm", _discordDm.IsEnabled, _discordDm.IncludeSpcOutlooks, _discordDm.IncludeSpcMcd, _discordDm.MinSeverity, _discordDm.EventTypes, () => _discordDm.PostAlertAsync(alert)),
+            ("Telegram",  _telegram.IsEnabled,  _telegram.IncludeSpcOutlooks,  _telegram.IncludeSpcMcd,  _telegram.MinSeverity,  _telegram.EventTypes,  () => _telegram.SendAlertAsync(alert)),
+            ("VoipMs",    _voipMs.IsEnabled,    _voipMs.IncludeSpcOutlooks,    _voipMs.IncludeSpcMcd,    _voipMs.MinSeverity,    _voipMs.EventTypes,    () => _voipMs.SendAlertAsync(alert)),
         };
 
         var filtered = all
             .Where(p => p.Enabled && (
                 (alert.IsSpcOutlook && !p.IncludeSpc) ||
+                (alert.IsSpcMcd && !p.IncludeMcd) ||
                 !PassesFilter(alert.Severity, p.MinSeverity) ||
                 !PassesFilter(alert.Event, p.EventTypes)))
             .Select(p => p.Name)
@@ -165,6 +197,7 @@ public class SocialMediaOrchestrator
         var tasks = all
             .Where(p => p.Enabled &&
                 !(alert.IsSpcOutlook && !p.IncludeSpc) &&
+                !(alert.IsSpcMcd && !p.IncludeMcd) &&
                 PassesFilter(alert.Severity, p.MinSeverity) &&
                 PassesFilter(alert.Event, p.EventTypes))
             .Select(p => WrapPost(p.Name, p.Action))
