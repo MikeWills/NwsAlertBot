@@ -80,8 +80,7 @@ public class NwsAlert
             {
                 if (IsSpcOutlook)
                 {
-                    var validStart = TimeZoneInfo.ConvertTime(expiresAt.Value.AddDays(-1), DisplayTimeZone);
-                    expiresLine = $"\nValid: {validStart:ddd MMM d h:mm tt}" +
+                    expiresLine = $"\nValid: {TimeZoneInfo.ConvertTime(Sent, DisplayTimeZone):ddd MMM d h:mm tt}" +
                                   $"\nExpires: {TimeZoneInfo.ConvertTime(expiresAt.Value, DisplayTimeZone):ddd MMM d h:mm tt}";
                 }
                 else

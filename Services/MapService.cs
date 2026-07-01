@@ -63,15 +63,24 @@ public class MapService
 
         // IEM autoplot #217: SPS-specific map image (non-VTEC). Takes the IEM product ID
         // constructed from AWIPSidentifier (AFOS PIL) and WMOidentifier parsed from the alert.
-        if (alert.AfosId?.StartsWith("SPS", StringComparison.OrdinalIgnoreCase) == true)
+        // Pre-flight GeoJSON check required: IEM returns HTTP 200 with a demo image for unknown
+        // products (same behavior as #208), so we verify the SPS is indexed before using the URL.
+        if (alert.AfosId?.StartsWith("SPS", StringComparison.Ordinal) == true)
         {
             var spsUrl = BuildIemSpsUrl(alert);
             if (spsUrl != null)
             {
-                _logger.LogInformation("Map: Using IEM autoplot 217 for SPS {AfosId}.", alert.AfosId);
-                return spsUrl;
+                if (await VerifyIemSpsAsync(alert))
+                {
+                    _logger.LogInformation("Map: Using IEM autoplot 217 for SPS {AfosId}.", alert.AfosId);
+                    return spsUrl;
+                }
+                _logger.LogWarning("Map: IEM has not yet indexed SPS {AfosId}; falling back to Mapbox.", alert.AfosId);
             }
-            _logger.LogWarning("Map: Could not build IEM SPS URL for {AfosId} (missing WMO identifier?); falling back to Mapbox.", alert.AfosId);
+            else
+            {
+                _logger.LogWarning("Map: Could not build IEM SPS URL for {AfosId} (missing or malformed WMO identifier); falling back to Mapbox.", alert.AfosId);
+            }
         }
 
         // IEM autoplot #208: generates a PNG with the exact warning polygon, county lines,
@@ -388,20 +397,79 @@ public class MapService
     /// <summary>
     /// Builds an IEM autoplot #217 URL for a Special Weather Statement.
     /// PID format: YYYYMMDDHHmm-K{WFO}-{WMO6}-SPS{WFO}
-    /// WFO comes from the last 3 chars of AfosId (e.g. "SPSMPX" → "MPX").
-    /// WMO6 comes from the first 6 chars of WmoIdentifier (e.g. "WWUS83 KMPX 011045" → "WWUS83").
+    /// WFO is the last 3 chars of the 6-char AFOS PIL (e.g. "SPSMPX" → "MPX").
+    /// WMO6 is the first 6 chars of WmoIdentifier (e.g. "WWUS83 KMPX 011045" → "WWUS83").
+    /// The timestamp is parsed from the DDHHMM token in WmoIdentifier rather than alert.Sent,
+    /// because NWS API processing can add 1-2 minutes of latency after WMO transmission.
     /// </summary>
     private static string? BuildIemSpsUrl(NwsAlert alert)
     {
-        if (alert.AfosId == null || alert.AfosId.Length < 4) return null;
+        // Standard SPS PIL is exactly 6 chars: "SPS" + 3-char WFO
+        if (alert.AfosId == null || alert.AfosId.Length != 6) return null;
         if (string.IsNullOrEmpty(alert.WmoIdentifier) || alert.WmoIdentifier.Length < 6) return null;
 
-        string wfo    = alert.AfosId[3..];              // "MPX" from "SPSMPX"
-        string wmo6   = alert.WmoIdentifier[..6];       // "WWUS83" from "WWUS83 KMPX 011045"
-        string pid    = $"{alert.Sent.UtcDateTime:yyyyMMddHHmm}-K{wfo}-{wmo6}-{alert.AfosId}";
+        string wfo  = alert.AfosId[3..];        // "MPX" from "SPSMPX"
+        string wmo6 = alert.WmoIdentifier[..6]; // "WWUS83" from "WWUS83 KMPX 011045"
 
+        // Parse DDHHMM from WMO header (e.g. "011045" from "WWUS83 KMPX 011045") for the PID
+        // timestamp, combining with year/month from alert.Sent. Fall back to Sent if parsing fails.
+        string ts;
+        var wmoParts = alert.WmoIdentifier.Split(' ');
+        if (wmoParts.Length >= 3 && wmoParts[2].Length == 6 &&
+            int.TryParse(wmoParts[2][..2], out int dd) &&
+            int.TryParse(wmoParts[2][2..4], out int hh) &&
+            int.TryParse(wmoParts[2][4..], out int mm))
+        {
+            ts = $"{alert.Sent.UtcDateTime.Year}{alert.Sent.UtcDateTime.Month:D2}{dd:D2}{hh:D2}{mm:D2}";
+        }
+        else
+        {
+            ts = $"{alert.Sent.UtcDateTime:yyyyMMddHHmm}";
+        }
+
+        string pid = $"{ts}-K{wfo}-{wmo6}-{alert.AfosId}";
         return $"https://mesonet.agron.iastate.edu/plotting/auto/plot/217/" +
                $"pid:{pid}::segnum:0::n:auto::_r:t::dpi:100.png";
+    }
+
+    /// <summary>
+    /// Queries IEM's active SPS GeoJSON feed to confirm the SPS has been indexed.
+    /// IEM returns HTTP 200 with a demo image for unknown PIDs, so this pre-flight check
+    /// prevents posting the wrong map. Matches by WFO and issue time (within 5 minutes).
+    /// </summary>
+    private async Task<bool> VerifyIemSpsAsync(NwsAlert alert)
+    {
+        if (alert.AfosId == null || alert.AfosId.Length != 6) return false;
+        var wfo = alert.AfosId[3..]; // "MPX" from "SPSMPX"
+
+        try
+        {
+            var http = _httpFactory.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(10);
+            var json = await http.GetStringAsync(
+                $"https://mesonet.agron.iastate.edu/geojson/sps.geojson?wfo={wfo}");
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("features", out var features)) return false;
+
+            foreach (var feature in features.EnumerateArray())
+            {
+                if (!feature.TryGetProperty("properties", out var props)) continue;
+                if (!props.TryGetProperty("issue", out var issueEl)) continue;
+                var issueStr = issueEl.GetString();
+                if (string.IsNullOrEmpty(issueStr)) continue;
+                if (!DateTimeOffset.TryParse(issueStr, null,
+                        System.Globalization.DateTimeStyles.AssumeUniversal |
+                        System.Globalization.DateTimeStyles.AdjustToUniversal, out var issue)) continue;
+                if (Math.Abs((issue - alert.Sent).TotalMinutes) <= 5)
+                    return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Map: IEM SPS pre-flight check failed for {AfosId} ({Error}).", alert.AfosId, ex.Message);
+            return false;
+        }
     }
 
     private static string BuildFeatureJson(string geometryJson) =>

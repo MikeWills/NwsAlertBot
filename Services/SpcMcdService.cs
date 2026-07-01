@@ -228,7 +228,7 @@ public class SpcMcdService
     {
         if (_locations != null) return _locations;
 
-        var codes = _nwsSettings.Zones.Count > 0 ? _nwsSettings.Zones : _nwsSettings.Counties;
+        var codes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
         var resolved = new List<(double, double)>();
 
         foreach (var code in codes)

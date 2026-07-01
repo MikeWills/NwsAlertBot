@@ -824,6 +824,17 @@ Some NWS phenomena codes differ from IEM's internal codes. Known aliases are tri
 `HT.W` (Heat Warning) and `EH.W` (Excessive Heat Warning) both map to `XH.W` in IEM (Extreme
 Heat Warning — IEM's code for this product since March 2025).
 
+**IEM autoplot #217 (Special Weather Statements):** SPS alerts carry no VTEC code, so the bot
+uses a different IEM endpoint. It parses `parameters.AWIPSidentifier` (AFOS PIL, e.g. `SPSMPX`)
+and `parameters.WMOidentifier` (e.g. `WWUS83 KMPX 011045`) from the NWS alert to construct the
+IEM product ID: `YYYYMMDDHHmm-K{WFO}-{WMO6}-SPS{WFO}`. The timestamp uses the DDHHMM from the
+WMO header (not the alert `sent` field, which may lag by 1-2 minutes due to NWS processing).
+
+The same demo-image trap applies: IEM returns HTTP 200 with a placeholder image for unknown
+products. Before returning the URL, the bot verifies the SPS is indexed by querying IEM's
+active SPS GeoJSON feed (`/geojson/sps.geojson?wfo={WFO}`) and matching the issue time within
+a 5-minute window. If not yet indexed, the bot falls back to Mapbox.
+
 **Mapbox (fallback — non-VTEC events and cancelled/expired alerts):** Used when no VTEC code
 is present. The map area and overlay are determined by:
 1. The **alert's own GeoJSON geometry polygon** (most NWS alerts include one).
@@ -1157,6 +1168,13 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Map: IEM autoplot #217 for Special Weather Statements** — SPS alerts (non-VTEC) now use
+  IEM's SPS-specific map endpoint. The bot parses `AWIPSidentifier` and `WMOidentifier` from the
+  NWS alert parameters to build the IEM product ID. A pre-flight check against IEM's active SPS
+  GeoJSON feed prevents posting the demo image when IEM hasn't yet indexed the product.
+- **SPC Convective Outlook significant-severe levels** — when the monitored area falls within a
+  CIG1/CIG2 hatching polygon on the SPC outlook GeoJSON, the label is appended to the
+  tornado/wind/hail probability lines in the post (e.g. `Wind: 30% — CIG1`).
 - **SPC Mesoscale Discussion (MCD) monitoring** — new `SpcMcd` settings block. When enabled,
   the bot detects active MCDs from the NWS products API, checks the MCD polygon against
   monitored zone/county centroids, and posts matching MCDs with the SPC-hosted image. MCDs

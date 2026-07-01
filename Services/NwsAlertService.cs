@@ -160,12 +160,19 @@ public class NwsAlertService
                 // AFOS PIL (e.g. "SPSMPX") — used to build IEM autoplot #217 image URLs for non-VTEC products.
                 if (parameters.TryGetProperty("AWIPSidentifier", out var awipsEl) &&
                     awipsEl.ValueKind == JsonValueKind.Array && awipsEl.GetArrayLength() > 0)
-                    alert.AfosId = awipsEl[0].GetString();
+                {
+                    var afosVal = awipsEl[0].GetString();
+                    if (afosVal != null) alert.AfosId = afosVal;
+                    else _logger.LogWarning("NwsAlert: AWIPSidentifier element was JSON null for alert {Id}.", alert.Id);
+                }
 
                 // WMO identifier (e.g. "WWUS83 KMPX 011045") — first 6 chars are the WMO routing code in IEM product IDs.
                 if (parameters.TryGetProperty("WMOidentifier", out var wmoEl) &&
                     wmoEl.ValueKind == JsonValueKind.Array && wmoEl.GetArrayLength() > 0)
-                    alert.WmoIdentifier = wmoEl[0].GetString();
+                {
+                    var wmoVal = wmoEl[0].GetString();
+                    if (wmoVal != null) alert.WmoIdentifier = wmoVal;
+                }
             }
 
             alerts.Add(alert);

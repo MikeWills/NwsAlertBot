@@ -93,7 +93,7 @@ public class SpcOutlookService
     {
         if (_locations != null) return _locations;
 
-        var codes = _nwsSettings.Zones.Count > 0 ? _nwsSettings.Zones : _nwsSettings.Counties;
+        var codes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
         var resolved = new List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)>();
 
         foreach (var code in codes)

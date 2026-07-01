@@ -209,17 +209,16 @@ public class SocialMediaOrchestrator
 
     private async Task DownloadMapImageAsync(NwsAlert alert, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(alert.MapImageUrl)) return;
-
-        // IEM may take a few seconds to render a brand-new event image — retry with delays.
-        if (await TryDownloadAsync(alert.MapImageUrl, maxAttempts: 4, retryDelay: 5, alert, ct))
+        // If a primary URL is set, try it first (IEM may take a few seconds to index a new event).
+        if (!string.IsNullOrEmpty(alert.MapImageUrl) &&
+            await TryDownloadAsync(alert.MapImageUrl, maxAttempts: 4, retryDelay: 5, alert, ct))
             return;
 
-        // Primary URL failed — fall back to a Mapbox static image if configured.
+        // Fall back to Mapbox when the primary URL is absent or its download fails.
         var mapboxUrl = await _map.GetMapboxFallbackUrlAsync(alert);
         if (mapboxUrl != null)
         {
-            _logger.LogInformation("Map: Primary image failed; trying Mapbox fallback for {Event}.", alert.Event);
+            _logger.LogInformation("Map: Primary image unavailable; trying Mapbox fallback for {Event}.", alert.Event);
             if (await TryDownloadAsync(mapboxUrl, maxAttempts: 1, retryDelay: 0, alert, ct))
                 return;
         }
@@ -243,7 +242,10 @@ public class SocialMediaOrchestrator
                     attempt, maxAttempts, ex.Message, retryDelay);
                 await Task.Delay(TimeSpan.FromSeconds(retryDelay), ct);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Map: Download failed after {Max} attempt(s) — {Error}.", maxAttempts, ex.Message);
+            }
         }
         return false;
     }
