@@ -38,6 +38,12 @@ public class NwsAlert
     /// <summary>VTEC event tracking number. Null when no VTEC string is present.</summary>
     public int? VtecEtn { get; set; }
 
+    /// <summary>AFOS PIL from parameters.AWIPSidentifier (e.g. "SPSMPX"). Used to build IEM autoplot #217 image URLs for non-VTEC products like SPS.</summary>
+    public string? AfosId { get; set; }
+
+    /// <summary>WMO identifier from parameters.WMOidentifier (e.g. "WWUS83 KMPX 011045"). First 6 chars are the WMO routing code used in IEM product IDs.</summary>
+    public string? WmoIdentifier { get; set; }
+
     /// <summary>Mapbox static map image URL populated by MapService before posting. Null when map generation is disabled or geometry is unavailable.</summary>
     public string? MapImageUrl { get; set; }
 

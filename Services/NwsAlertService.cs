@@ -135,25 +135,37 @@ public class NwsAlertService
                 }
             }
 
-            if (props.TryGetProperty("parameters", out var parameters) &&
-                parameters.TryGetProperty("VTEC", out var vtecArray) &&
-                vtecArray.ValueKind == JsonValueKind.Array)
+            if (props.TryGetProperty("parameters", out var parameters))
             {
-                foreach (var vtecEl in vtecArray.EnumerateArray())
+                if (parameters.TryGetProperty("VTEC", out var vtecArray) &&
+                    vtecArray.ValueKind == JsonValueKind.Array)
                 {
-                    var vtecStr = vtecEl.GetString();
-                    if (string.IsNullOrEmpty(vtecStr)) continue;
-                    var m = VtecPattern.Match(vtecStr);
-                    if (!m.Success) continue;
+                    foreach (var vtecEl in vtecArray.EnumerateArray())
+                    {
+                        var vtecStr = vtecEl.GetString();
+                        if (string.IsNullOrEmpty(vtecStr)) continue;
+                        var m = VtecPattern.Match(vtecStr);
+                        if (!m.Success) continue;
 
-                    alert.VtecAction = m.Groups["action"].Value;
-                    var rawWfo = m.Groups["wfo"].Value;
-                    alert.VtecWfo = rawWfo.Length == 4 && rawWfo[0] == 'K' ? rawWfo[1..] : rawWfo;
-                    alert.VtecPhenomena = m.Groups["phenom"].Value;
-                    alert.VtecSignificance = m.Groups["sig"].Value;
-                    alert.VtecEtn = int.Parse(m.Groups["etn"].Value);
-                    break; // use the first (primary) VTEC string only
+                        alert.VtecAction = m.Groups["action"].Value;
+                        var rawWfo = m.Groups["wfo"].Value;
+                        alert.VtecWfo = rawWfo.Length == 4 && rawWfo[0] == 'K' ? rawWfo[1..] : rawWfo;
+                        alert.VtecPhenomena = m.Groups["phenom"].Value;
+                        alert.VtecSignificance = m.Groups["sig"].Value;
+                        alert.VtecEtn = int.Parse(m.Groups["etn"].Value);
+                        break; // use the first (primary) VTEC string only
+                    }
                 }
+
+                // AFOS PIL (e.g. "SPSMPX") — used to build IEM autoplot #217 image URLs for non-VTEC products.
+                if (parameters.TryGetProperty("AWIPSidentifier", out var awipsEl) &&
+                    awipsEl.ValueKind == JsonValueKind.Array && awipsEl.GetArrayLength() > 0)
+                    alert.AfosId = awipsEl[0].GetString();
+
+                // WMO identifier (e.g. "WWUS83 KMPX 011045") — first 6 chars are the WMO routing code in IEM product IDs.
+                if (parameters.TryGetProperty("WMOidentifier", out var wmoEl) &&
+                    wmoEl.ValueKind == JsonValueKind.Array && wmoEl.GetArrayLength() > 0)
+                    alert.WmoIdentifier = wmoEl[0].GetString();
             }
 
             alerts.Add(alert);

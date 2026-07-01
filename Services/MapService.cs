@@ -61,6 +61,19 @@ public class MapService
     {
         if (!_settings.Enabled) return null;
 
+        // IEM autoplot #217: SPS-specific map image (non-VTEC). Takes the IEM product ID
+        // constructed from AWIPSidentifier (AFOS PIL) and WMOidentifier parsed from the alert.
+        if (alert.AfosId?.StartsWith("SPS", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var spsUrl = BuildIemSpsUrl(alert);
+            if (spsUrl != null)
+            {
+                _logger.LogInformation("Map: Using IEM autoplot 217 for SPS {AfosId}.", alert.AfosId);
+                return spsUrl;
+            }
+            _logger.LogWarning("Map: Could not build IEM SPS URL for {AfosId} (missing WMO identifier?); falling back to Mapbox.", alert.AfosId);
+        }
+
         // IEM autoplot #208: generates a PNG with the exact warning polygon, county lines,
         // and NEXRAD radar. Available for any alert with a VTEC code (the vast majority of
         // NWS alerts). Skip for CAN/EXP actions — those events display incorrectly on IEM.
@@ -371,6 +384,25 @@ public class MapService
         $"network:WFO::wfo:{alert.VtecWfo}::year:{alert.Sent.Year}::" +
         $"phenomenav:{iemPhenomena}::significancev:{alert.VtecSignificance}::" +
         $"etn:{alert.VtecEtn}::opt:single::n:auto::_r:t::dpi:100.png";
+
+    /// <summary>
+    /// Builds an IEM autoplot #217 URL for a Special Weather Statement.
+    /// PID format: YYYYMMDDHHmm-K{WFO}-{WMO6}-SPS{WFO}
+    /// WFO comes from the last 3 chars of AfosId (e.g. "SPSMPX" → "MPX").
+    /// WMO6 comes from the first 6 chars of WmoIdentifier (e.g. "WWUS83 KMPX 011045" → "WWUS83").
+    /// </summary>
+    private static string? BuildIemSpsUrl(NwsAlert alert)
+    {
+        if (alert.AfosId == null || alert.AfosId.Length < 4) return null;
+        if (string.IsNullOrEmpty(alert.WmoIdentifier) || alert.WmoIdentifier.Length < 6) return null;
+
+        string wfo    = alert.AfosId[3..];              // "MPX" from "SPSMPX"
+        string wmo6   = alert.WmoIdentifier[..6];       // "WWUS83" from "WWUS83 KMPX 011045"
+        string pid    = $"{alert.Sent.UtcDateTime:yyyyMMddHHmm}-K{wfo}-{wmo6}-{alert.AfosId}";
+
+        return $"https://mesonet.agron.iastate.edu/plotting/auto/plot/217/" +
+               $"pid:{pid}::segnum:0::n:auto::_r:t::dpi:100.png";
+    }
 
     private static string BuildFeatureJson(string geometryJson) =>
         $"{{\"type\":\"Feature\",\"properties\":{{" +
