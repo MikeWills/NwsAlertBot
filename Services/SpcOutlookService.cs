@@ -147,6 +147,7 @@ public class SpcOutlookService
             DateTimeOffset? bestIssue = null, bestExpire = null;
             string? bestWfo = null, bestState = null;
             double? maxTorn = null, maxWind = null, maxHail = null;
+            string? sigTorn = null, sigWind = null, sigHail = null;
 
             foreach (var loc in locations)
             {
@@ -156,6 +157,10 @@ public class SpcOutlookService
                 maxTorn = MaxNullable(maxTorn, FindMaxProbability(tornFeatures, loc.Lon, loc.Lat));
                 maxWind = MaxNullable(maxWind, FindMaxProbability(windFeatures, loc.Lon, loc.Lat));
                 maxHail = MaxNullable(maxHail, FindMaxProbability(hailFeatures, loc.Lon, loc.Lat));
+
+                if (tornFeatures.HasValue) sigTorn = MaxSig(sigTorn, FindSig(tornFeatures.Value, loc.Lon, loc.Lat));
+                if (windFeatures.HasValue) sigWind = MaxSig(sigWind, FindSig(windFeatures.Value, loc.Lon, loc.Lat));
+                if (hailFeatures.HasValue) sigHail = MaxSig(sigHail, FindSig(hailFeatures.Value, loc.Lon, loc.Lat));
 
                 if (dn > bestDn)
                 {
@@ -171,7 +176,7 @@ public class SpcOutlookService
 
             if (bestLabel == null) return null;
 
-            var alert = BuildAlert(day, bestWfo, bestState, bestLabel, bestLabel2!, bestIssue, bestExpire, maxTorn, maxWind, maxHail, _timeZone);
+            var alert = BuildAlert(day, bestWfo, bestState, bestLabel, bestLabel2!, bestIssue, bestExpire, maxTorn, maxWind, maxHail, sigTorn, sigWind, sigHail, _timeZone);
             if (alert == null)
                 _logger.LogWarning("Spc: Skipping Day {Day} outlook — both ISSUE_ISO and EXPIRE_ISO are absent.", day);
             return alert;
@@ -185,6 +190,9 @@ public class SpcOutlookService
 
     private static double? MaxNullable(double? a, double? b) =>
         a == null ? b : b == null ? a : Math.Max(a.Value, b.Value);
+
+    private static string? MaxSig(string? a, string? b) =>
+        a == null ? b : b == null ? a : string.CompareOrdinal(b, a) > 0 ? b : a;
 
     private async Task<JsonDocument?> FetchLayerAsync(string fileName)
     {
@@ -241,7 +249,7 @@ public class SpcOutlookService
         {
             var props = feature.GetProperty("properties");
             var labelStr = props.GetProperty("LABEL").GetString();
-            // Significant-severe hatching ("CIG1"/"CIG2") isn't a numeric probability — skip it.
+            // SIGN is the significant-severe hatch polygon — not a numeric probability; handled separately.
             if (labelStr == null || !double.TryParse(labelStr, CultureInfo.InvariantCulture, out var pct))
                 continue;
 
@@ -249,6 +257,22 @@ public class SpcOutlookService
             if (best == null || pct > best) best = pct;
         }
 
+        return best;
+    }
+
+    // SPC significant-severe hatching uses labels "CIG1", "CIG2", etc. — not numeric probabilities.
+    // Returns the highest significant label covering the point, or null if none.
+    private static string? FindSig(JsonElement features, double lon, double lat)
+    {
+        string? best = null;
+        foreach (var feature in features.EnumerateArray())
+        {
+            var props = feature.GetProperty("properties");
+            var label = props.GetProperty("LABEL").GetString();
+            if (label == null || !label.StartsWith("CIG", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!PointInGeometry(feature.GetProperty("geometry"), lon, lat)) continue;
+            if (best == null || string.CompareOrdinal(label, best) > 0) best = label;
+        }
         return best;
     }
 
@@ -264,7 +288,10 @@ public class SpcOutlookService
     }
 
     private static NwsAlert? BuildAlert(int day, string? wfo, string? state, string label, string label2,
-        DateTimeOffset? issue, DateTimeOffset? expire, double? tornPct, double? windPct, double? hailPct, TimeZoneInfo timeZone)
+        DateTimeOffset? issue, DateTimeOffset? expire,
+        double? tornPct, double? windPct, double? hailPct,
+        string? sigTorn, string? sigWind, string? sigHail,
+        TimeZoneInfo timeZone)
     {
         string severity = label switch
         {
@@ -277,10 +304,14 @@ public class SpcOutlookService
 
         // SPC minimum thresholds: tornado polygons start at 2%, wind/hail at 5%.
         // No polygon for a point means the probability is below that threshold, not zero.
-        static string FormatTornPct(double? p) => p.HasValue ? $"{p.Value * 100:0}%" : "< 2%";
-        static string FormatWindHailPct(double? p) => p.HasValue ? $"{p.Value * 100:0}%" : "< 5%";
+        // "Significant" (SIGN hatch) = 10%+ chance of EF2+ tornado, 2"+ hail, or 65+ kt wind.
+        static string Sig(string? s) => s != null ? $" — {s}" : "";
+        static string FormatTornPct(double? p, string? sig) =>
+            (p.HasValue ? $"{p.Value * 100:0}%" : "< 2%") + Sig(sig);
+        static string FormatWindHailPct(double? p, string? sig) =>
+            (p.HasValue ? $"{p.Value * 100:0}%" : "< 5%") + Sig(sig);
 
-        string instruction = $"Tornado: {FormatTornPct(tornPct)}\nWind: {FormatWindHailPct(windPct)}\nHail: {FormatWindHailPct(hailPct)}" +
+        string instruction = $"Tornado: {FormatTornPct(tornPct, sigTorn)}\nWind: {FormatWindHailPct(windPct, sigWind)}\nHail: {FormatWindHailPct(hailPct, sigHail)}" +
                              $"\nFor more details: https://www.spc.noaa.gov/products/outlook/day{day}otlk.html";
         // Prefer ISSUE_ISO for the dedup ID; fall back to EXPIRE_ISO (stable for the outlook period).
         // Never use UtcNow — it changes every minute and would re-post the same outlook every poll cycle.
