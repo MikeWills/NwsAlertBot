@@ -171,12 +171,22 @@ static class LocalConfigSync
 {
     private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
 
+    // Must match the leniency of the Microsoft.Extensions.Configuration.Json provider used by
+    // AddJsonFile() (which tolerates "//" comments) — JsonNode.Parse's default options do NOT
+    // allow comments and throw JsonReaderException on the very first "//" line, crashing the
+    // process with SIGABRT before the host even builds.
+    private static readonly JsonDocumentOptions ParseOptions = new()
+    {
+        CommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
     public static void Run(string basePath = "appsettings.json", string localPath = "appsettings.Local.json")
     {
         if (!File.Exists(localPath) || !File.Exists(basePath)) return;
 
-        var localRoot = JsonNode.Parse(File.ReadAllText(localPath));
-        var baseRoot  = JsonNode.Parse(File.ReadAllText(basePath));
+        var localRoot = JsonNode.Parse(File.ReadAllText(localPath), documentOptions: ParseOptions);
+        var baseRoot  = JsonNode.Parse(File.ReadAllText(basePath), documentOptions: ParseOptions);
 
         if (localRoot is not JsonObject localObj || baseRoot is not JsonObject baseObj) return;
 
