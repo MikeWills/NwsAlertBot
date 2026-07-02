@@ -40,7 +40,7 @@ Not implemented — flagged here as plausible future additions, same pattern as 
 | AGO | Agricultural Observations |  |
 | AHD | Area Hydrologic Discussion |  |
 | ALT | Space Environment Alert |  |
-| AQA | Air Quality Alert |  |
+| AQA | Air Quality Alert | Add this! |
 | AQI | Air Quality Index Statement |  |
 | ASA | Air Stagnation Advisory |  |
 | AVA | Avalanche Watch |  |
@@ -56,8 +56,8 @@ Not implemented — flagged here as plausible future additions, same pattern as 
 | CAE | Child Abduction Emergency |  |
 | CAP | Common Alerting Protocol |  |
 | CCF | Coded City Forecast |  |
-| CDW | Civil Danger Warning |  |
-| CEM | Civil Emergency Message |  |
+| CDW | Civil Danger Warning | Add this?  |
+| CEM | Civil Emergency Message | Add this? |
 | CF6 | WFO Monthly/Daily Climate Data |  |
 | CFP | Convective Forecast Product |  |
 | CFW | Coastal Flood Warnings/Watches/Statements |  |

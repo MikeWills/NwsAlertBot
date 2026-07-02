@@ -500,6 +500,15 @@ The bot requests all three NWS message types:
 
 Each message type has its own unique ID, so deduplication works correctly — an update or cancellation will always post even if the original alert was already posted. Note that not every alert receives a cancellation; some simply expire naturally without a `Cancel` message from NWS.
 
+**Cancellations always bypass `FilterSeverity`/`FilterUrgency`/`FilterCertainty`.** NWS downgrades
+every cancel message to `severity: Minor`, `urgency: Past`, `certainty: Observed` regardless of
+the original event's actual severity — confirmed even for cancelled Tornado Warnings and Flash
+Flood Warnings. Because of that, `Cancel` messages are fetched via a separate, unconditional
+query with no severity/urgency/certainty filter (`FilterEventTypes` still applies). Without this,
+almost any `FilterSeverity` that excludes `Minor` — which includes every example in this README
+except the "everything" one — would silently drop every single cancellation, for every alert
+type, before the bot ever saw it.
+
 ### FilterSeverity
 
 Controls the minimum threat level of alerts to post.
@@ -1336,6 +1345,14 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Fix: cancellation alerts silently dropped by severity/urgency/certainty filters** — NWS
+  downgrades every `Cancel` message to `severity: Minor`, `urgency: Past`, `certainty: Observed`
+  regardless of the original event's actual severity (confirmed live for cancelled Tornado
+  Warnings and Flash Flood Warnings, not just lower-severity products). Any `FilterSeverity` that
+  excludes `Minor` — the default, and every recommended config in this README except "everything"
+  — meant cancellations for every alert type were filtered out server-side and never reached the
+  bot. `NwsAlertService` now fetches cancellations via a separate, always-on query that bypasses
+  those three filters (mirroring how `AdditionalEventTypes` already bypassed `FilterSeverity`).
 - **BREAKING: `Nws.Severity`/`Urgency`/`Certainty`/`EventTypes` renamed to `FilterSeverity`/
   `FilterUrgency`/`FilterCertainty`/`FilterEventTypes`.** All four are server-side, restrictive
   filters sent to `api.weather.gov` — the `Filter` prefix makes that explicit and distinguishes

@@ -14,6 +14,13 @@ namespace NwsAlertBot.Services;
 /// urgency, certainty, event type) to minimize data transfer and processing.
 /// When AdditionalEventTypes is set, a second API call is made with only the
 /// geographic filter so those event types bypass the Severity filter.
+///
+/// Cancellations ("cancel" message type) are always fetched via a separate, unconditional
+/// third query with no severity/urgency/certainty filter — NWS downgrades every cancel message
+/// to severity=Minor/urgency=Past/certainty=Observed regardless of the original event's actual
+/// severity, so a FilterSeverity/FilterUrgency/FilterCertainty that excludes those values would
+/// otherwise silently drop every cancellation, for every alert type, before it ever reached the
+/// bot. Confirmed against live NWS data for Tornado Warning and Flash Flood Warning cancels.
 /// </summary>
 public class NwsAlertService
 {
@@ -59,6 +66,18 @@ public class NwsAlertService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch NWS alerts.");
+        }
+
+        try
+        {
+            var cancellations = await FetchAlertsAsync(BuildCancelUrl());
+            var seenCancel = new HashSet<string>(alerts.Select(a => a.Id), StringComparer.Ordinal);
+            foreach (var a in cancellations)
+                if (seenCancel.Add(a.Id)) alerts.Add(a);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "NWS: Failed to fetch cancellation alerts.");
         }
 
         if (!string.IsNullOrWhiteSpace(_settings.AdditionalEventTypes))
@@ -201,11 +220,17 @@ public class NwsAlertService
     }
 
     /// <summary>
-    /// Main query: geographic + severity/urgency/certainty/event filters.
+    /// Main query: geographic + severity/urgency/certainty/event filters. Only "alert" and
+    /// "update" message types — "cancel" is fetched separately by BuildCancelUrl() because NWS
+    /// downgrades every cancellation to severity=Minor/urgency=Past/certainty=Observed
+    /// regardless of the original event's severity (confirmed even for Tornado Warning and
+    /// Flash Flood Warning cancellations). Any FilterSeverity/FilterUrgency/FilterCertainty
+    /// that excludes those values would otherwise silently drop every single cancellation for
+    /// every alert type, server-side, before the bot ever saw it.
     /// </summary>
     private string BuildUrl()
     {
-        var qs = new List<string> { "status=actual", "message_type=alert,update,cancel" };
+        var qs = new List<string> { "status=actual", "message_type=alert,update" };
 
         AddGeoFilter(qs);
 
@@ -217,6 +242,24 @@ public class NwsAlertService
 
         if (!string.IsNullOrWhiteSpace(_settings.FilterCertainty))
             qs.Add($"certainty={Uri.EscapeDataString(_settings.FilterCertainty)}");
+
+        if (!string.IsNullOrWhiteSpace(_settings.FilterEventTypes))
+            qs.Add($"event={Uri.EscapeDataString(_settings.FilterEventTypes)}");
+
+        return "https://api.weather.gov/alerts/active?" + string.Join("&", qs);
+    }
+
+    /// <summary>
+    /// Secondary query for cancellations: geographic + FilterEventTypes only — deliberately
+    /// omits severity/urgency/certainty, which NWS always downgrades on cancel messages
+    /// (see BuildUrl() remarks). FilterEventTypes is still applied since a cancellation for an
+    /// event type the user isn't tracking at all is still not relevant to them.
+    /// </summary>
+    private string BuildCancelUrl()
+    {
+        var qs = new List<string> { "status=actual", "message_type=cancel" };
+
+        AddGeoFilter(qs);
 
         if (!string.IsNullOrWhiteSpace(_settings.FilterEventTypes))
             qs.Add($"event={Uri.EscapeDataString(_settings.FilterEventTypes)}");
