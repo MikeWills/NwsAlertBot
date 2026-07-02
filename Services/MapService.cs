@@ -27,7 +27,7 @@ namespace NwsAlertBot.Services;
 public class MapService
 {
     private readonly MapSettings _settings;
-    private readonly NwsSettings _nwsSettings;
+    private readonly LocationSettings _location;
     private readonly NwsZoneService _zones;
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<MapService> _logger;
@@ -41,13 +41,13 @@ public class MapService
 
     public MapService(
         MapSettings settings,
-        NwsSettings nwsSettings,
+        LocationSettings location,
         NwsZoneService zones,
         IHttpClientFactory httpFactory,
         ILogger<MapService> logger)
     {
         _settings    = settings;
-        _nwsSettings = nwsSettings;
+        _location    = location;
         _zones       = zones;
         _httpFactory = httpFactory;
         _logger      = logger;
@@ -214,10 +214,10 @@ public class MapService
             else
             {
                 var configured = new HashSet<string>(
-                    _nwsSettings.Zones.Concat(_nwsSettings.Counties), StringComparer.OrdinalIgnoreCase);
+                    _location.Zones.Concat(_location.Counties), StringComparer.OrdinalIgnoreCase);
                 var fallbackCodes = alert.GeocodeUgc.Where(c => configured.Contains(c)).ToList();
                 if (fallbackCodes.Count == 0)
-                    fallbackCodes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
+                    fallbackCodes = _location.Zones.Concat(_location.Counties).ToList();
 
                 _logger.LogWarning("Map: Full UGC geometry fetch returned nothing; retrying with {Count} configured code(s).",
                     fallbackCodes.Count);
@@ -305,7 +305,7 @@ public class MapService
         {
             if (_fallbackBbox != null) return _fallbackBbox;
 
-            var codes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
+            var codes = _location.Zones.Concat(_location.Counties).ToList();
             if (codes.Count == 0) return null;
 
             var (bbox, _, _) = await GetBboxAndOverlayAsync(codes);

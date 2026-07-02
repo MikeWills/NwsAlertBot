@@ -21,7 +21,7 @@ public class SpcOutlookService
 {
     private readonly HttpClient _http;
     private readonly SpcSettings _settings;
-    private readonly NwsSettings _nwsSettings;
+    private readonly LocationSettings _location;
     private readonly NwsZoneService _zones;
     private readonly ILogger<SpcOutlookService> _logger;
 
@@ -31,14 +31,14 @@ public class SpcOutlookService
     private DateTimeOffset _lastCheckedUtc = DateTimeOffset.MinValue;
     private readonly TimeZoneInfo _timeZone;
 
-    public SpcOutlookService(HttpClient http, SpcSettings settings, NwsSettings nwsSettings, NwsZoneService zones, ILogger<SpcOutlookService> logger)
+    public SpcOutlookService(HttpClient http, SpcSettings settings, LocationSettings location, NwsZoneService zones, ILogger<SpcOutlookService> logger)
     {
         _http = http;
         _settings = settings;
-        _nwsSettings = nwsSettings;
+        _location = location;
         _zones = zones;
         _logger = logger;
-        _timeZone = ResolveTimeZone(nwsSettings.TimeZone, logger);
+        _timeZone = ResolveTimeZone(location.TimeZone, logger);
     }
 
     private static TimeZoneInfo ResolveTimeZone(string id, ILogger logger)
@@ -52,7 +52,7 @@ public class SpcOutlookService
         try { return TimeZoneInfo.FindSystemTimeZoneById("America/Chicago"); }
         catch
         {
-            logger.LogWarning("Spc: Could not load America/Chicago as fallback timezone; using UTC. Set Spc.TimeZone to a valid IANA ID such as \"America/Chicago\".");
+            logger.LogWarning("Spc: Could not load America/Chicago as fallback timezone; using UTC. Set Location.TimeZone to a valid IANA ID such as \"America/Chicago\".");
             return TimeZoneInfo.Utc;
         }
     }
@@ -93,7 +93,7 @@ public class SpcOutlookService
     {
         if (_locations != null) return _locations;
 
-        var codes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
+        var codes = _location.Zones.Concat(_location.Counties).ToList();
         var resolved = new List<(string Code, string Name, double Lat, double Lon, string? Wfo, string? State)>();
 
         foreach (var code in codes)

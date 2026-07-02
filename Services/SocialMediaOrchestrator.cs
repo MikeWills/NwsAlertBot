@@ -10,7 +10,7 @@ namespace NwsAlertBot.Services;
 /// </summary>
 public class SocialMediaOrchestrator
 {
-    private readonly NwsSettings _nwsSettings;
+    private readonly PollingSettings _polling;
     private readonly NwsAlertService _nws;
     private readonly SpcOutlookService _spc;
     private readonly SpcMcdService _spcMcd;
@@ -32,7 +32,7 @@ public class SocialMediaOrchestrator
     private readonly ILogger<SocialMediaOrchestrator> _logger;
 
     public SocialMediaOrchestrator(
-        NwsSettings nwsSettings,
+        PollingSettings polling,
         NwsAlertService nws,
         SpcOutlookService spc,
         SpcMcdService spcMcd,
@@ -53,7 +53,7 @@ public class SocialMediaOrchestrator
         VoipMsService voipMs,
         ILogger<SocialMediaOrchestrator> logger)
     {
-        _nwsSettings      = nwsSettings;
+        _polling          = polling;
         _nws              = nws;
         _spc              = spc;
         _spcMcd           = spcMcd;
@@ -103,7 +103,7 @@ public class SocialMediaOrchestrator
             _tracker.MarkPosted(alert.Id);
             newCount++;
 
-            if (PassesFilter(alert.Severity, _nwsSettings.ActiveAlertMinSeverity))
+            if (PassesFilter(alert.Severity, _polling.ActiveAlertMinSeverity))
                 stormCount++;
 
             // Brief delay between alerts to avoid rate limit bursts

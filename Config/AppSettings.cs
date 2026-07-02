@@ -1,19 +1,18 @@
 namespace NwsAlertBot.Config;
 
-public class NwsSettings
+/// <summary>
+/// Geographic area and time zone shared by every feed (Nws, Spc, SpcMcd, Hwo, and the map
+/// image bounding-box fallback in MapService). None of the four alert feeds have their own
+/// notion of location — they all resolve WFOs/centroids/geometry from these same Zones and
+/// Counties. Adding a new feed in the future should inject LocationSettings, not duplicate
+/// its own copy of these fields.
+/// </summary>
+public class LocationSettings
 {
-    /// <summary>
-    /// Two-letter state code fallback, e.g. "MO".
-    /// Used only if Zones and Counties are both empty.
-    /// Leave empty for nationwide (not recommended — very noisy).
-    /// </summary>
-    public string State { get; set; } = "";
-
     /// <summary>
     /// NWS forecast zone codes to monitor. Format: {ST}Z{###}
     /// Example: ["MOZ066", "MOZ067", "MOZ068"]
     /// Find yours at: https://alerts.weather.gov/ or https://www.weather.gov/gis/
-    /// If specified, takes priority over State.
     /// </summary>
     public List<string> Zones { get; set; } = new();
 
@@ -25,6 +24,23 @@ public class NwsSettings
     /// </summary>
     public List<string> Counties { get; set; } = new();
 
+    /// <summary>
+    /// IANA time zone ID used to format Issued/Valid/Expires times on all alert posts
+    /// (NWS, SPC, and HWO). Works on Windows and Linux. Examples: "America/Chicago",
+    /// "America/New_York", "America/Denver", "America/Los_Angeles".
+    /// See README for a full US reference table.
+    /// </summary>
+    public string TimeZone { get; set; } = "America/Chicago";
+}
+
+/// <summary>
+/// Master polling loop cadence — how often SocialMediaOrchestrator.RunAsync() checks all
+/// feeds. Each feed still self-gates on its own CheckIntervalSeconds, so this only controls
+/// how quickly the bot notices a new poll cycle is due. Only NWS alerts and SPC MCDs ever
+/// trigger the accelerated (ActiveAlert*) window — SPC Outlook and HWO never do.
+/// </summary>
+public class PollingSettings
+{
     /// <summary>
     /// Idle poll interval in seconds — used when no active alerts have been seen recently.
     /// 300 (5 minutes) is a reasonable default to avoid hammering the NWS API.
@@ -52,6 +68,24 @@ public class NwsSettings
     /// Leave empty to have any new alert trigger active mode.
     /// </summary>
     public string ActiveAlertMinSeverity { get; set; } = "Severe,Extreme";
+}
+
+/// <summary>
+/// Query filters for the NWS CAP alerts feed only (regular warnings/watches/advisories + SPS).
+/// These are sent directly to api.weather.gov as query parameters — a server-side, master
+/// filter that nothing downstream can override. See LocationSettings for Zones/Counties/State
+/// (shared by all feeds) and PollingSettings for poll cadence.
+/// </summary>
+public class NwsSettings
+{
+    /// <summary>
+    /// Two-letter state code fallback, e.g. "MO".
+    /// Used only if Location.Zones and Location.Counties are both empty.
+    /// Only affects the main NWS alerts feed — SPC Outlook/MCD/HWO always require explicit
+    /// Zones/Counties and do not fall back to a whole state.
+    /// Leave empty for nationwide (not recommended — very noisy).
+    /// </summary>
+    public string State { get; set; } = "";
 
     /// <summary>
     /// Filter by minimum severity — passed directly to the NWS API.
@@ -92,14 +126,6 @@ public class NwsSettings
     /// Leave empty if not needed.
     /// </summary>
     public string AdditionalEventTypes { get; set; } = "";
-
-    /// <summary>
-    /// IANA time zone ID used to format Issued/Valid/Expires times on all alert posts
-    /// (both NWS and SPC). Works on Windows and Linux. Examples: "America/Chicago",
-    /// "America/New_York", "America/Denver", "America/Los_Angeles".
-    /// See README for a full US reference table.
-    /// </summary>
-    public string TimeZone { get; set; } = "America/Chicago";
 }
 
 public class FacebookSettings

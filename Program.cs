@@ -40,6 +40,8 @@ var host = Host.CreateDefaultBuilder(args)
         var cfg = context.Configuration;
 
         // Bind all config sections
+        var locationSettings  = cfg.GetSection("Location").Get<LocationSettings>()   ?? new LocationSettings();
+        var pollingSettings   = cfg.GetSection("Polling").Get<PollingSettings>()     ?? new PollingSettings();
         var nwsSettings       = cfg.GetSection("Nws").Get<NwsSettings>()             ?? new NwsSettings();
         var facebookSettings  = cfg.GetSection("Facebook").Get<FacebookSettings>()   ?? new FacebookSettings();
         var instagramSettings = cfg.GetSection("Instagram").Get<InstagramSettings>() ?? new InstagramSettings();
@@ -58,6 +60,8 @@ var host = Host.CreateDefaultBuilder(args)
         var hwoSettings       = cfg.GetSection("Hwo").Get<HwoSettings>()             ?? new HwoSettings();
 
         // Register settings as singletons
+        services.AddSingleton(locationSettings);
+        services.AddSingleton(pollingSettings);
         services.AddSingleton(nwsSettings);
         services.AddSingleton(facebookSettings);
         services.AddSingleton(instagramSettings);
@@ -250,6 +254,8 @@ public class AlertPollingService : BackgroundService
     private readonly StartupConfirmationService  _confirmation;
     private readonly SocialMediaOrchestrator     _orchestrator;
     private readonly NwsSettings                 _settings;
+    private readonly LocationSettings            _location;
+    private readonly PollingSettings             _polling;
     private readonly ILogger<AlertPollingService> _logger;
 
     // Tracks when the last new alert was posted; null means no alert seen yet this session.
@@ -259,27 +265,31 @@ public class AlertPollingService : BackgroundService
         StartupConfirmationService  confirmation,
         SocialMediaOrchestrator     orchestrator,
         NwsSettings                 settings,
+        LocationSettings            location,
+        PollingSettings             polling,
         ILogger<AlertPollingService> logger)
     {
         _confirmation = confirmation;
         _orchestrator = orchestrator;
         _settings     = settings;
+        _location     = location;
+        _polling      = polling;
         _logger       = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        string geoFilter = _settings.Zones.Count > 0
-            ? $"Zones: {string.Join(", ", _settings.Zones)}"
-            : _settings.Counties.Count > 0
-                ? $"Counties: {string.Join(", ", _settings.Counties)}"
+        string geoFilter = _location.Zones.Count > 0
+            ? $"Zones: {string.Join(", ", _location.Zones)}"
+            : _location.Counties.Count > 0
+                ? $"Counties: {string.Join(", ", _location.Counties)}"
                 : string.IsNullOrWhiteSpace(_settings.State) ? "Nationwide" : $"State: {_settings.State}";
 
         _logger.LogInformation(
             "NWS Alert Bot started. Idle poll: {Idle}s | Active poll: {Active}s (window: {Hours}h) | {GeoFilter} | Min severity: {Severity} | Active mode trigger: {ActiveMinSeverity}",
-            _settings.PollIntervalSeconds, _settings.ActiveAlertPollIntervalSeconds,
-            _settings.ActiveAlertWindowHours, geoFilter, _settings.Severity,
-            string.IsNullOrWhiteSpace(_settings.ActiveAlertMinSeverity) ? "any" : _settings.ActiveAlertMinSeverity);
+            _polling.PollIntervalSeconds, _polling.ActiveAlertPollIntervalSeconds,
+            _polling.ActiveAlertWindowHours, geoFilter, _settings.Severity,
+            string.IsNullOrWhiteSpace(_polling.ActiveAlertMinSeverity) ? "any" : _polling.ActiveAlertMinSeverity);
 
         // Send one-time confirmation to any platform not yet verified
         await _confirmation.RunAsync(stoppingToken);
@@ -293,7 +303,7 @@ public class AlertPollingService : BackgroundService
             {
                 if (_lastNewAlertUtc == null)
                     _logger.LogInformation("Active storm mode engaged — polling every {Interval}s for {Hours}h.",
-                        _settings.ActiveAlertPollIntervalSeconds, _settings.ActiveAlertWindowHours);
+                        _polling.ActiveAlertPollIntervalSeconds, _polling.ActiveAlertWindowHours);
                 else
                     _logger.LogInformation("Active storm window reset — {Count} new alert(s) posted.", newAlerts);
 
@@ -302,19 +312,19 @@ public class AlertPollingService : BackgroundService
 
             int delaySeconds;
             if (_lastNewAlertUtc.HasValue &&
-                (DateTime.UtcNow - _lastNewAlertUtc.Value).TotalHours < _settings.ActiveAlertWindowHours)
+                (DateTime.UtcNow - _lastNewAlertUtc.Value).TotalHours < _polling.ActiveAlertWindowHours)
             {
-                delaySeconds = _settings.ActiveAlertPollIntervalSeconds;
+                delaySeconds = _polling.ActiveAlertPollIntervalSeconds;
             }
             else
             {
                 if (_lastNewAlertUtc.HasValue)
                 {
                     _logger.LogInformation("Active storm window expired — returning to idle poll interval ({Interval}s).",
-                        _settings.PollIntervalSeconds);
+                        _polling.PollIntervalSeconds);
                     _lastNewAlertUtc = null;
                 }
-                delaySeconds = _settings.PollIntervalSeconds;
+                delaySeconds = _polling.PollIntervalSeconds;
             }
 
             await Task.Delay(TimeSpan.FromSeconds(delaySeconds), stoppingToken);

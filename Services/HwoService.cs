@@ -23,7 +23,7 @@ public class HwoService
 {
     private readonly HttpClient _http;
     private readonly HwoSettings _settings;
-    private readonly NwsSettings _nwsSettings;
+    private readonly LocationSettings _location;
     private readonly NwsZoneService _zones;
     private readonly ILogger<HwoService> _logger;
     private readonly TimeZoneInfo _timeZone;
@@ -45,14 +45,14 @@ public class HwoService
 
     public bool IsEnabled => _settings.Enabled;
 
-    public HwoService(HttpClient http, HwoSettings settings, NwsSettings nwsSettings, NwsZoneService zones, ILogger<HwoService> logger)
+    public HwoService(HttpClient http, HwoSettings settings, LocationSettings location, NwsZoneService zones, ILogger<HwoService> logger)
     {
         _http = http;
         _settings = settings;
-        _nwsSettings = nwsSettings;
+        _location = location;
         _zones = zones;
         _logger = logger;
-        _timeZone = ResolveTimeZone(nwsSettings.TimeZone, logger);
+        _timeZone = ResolveTimeZone(location.TimeZone, logger);
     }
 
     private static TimeZoneInfo ResolveTimeZone(string id, ILogger logger)
@@ -100,7 +100,7 @@ public class HwoService
     {
         if (_wfos != null) return _wfos;
 
-        var codes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
+        var codes = _location.Zones.Concat(_location.Counties).ToList();
         var wfos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var code in codes)

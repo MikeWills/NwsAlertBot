@@ -24,7 +24,7 @@ public class SpcMcdService
 {
     private readonly HttpClient _http;
     private readonly SpcMcdSettings _settings;
-    private readonly NwsSettings _nwsSettings;
+    private readonly LocationSettings _location;
     private readonly NwsZoneService _zones;
     private readonly ILogger<SpcMcdService> _logger;
     private readonly TimeZoneInfo _timeZone;
@@ -50,16 +50,16 @@ public class SpcMcdService
     public SpcMcdService(
         HttpClient http,
         SpcMcdSettings settings,
-        NwsSettings nwsSettings,
+        LocationSettings location,
         NwsZoneService zones,
         ILogger<SpcMcdService> logger)
     {
         _http = http;
         _settings = settings;
-        _nwsSettings = nwsSettings;
+        _location = location;
         _zones = zones;
         _logger = logger;
-        _timeZone = ResolveTimeZone(nwsSettings.TimeZone, logger);
+        _timeZone = ResolveTimeZone(location.TimeZone, logger);
     }
 
     private static TimeZoneInfo ResolveTimeZone(string id, ILogger logger)
@@ -228,7 +228,7 @@ public class SpcMcdService
     {
         if (_locations != null) return _locations;
 
-        var codes = _nwsSettings.Zones.Concat(_nwsSettings.Counties).ToList();
+        var codes = _location.Zones.Concat(_location.Counties).ToList();
         var resolved = new List<(double, double)>();
 
         foreach (var code in codes)

@@ -19,15 +19,17 @@ public class NwsAlertService
 {
     private readonly HttpClient _http;
     private readonly NwsSettings _settings;
+    private readonly LocationSettings _location;
     private readonly ILogger<NwsAlertService> _logger;
     private readonly TimeZoneInfo _timeZone;
 
-    public NwsAlertService(HttpClient http, NwsSettings settings, ILogger<NwsAlertService> logger)
+    public NwsAlertService(HttpClient http, NwsSettings settings, LocationSettings location, ILogger<NwsAlertService> logger)
     {
         _http = http;
         _settings = settings;
+        _location = location;
         _logger = logger;
-        _timeZone = ResolveTimeZone(settings.TimeZone, logger);
+        _timeZone = ResolveTimeZone(location.TimeZone, logger);
     }
 
     private static TimeZoneInfo ResolveTimeZone(string id, ILogger logger)
@@ -188,7 +190,7 @@ public class NwsAlertService
     /// </summary>
     private void AddGeoFilter(List<string> qs)
     {
-        var ugcCodes = _settings.Zones.Concat(_settings.Counties).ToList();
+        var ugcCodes = _location.Zones.Concat(_location.Counties).ToList();
 
         if (ugcCodes.Count > 0)
             qs.Add($"zone={string.Join(",", ugcCodes)}");

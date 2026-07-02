@@ -70,22 +70,21 @@ You only need to include the sections/fields you are actually changing.
 
 ## Configuration Reference
 
-All configuration lives in `appsettings.json`.
+All configuration lives in `appsettings.json`. Settings are grouped by what they govern:
+`Location` and `Polling` are shared across every alert feed; `Nws`, `Spc`, `SpcMcd`, and `Hwo`
+are each one specific feed's own settings; everything else is a delivery platform.
+
+### Location — shared by every feed
+
+`Zones`/`Counties`/`TimeZone` are resolved once and used identically by the NWS alerts feed,
+SPC Outlook, SPC MCD, HWO, and the Mapbox bounding-box fallback. None of those feeds carry
+their own copy of this — if you add a new feed in the future, it should read from here too.
 
 ```json
-{
-  "Nws": {
-    "Zones":              ["MOZ066", "MOZ067"],
-    "Counties":           ["MOC217", "MOC039"],
-    "State":              "MO",
-    "PollIntervalSeconds": 300,
-    "ActiveAlertPollIntervalSeconds": 60,
-    "ActiveAlertWindowHours": 4,
-    "Severity":           "Severe,Extreme",
-    "Urgency":            "",
-    "Certainty":          "",
-    "EventTypes":         ""
-  }
+"Location": {
+  "Zones":    ["MOZ066", "MOZ067"],
+  "Counties": ["MOC217", "MOC039"],
+  "TimeZone": "America/Chicago"
 }
 ```
 
@@ -93,17 +92,12 @@ All configuration lives in `appsettings.json`.
 |---|---|---|
 | `Zones` | NWS forecast zone codes (see below) | `[]` |
 | `Counties` | NWS county codes (see below) | `[]` |
-| `State` | Two-letter state code fallback | `""` |
-| `PollIntervalSeconds` | Idle poll interval in seconds — used when no active storm window is open | `300` |
-| `ActiveAlertPollIntervalSeconds` | Accelerated poll interval in seconds while an active storm window is open | `60` |
-| `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new NWS alert; resets on each new NWS alert. SPC outlooks do not affect the storm window. | `4` |
-| `ActiveAlertMinSeverity` | Minimum severity for a new alert to trigger or extend accelerated polling mode. Alerts below this threshold are still posted but do not engage the faster poll interval. Leave empty to have any new alert trigger active mode. | `"Severe,Extreme"` |
-| `Severity` | Comma-separated severity levels to include | `"Severe,Extreme"` |
-| `Urgency` | Comma-separated urgency levels to include | `""` (all) |
-| `Certainty` | Comma-separated certainty levels to include | `""` (all) |
-| `EventTypes` | Comma-separated event names to include | `""` (all) |
-| `AdditionalEventTypes` | Comma-separated event types to always fetch regardless of `Severity`. Use to include specific lower-severity events (e.g. advisories) alongside a severity filter. Makes a separate API call and merges results. | `""` (none) |
-| `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS and SPC). Works on Windows and Linux. | `"America/Chicago"` |
+| `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS, SPC, and HWO). Works on Windows and Linux. | `"America/Chicago"` |
+
+**Geographic filter:** `Zones` and `Counties` are combined into a single query — both sets of
+UGC codes are always sent together, for every feed. `Nws.State` (below) is a fallback used
+**only** by the main NWS alerts feed when both are empty — SPC Outlook, SPC MCD, and HWO always
+require explicit `Zones`/`Counties` and do not fall back to a whole state.
 
 **US IANA timezone IDs:**
 
@@ -117,19 +111,66 @@ All configuration lives in `appsettings.json`.
 | Alaska | `America/Anchorage` |
 | Hawaii | `Pacific/Honolulu` |
 
+### Polling — master loop cadence
+
+Drives how often the orchestrator checks all feeds. Each feed still self-gates on its own
+`CheckIntervalSeconds` below; this only controls the overall tick. Only NWS alerts and SPC MCDs
+ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook and HWO never do.
+
+```json
+"Polling": {
+  "PollIntervalSeconds": 300,
+  "ActiveAlertPollIntervalSeconds": 60,
+  "ActiveAlertWindowHours": 4,
+  "ActiveAlertMinSeverity": "Severe,Extreme"
+}
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `PollIntervalSeconds` | Idle poll interval in seconds — used when no active storm window is open | `300` |
+| `ActiveAlertPollIntervalSeconds` | Accelerated poll interval in seconds while an active storm window is open | `60` |
+| `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new NWS alert; resets on each new NWS alert. SPC outlooks/HWO do not affect the storm window. | `4` |
+| `ActiveAlertMinSeverity` | Minimum severity for a new alert to trigger or extend accelerated polling mode. Alerts below this threshold are still posted but do not engage the faster poll interval. Leave empty to have any new alert trigger active mode. | `"Severe,Extreme"` |
+
+### Nws — the main alerts feed's own query filters
+
+```json
+"Nws": {
+  "State":              "MO",
+  "Severity":           "Severe,Extreme",
+  "Urgency":            "",
+  "Certainty":          "",
+  "EventTypes":         "",
+  "AdditionalEventTypes": ""
+}
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `State` | Two-letter state code fallback — only used if `Location.Zones`/`Location.Counties` are both empty, and only affects this feed | `""` |
+| `Severity` | Comma-separated severity levels to include | `"Severe,Extreme"` |
+| `Urgency` | Comma-separated urgency levels to include | `""` (all) |
+| `Certainty` | Comma-separated certainty levels to include | `""` (all) |
+| `EventTypes` | Comma-separated event names to include | `""` (all) |
+| `AdditionalEventTypes` | Comma-separated event types to always fetch regardless of `Severity`. Use to include specific lower-severity events (e.g. advisories) alongside a severity filter. Makes a separate API call and merges results. | `""` (none) |
+
+This is a **server-side, master filter** — `Severity`/`Urgency`/`Certainty`/`EventTypes` are sent
+directly to `api.weather.gov` as query parameters, so anything excluded here is never even
+returned to the bot. Nothing downstream (per-platform `MinSeverity`/`EventTypes`) can un-filter
+it. This only governs the main NWS alerts feed (regular warnings/watches/advisories + SPS) —
+SPC Outlook, SPC MCD, and HWO below are separate feeds with their own severity values, gated
+only by each platform's own `MinSeverity`.
+
 Each platform block also accepts:
 
 | Field | Description | Default |
 |---|---|---|
-| `MinSeverity` | Comma-separated severity levels for this platform only. Leave empty to use the global `Severity` filter. | `""` (inherit global) |
+| `MinSeverity` | Comma-separated severity levels for this platform only. Blank means "accept everything that already passed the feed's own filter above." | `""` (inherit) |
 | `EventTypes` | Comma-separated NWS event names for this platform only. Leave empty to receive all event types. | `""` (all) |
 | `IncludeSpcOutlooks` | Whether SPC Convective Outlook alerts are posted to this platform. Requires `Spc.Enabled = true`. | `true` |
 | `IncludeSpcMcd` | Whether SPC Mesoscale Discussion alerts are posted to this platform. Requires `SpcMcd.Enabled = true`. | `true` |
 | `IncludeHwo` | Whether Hazardous Weather Outlook text posts are sent to this platform. Requires `Hwo.Enabled = true`. Defaults to `false` — HWO is long-form text intended for personal use, enable it selectively (e.g. a Discord DM or Telegram chat). | `false` |
-
-**Geographic filter:** `Zones` and `Counties` are combined into a single NWS API query — both
-sets of UGC codes are always sent together. `State` is used only when neither `Zones` nor
-`Counties` is configured.
 
 `Spc` (see [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)):
 
@@ -1244,6 +1285,20 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **BREAKING: `Zones`/`Counties`/`TimeZone` moved out of `Nws` into a new `Location` block;
+  `PollIntervalSeconds`/`ActiveAlertPollIntervalSeconds`/`ActiveAlertWindowHours`/
+  `ActiveAlertMinSeverity` moved into a new `Polling` block.** These settings were always shared
+  by every feed (SPC Outlook, SPC MCD, and HWO all resolve locations from the same
+  Zones/Counties/TimeZone, not just the NWS alerts feed), so nesting them under `Nws` was
+  misleading — and in at least one deployment led to a dead `TimeZone` key mistakenly added
+  under `Spc` (which has no such property; it silently used `Nws.TimeZone` instead). If you have
+  an existing `appsettings.Local.json`, manually move `Zones`, `Counties`, and `TimeZone` from
+  `Nws` into a new top-level `Location` section, and move `PollIntervalSeconds`,
+  `ActiveAlertPollIntervalSeconds`, `ActiveAlertWindowHours`, and `ActiveAlertMinSeverity` into a
+  new top-level `Polling` section — see the Configuration Reference below for the exact shape.
+  `LocalConfigSync` does not auto-migrate this rename (it only adds missing keys within sections
+  that already match by name), so old-style configs will silently fall back to defaults for
+  these fields until moved manually.
 - **Hazardous Weather Outlook (HWO) monitoring** — new `HwoService`/`Hwo` settings block.
   Text-only product (no map image), opt-in per platform via `IncludeHwo` (defaults `false`).
   Cleans up raw teletype formatting (header codes, UGC zone list, line wraps) before posting
