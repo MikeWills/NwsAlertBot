@@ -138,11 +138,11 @@ ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook and HWO nev
 
 ```json
 "Nws": {
-  "State":              "MO",
-  "Severity":           "Severe,Extreme",
-  "Urgency":            "",
-  "Certainty":          "",
-  "EventTypes":         "",
+  "State":                "MO",
+  "FilterSeverity":       "Severe,Extreme",
+  "FilterUrgency":        "",
+  "FilterCertainty":      "",
+  "FilterEventTypes":     "",
   "AdditionalEventTypes": ""
 }
 ```
@@ -150,18 +150,19 @@ ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook and HWO nev
 | Field | Description | Default |
 |---|---|---|
 | `State` | Two-letter state code fallback — only used if `Location.Zones`/`Location.Counties` are both empty, and only affects this feed | `""` |
-| `Severity` | Comma-separated severity levels to include | `"Severe,Extreme"` |
-| `Urgency` | Comma-separated urgency levels to include | `""` (all) |
-| `Certainty` | Comma-separated certainty levels to include | `""` (all) |
-| `EventTypes` | Comma-separated event names to include | `""` (all) |
-| `AdditionalEventTypes` | Comma-separated event types to always fetch regardless of `Severity`. Use to include specific lower-severity events (e.g. advisories) alongside a severity filter. Makes a separate API call and merges results. | `""` (none) |
+| `FilterSeverity` | Comma-separated severity levels to include | `"Severe,Extreme"` |
+| `FilterUrgency` | Comma-separated urgency levels to include | `""` (all) |
+| `FilterCertainty` | Comma-separated certainty levels to include | `""` (all) |
+| `FilterEventTypes` | Comma-separated event names to include | `""` (all) |
+| `AdditionalEventTypes` | Comma-separated event types to always fetch regardless of `FilterSeverity`. Use to include specific lower-severity events (e.g. advisories) alongside a severity filter. Makes a separate API call and merges results. | `""` (none) |
 
-This is a **server-side, master filter** — `Severity`/`Urgency`/`Certainty`/`EventTypes` are sent
+The `Filter*` naming is deliberate: these four all narrow the feed at the server level, sent
 directly to `api.weather.gov` as query parameters, so anything excluded here is never even
 returned to the bot. Nothing downstream (per-platform `MinSeverity`/`EventTypes`) can un-filter
-it. This only governs the main NWS alerts feed (regular warnings/watches/advisories + SPS) —
-SPC Outlook, SPC MCD, and HWO below are separate feeds with their own severity values, gated
-only by each platform's own `MinSeverity`.
+it. `AdditionalEventTypes` is the one exception — it's additive, not restrictive, which is why
+it doesn't get the `Filter` prefix. This only governs the main NWS alerts feed (regular
+warnings/watches/advisories + SPS) — SPC Outlook, SPC MCD, and HWO below are separate feeds
+with their own severity values, gated only by each platform's own `MinSeverity`.
 
 Each platform block also accepts:
 
@@ -240,8 +241,10 @@ The NWS API supports two types of geographic codes. Both use the format `{ST}{ty
 issued by zone, others by county. If you use only one type, you may miss certain alerts.
 
 ```json
-"Zones":    ["MOZ066", "MOZ067"],
-"Counties": ["MOC217", "MOC039"]
+"Location": {
+  "Zones":    ["MOZ066", "MOZ067"],
+  "Counties": ["MOC217", "MOC039"]
+}
 ```
 
 When both are specified, the bot sends all zone and county codes together in a single NWS API
@@ -308,11 +311,11 @@ wind, and hail probability for the day.
 
 ### How it works
 
-- **Locations monitored** are derived from the same `Nws.Zones` (or `Nws.Counties` if `Zones`
-  is empty) already configured for warning geo-filtering above — there is no separate location
-  list to maintain. Each zone/county's polygon is fetched once from the NWS zone API and reduced
-  to its area centroid (geometric center); that point is what gets checked against the SPC
-  outlook polygons. Resolution happens once at startup and is cached for the life of the
+- **Locations monitored** are derived from the same `Location.Zones` (or `Location.Counties` if
+  `Zones` is empty) already configured for warning geo-filtering above — there is no separate
+  location list to maintain. Each zone/county's polygon is fetched once from the NWS zone API
+  and reduced to its area centroid (geometric center); that point is what gets checked against
+  the SPC outlook polygons. Resolution happens once at startup and is cached for the life of the
   process — restart the bot after changing `Zones`/`Counties` for SPC monitoring to pick up
   the change.
 - **Categorical risk** (`TSTM` / `MRGL` / `SLGT` / `ENH` / `MDT` / `HIGH`) is checked
@@ -326,7 +329,7 @@ wind, and hail probability for the day.
   Hail: None
   ```
 - **Checked every `Spc.CheckIntervalSeconds`** (default 1800s = 30 min) — independent of
-  `Nws.PollIntervalSeconds`, since SPC re-issues the Day 1 outlook ~5x/day and Day 2 ~2x/day;
+  `Polling.PollIntervalSeconds`, since SPC re-issues the Day 1 outlook ~5x/day and Day 2 ~2x/day;
   checking more often has no benefit.
 - **Re-alerts on every new SPC issuance**, not only on a category change — if a location stays
   `SLGT` across three consecutive Day 1 re-issuances, you will get three separate notifications
@@ -434,8 +437,8 @@ for personal use rather than broad social media distribution.
 ### How it works
 
 - **WFO resolution** — the bot resolves the responsible forecast office(s) (WFO) from the same
-  `Nws.Zones`/`Nws.Counties` used everywhere else, via the NWS zones API. If your monitored area
-  spans multiple WFOs, each office's latest HWO is fetched and posted independently.
+  `Location.Zones`/`Location.Counties` used everywhere else, via the NWS zones API. If your
+  monitored area spans multiple WFOs, each office's latest HWO is fetched and posted independently.
 - **Data source** — HWO arrives via the NWS text products API
   (`/products/types/HWO/locations/{wfo}`), the same family of endpoints used for SPC MCDs.
   The bot fetches the most recent issuance per WFO each check cycle.
@@ -497,7 +500,7 @@ The bot requests all three NWS message types:
 
 Each message type has its own unique ID, so deduplication works correctly — an update or cancellation will always post even if the original alert was already posted. Note that not every alert receives a cancellation; some simply expire naturally without a `Cancel` message from NWS.
 
-### Severity
+### FilterSeverity
 
 Controls the minimum threat level of alerts to post.
 
@@ -512,12 +515,12 @@ Controls the minimum threat level of alerts to post.
 **Recommended settings:**
 
 ```json
-"Severity": "Severe,Extreme"        // Warnings only — high-impact events
-"Severity": "Moderate,Severe,Extreme" // Add winter storms, flood warnings, etc.
-"Severity": ""                       // All alerts including advisories (noisy)
+"FilterSeverity": "Severe,Extreme"        // Warnings only — high-impact events
+"FilterSeverity": "Moderate,Severe,Extreme" // Add winter storms, flood warnings, etc.
+"FilterSeverity": ""                       // All alerts including advisories (noisy)
 ```
 
-### Urgency
+### FilterUrgency
 
 How quickly action is needed.
 
@@ -531,10 +534,10 @@ How quickly action is needed.
 
 **Example:** Limit to only actively dangerous situations:
 ```json
-"Urgency": "Immediate,Expected"
+"FilterUrgency": "Immediate,Expected"
 ```
 
-### Certainty
+### FilterCertainty
 
 How likely the event is to occur.
 
@@ -548,20 +551,20 @@ How likely the event is to occur.
 
 **Example:** Only post confirmed or highly likely events:
 ```json
-"Certainty": "Observed,Likely"
+"FilterCertainty": "Observed,Likely"
 ```
 
 ### Per-Platform Severity Filter (`MinSeverity`)
 
 Each platform has an optional `MinSeverity` field that lets you restrict which alerts that platform
-receives, independently of the global `Severity` filter. Leave it empty to pass everything that
-the global filter allows through.
+receives, independently of the feed-level `FilterSeverity`. Leave it empty to pass everything that
+the feed-level filter allows through.
 
 **Example — Pushover gets all alerts, social media gets only Severe, Extreme:**
 
 ```json
 "Nws": {
-  "Severity": ""
+  "FilterSeverity": ""
 },
 "Facebook":  { "MinSeverity": "Severe,Extreme" },
 "Instagram": { "MinSeverity": "Severe,Extreme" },
@@ -572,14 +575,14 @@ the global filter allows through.
 "Twilio":    { "MinSeverity": "" }
 ```
 
-The global `Severity` filter is applied server-side at the NWS API — it sets the floor for what
-gets fetched at all. Per-platform `MinSeverity` and `EventTypes` are applied client-side after
-the fetch. A platform cannot receive alerts below the global floor, only above it.
+`Nws.FilterSeverity` is applied server-side at the NWS API — it sets the floor for what gets
+fetched at all. Per-platform `MinSeverity` and `EventTypes` are applied client-side after the
+fetch. A platform cannot receive alerts below the feed-level floor, only above it.
 
 **Example — social media gets only tornado alerts; Pushover gets everything:**
 
 ```json
-"Nws": { "Severity": "" },
+"Nws": { "FilterSeverity": "" },
 "Facebook": { "EventTypes": "Tornado Warning,Tornado Watch" },
 "X":        { "EventTypes": "Tornado Warning,Tornado Watch" },
 "Bluesky":  { "EventTypes": "Tornado Warning,Tornado Watch" },
@@ -594,13 +597,15 @@ When a platform is skipped due to either filter, the bot logs:
 info: Facebook, X, Bluesky: Skipped [Severe] Flood Watch — platform filter.
 ```
 
-### EventTypes
+### FilterEventTypes
 
 Override all severity/urgency/certainty filters and post only specific named event types.
-Leave blank to rely on severity/urgency/certainty filtering instead.
+Leave blank to rely on severity/urgency/certainty filtering instead. (Each platform also has
+its own separate `EventTypes` field — see [Per-Platform Severity Filter](#per-platform-severity-filter-minseverity)
+above — which further restricts what that specific platform receives, independent of this one.)
 
 ```json
-"EventTypes": "Tornado Warning,Tornado Watch,Flash Flood Warning"
+"FilterEventTypes": "Tornado Warning,Tornado Watch,Flash Flood Warning"
 ```
 
 See the complete list of event types in the next section.
@@ -614,9 +619,9 @@ severity (Minor → Moderate → Severe → Extreme), including type (Warning/Wa
 severity classification, and notes for each product.
 
 The short version: the **Severity** column in that file shows the value(s) the NWS API returns
-for each event type — the same values used in `Severity` and `MinSeverity` config fields. Where
-two values are listed (e.g. `Severe, Extreme`), the NWS assigns severity at issuance time — to
-reliably catch that event type, include **both** values in your filter.
+for each event type — the same values used in `FilterSeverity` and `MinSeverity` config fields.
+Where two values are listed (e.g. `Severe, Extreme`), the NWS assigns severity at issuance time —
+to reliably catch that event type, include **both** values in your filter.
 
 
 ---
@@ -625,39 +630,39 @@ reliably catch that event type, include **both** values in your filter.
 
 ### Life-threatening emergencies only
 ```json
-"Severity": "Extreme",
-"Urgency":  "Immediate"
+"FilterSeverity": "Extreme",
+"FilterUrgency":  "Immediate"
 ```
 Posts: Tornado Warnings, Flash Flood Emergencies, Storm Surge Warnings, Tsunami Warnings
 
 ### All warnings (no watches or advisories)
 ```json
-"Severity":   "Severe,Extreme",
-"Urgency":    "",
-"Certainty":  "",
-"EventTypes": ""
+"FilterSeverity":   "Severe,Extreme",
+"FilterUrgency":    "",
+"FilterCertainty":  "",
+"FilterEventTypes": ""
 ```
 
 ### Warnings and watches (no advisories)
 ```json
-"Severity":   "Moderate,Severe,Extreme",
-"Urgency":    "",
-"Certainty":  "Observed,Likely,Possible",
-"EventTypes": ""
+"FilterSeverity":   "Moderate,Severe,Extreme",
+"FilterUrgency":    "",
+"FilterCertainty":  "Observed,Likely,Possible",
+"FilterEventTypes": ""
 ```
 
 ### Specific event types only
 ```json
-"Severity":   "",
-"EventTypes": "Tornado Warning,Tornado Watch,Severe Thunderstorm Warning,Flash Flood Warning,Flash Flood Watch"
+"FilterSeverity":   "",
+"FilterEventTypes": "Tornado Warning,Tornado Watch,Severe Thunderstorm Warning,Flash Flood Warning,Flash Flood Watch"
 ```
 
 ### Everything (high volume — use with specific zone filtering)
 ```json
-"Severity":   "",
-"Urgency":    "",
-"Certainty":  "",
-"EventTypes": ""
+"FilterSeverity":   "",
+"FilterUrgency":    "",
+"FilterCertainty":  "",
+"FilterEventTypes": ""
 ```
 
 ---
@@ -1331,6 +1336,13 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **BREAKING: `Nws.Severity`/`Urgency`/`Certainty`/`EventTypes` renamed to `FilterSeverity`/
+  `FilterUrgency`/`FilterCertainty`/`FilterEventTypes`.** All four are server-side, restrictive
+  filters sent to `api.weather.gov` — the `Filter` prefix makes that explicit and distinguishes
+  them from `AdditionalEventTypes` (deliberately unprefixed, since it's additive rather than
+  restrictive) and from each platform's own client-side `MinSeverity`/`EventTypes` fields
+  (unchanged, not renamed). If you have an existing `appsettings.Local.json`, rename these four
+  keys under `Nws` manually — `LocalConfigSync` does not auto-migrate renamed keys.
 - **BREAKING: `Zones`/`Counties`/`TimeZone` moved out of `Nws` into a new `Location` block;
   `PollIntervalSeconds`/`ActiveAlertPollIntervalSeconds`/`ActiveAlertWindowHours`/
   `ActiveAlertMinSeverity` moved into a new `Polling` block.** These settings were always shared

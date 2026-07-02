@@ -288,7 +288,7 @@ public class AlertPollingService : BackgroundService
         _logger.LogInformation(
             "NWS Alert Bot started. Idle poll: {Idle}s | Active poll: {Active}s (window: {Hours}h) | {GeoFilter} | Min severity: {Severity} | Active mode trigger: {ActiveMinSeverity}",
             _polling.PollIntervalSeconds, _polling.ActiveAlertPollIntervalSeconds,
-            _polling.ActiveAlertWindowHours, geoFilter, _settings.Severity,
+            _polling.ActiveAlertWindowHours, geoFilter, _settings.FilterSeverity,
             string.IsNullOrWhiteSpace(_polling.ActiveAlertMinSeverity) ? "any" : _polling.ActiveAlertMinSeverity);
 
         // Send one-time confirmation to any platform not yet verified

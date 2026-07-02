@@ -209,17 +209,17 @@ public class NwsAlertService
 
         AddGeoFilter(qs);
 
-        if (!string.IsNullOrWhiteSpace(_settings.Severity))
-            qs.Add($"severity={Uri.EscapeDataString(_settings.Severity)}");
+        if (!string.IsNullOrWhiteSpace(_settings.FilterSeverity))
+            qs.Add($"severity={Uri.EscapeDataString(_settings.FilterSeverity)}");
 
-        if (!string.IsNullOrWhiteSpace(_settings.Urgency))
-            qs.Add($"urgency={Uri.EscapeDataString(_settings.Urgency)}");
+        if (!string.IsNullOrWhiteSpace(_settings.FilterUrgency))
+            qs.Add($"urgency={Uri.EscapeDataString(_settings.FilterUrgency)}");
 
-        if (!string.IsNullOrWhiteSpace(_settings.Certainty))
-            qs.Add($"certainty={Uri.EscapeDataString(_settings.Certainty)}");
+        if (!string.IsNullOrWhiteSpace(_settings.FilterCertainty))
+            qs.Add($"certainty={Uri.EscapeDataString(_settings.FilterCertainty)}");
 
-        if (!string.IsNullOrWhiteSpace(_settings.EventTypes))
-            qs.Add($"event={Uri.EscapeDataString(_settings.EventTypes)}");
+        if (!string.IsNullOrWhiteSpace(_settings.FilterEventTypes))
+            qs.Add($"event={Uri.EscapeDataString(_settings.FilterEventTypes)}");
 
         return "https://api.weather.gov/alerts/active?" + string.Join("&", qs);
     }

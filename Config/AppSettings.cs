@@ -88,40 +88,45 @@ public class NwsSettings
     public string State { get; set; } = "";
 
     /// <summary>
-    /// Filter by minimum severity — passed directly to the NWS API.
+    /// Filters the feed at the server level — sent directly to the NWS API as a query
+    /// parameter, so anything excluded here is never returned to the bot at all.
     /// Valid values: Extreme, Severe, Moderate, Minor, Unknown
     /// Can be a comma-separated list, e.g. "Extreme,Severe"
     /// Leave empty to receive all severities.
     /// </summary>
-    public string Severity { get; set; } = "Severe,Extreme";
+    public string FilterSeverity { get; set; } = "Severe,Extreme";
 
     /// <summary>
-    /// Filter by urgency — passed directly to the NWS API.
+    /// Filters the feed at the server level — sent directly to the NWS API as a query
+    /// parameter, so anything excluded here is never returned to the bot at all.
     /// Valid values: Immediate, Expected, Future, Past, Unknown
     /// Leave empty for all urgency levels.
     /// </summary>
-    public string Urgency { get; set; } = "";
+    public string FilterUrgency { get; set; } = "";
 
     /// <summary>
-    /// Filter by certainty — passed directly to the NWS API.
+    /// Filters the feed at the server level — sent directly to the NWS API as a query
+    /// parameter, so anything excluded here is never returned to the bot at all.
     /// Valid values: Observed, Likely, Possible, Unlikely, Unknown
     /// Leave empty for all certainty levels.
     /// </summary>
-    public string Certainty { get; set; } = "";
+    public string FilterCertainty { get; set; } = "";
 
     /// <summary>
-    /// Filter by specific event type(s) — passed directly to the NWS API.
+    /// Filters the feed at the server level — sent directly to the NWS API as a query
+    /// parameter, so anything excluded here is never returned to the bot at all.
     /// Examples: "Tornado Warning", "Flash Flood Warning", "Severe Thunderstorm Warning"
     /// Can be a comma-separated list.
     /// Leave empty for all event types.
-    /// NOTE: If you set Severity above, you likely don't need this too.
+    /// NOTE: If you set FilterSeverity above, you likely don't need this too.
     /// </summary>
-    public string EventTypes { get; set; } = "";
+    public string FilterEventTypes { get; set; } = "";
 
     /// <summary>
-    /// Additional event types to always fetch regardless of the Severity filter.
+    /// The opposite of the Filter* fields above: pulls in extra event types that would
+    /// otherwise be excluded by FilterSeverity, rather than restricting the feed further.
     /// Use this to include specific lower-severity events (e.g. "Special Weather Statement,
-    /// Winter Weather Advisory") alongside a Severity filter like "Moderate,Severe,Extreme".
+    /// Winter Weather Advisory") alongside a FilterSeverity like "Moderate,Severe,Extreme".
     /// These are fetched in a separate API call (no severity filter) and merged with the main results.
     /// Leave empty if not needed.
     /// </summary>
