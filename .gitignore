@@ -8,6 +8,9 @@ obj/
 # Alert deduplication state (runtime data, not source)
 posted_alerts.txt
 
+# Startup platform confirmation tracking (runtime data, not source)
+confirmed_platforms.txt
+
 # Log files (rolling daily logs written by Serilog)
 logs/
 
