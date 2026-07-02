@@ -11,14 +11,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET 8
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Publish
+        # Target the .csproj explicitly rather than letting dotnet auto-discover NwsAlertBot.sln —
+        # -o is not fully supported at solution scope (NETSDK1194) and would break if the
+        # solution ever gains a second project.
         run: |
-          dotnet publish -c Release -r linux-x64 --self-contained \
+          dotnet publish NwsAlertBot.csproj -c Release -r linux-x64 --self-contained \
             -p:PublishSingleFile=true \
             -p:DebugType=none \
             -o ./publish

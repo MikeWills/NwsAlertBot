@@ -1,6 +1,6 @@
 # NWS Alert Social Media Bot
 
-A .NET 8 C# console application that polls the National Weather Service API for active weather
+A .NET 10 C# console application that polls the National Weather Service API for active weather
 alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, Mastodon, Discord (webhook
 and DM), and Telegram — and sends real-time push notifications and SMS via Pushover, Twilio, and VoIP.ms.
 
@@ -21,13 +21,14 @@ and DM), and Telegram — and sends real-time push notifications and SMS via Pus
 11. [Map Images (Mapbox)](#map-images-mapbox)
 12. [Running the Bot](#running-the-bot)
 13. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
+14. [Cross-Platform Release Builds](#cross-platform-release-builds)
 
 ---
 
 ## Setup 
 
 ### Requirements
-- .NET 8 SDK  
+- .NET 10 SDK  
 - Visual Studio 2022 (recommended) or VS Code
 
 ### Steps
@@ -913,6 +914,51 @@ journalctl -u nwsalertbot -n 100
 # Check service status
 sudo systemctl status nwsalertbot
 ```
+
+---
+
+## Cross-Platform Release Builds
+
+Separate from `deploy.yml` (which continuously deploys `linux-x64` to your own server on every
+push to `master`), `.github/workflows/release.yml` builds downloadable, self-contained binaries
+for Windows, Linux, and macOS (both Intel and Apple Silicon) whenever you push a version tag.
+
+### How it works
+
+- **Trigger:** push a tag matching `v*` (e.g. `v1.0.0`). No manual dispatch — cutting a release
+  is always tied to a version tag.
+- **Build:** all four platforms are cross-compiled from a single `ubuntu-latest` runner —
+  `dotnet publish` fetches the target runtime pack via NuGet regardless of host OS, so no
+  matrix of OS runners is needed. Explicitly targets `NwsAlertBot.csproj` (not the `.sln`),
+  since `-o` isn't fully supported at solution scope.
+- **Output:** each platform is published self-contained + single-file
+  (`-p:PublishSingleFile=true`), so the result is one executable with no separate .NET runtime
+  install required on the target machine.
+- **Packaging:** Windows ships as `.zip`; Linux and macOS ship as `.tar.gz` (zip doesn't
+  reliably preserve the Unix executable bit, which would otherwise require the user to manually
+  `chmod +x` after extracting).
+- **Publishing:** all four archives are attached to a new GitHub Release named after the tag,
+  created via the GitHub CLI (`gh release create`) using the built-in `GITHUB_TOKEN` — no
+  third-party release-management action required.
+
+### Cutting a release
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Produces `NwsAlertBot-win-x64.zip`, `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`,
+and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release.
+
+### Running a downloaded build
+
+Each archive contains the executable plus `appsettings.json`. Extract it, create
+`appsettings.Local.json` alongside it with your real credentials (see
+[Keeping Secrets Out of Git](#keeping-secrets-out-of-git)), and run the executable directly —
+`./NwsAlertBot` on Linux/macOS (`chmod +x` first if the executable bit didn't survive transfer)
+or `NwsAlertBot.exe` on Windows. No .NET runtime install is required — the self-contained build
+bundles it.
 
 ---
 

@@ -1,0 +1,87 @@
+name: Build Release
+
+# Triggered by pushing a version tag (e.g. "v1.0.0"). Builds a self-contained, single-file
+# binary for Windows, Linux, and macOS (Intel + Apple Silicon) — all cross-compiled from one
+# ubuntu-latest runner, since dotnet publish fetches the target runtime pack via NuGet
+# regardless of host OS — then attaches each as a downloadable asset on a new GitHub Release.
+# This is separate from deploy.yml, which continuously deploys linux-x64 to this repo owner's
+# own server on every push to master.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            archive: zip
+          - rid: linux-x64
+            archive: tar.gz
+          - rid: osx-x64
+            archive: tar.gz
+          - rid: osx-arm64
+            archive: tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish ${{ matrix.rid }}
+        # Target the .csproj explicitly rather than letting dotnet auto-discover NwsAlertBot.sln —
+        # -o is not fully supported at solution scope (NETSDK1194) and would break if the
+        # solution ever gains a second project.
+        run: |
+          dotnet publish NwsAlertBot.csproj -c Release -r ${{ matrix.rid }} --self-contained \
+            -p:PublishSingleFile=true \
+            -p:DebugType=none \
+            -o ./publish/${{ matrix.rid }}
+
+      # zip loses the Unix executable bit, so Windows gets .zip and everything else gets
+      # .tar.gz (which preserves permissions) to avoid a "permission denied" surprise on
+      # first run after extracting.
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        working-directory: ./publish/${{ matrix.rid }}
+        run: zip -r ../../NwsAlertBot-${{ matrix.rid }}.zip .
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          chmod +x ./publish/${{ matrix.rid }}/NwsAlertBot
+          tar -czf ./NwsAlertBot-${{ matrix.rid }}.tar.gz -C ./publish/${{ matrix.rid }} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NwsAlertBot-${{ matrix.rid }}
+          path: NwsAlertBot-${{ matrix.rid }}.*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            ./artifacts/* \
+            --repo "${{ github.repository }}" \
+            --title "NwsAlertBot ${{ github.ref_name }}" \
+            --generate-notes

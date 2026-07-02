@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**NwsAlertBot** is a .NET 8 C# console application (Generic Host / BackgroundService pattern) that polls the NWS REST API for active weather alerts and distributes them concurrently to social media (Facebook, Instagram, X, Bluesky, Mastodon, Discord, Telegram), push notifications (Pushover), and SMS (Twilio, VoIP.ms).
+**NwsAlertBot** is a .NET 10 C# console application (Generic Host / BackgroundService pattern) that polls the NWS REST API for active weather alerts and distributes them concurrently to social media (Facebook, Instagram, X, Bluesky, Mastodon, Discord, Telegram), push notifications (Pushover), and SMS (Twilio, VoIP.ms).
 
 ---
 
