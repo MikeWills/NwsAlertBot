@@ -8,7 +8,7 @@ namespace NwsAlertBot.Services;
 
 /// <summary>
 /// Polls the SPC (Storm Prediction Center) Day 1/Day 2 Convective Outlook GeoJSON feeds
-/// and checks each monitored location (derived from Nws.Zones/Nws.Counties) against the
+/// and checks each monitored location (derived from Location.Zones/Location.Counties) against the
 /// categorical risk polygons (TSTM/MRGL/SLGT/ENH/MDT/HIGH) and the tornado/wind/hail
 /// probability polygons. Produces one synthetic NwsAlert per (location, day) that is in
 /// any non-"None" categorical risk, bundling the tornado/wind/hail breakdown and a
@@ -75,7 +75,7 @@ public class SpcOutlookService
         var locations = await EnsureLocationsResolvedAsync();
         if (locations.Count == 0)
         {
-            _logger.LogWarning("Spc: No monitored locations resolved from Nws.Zones/Nws.Counties. Skipping outlook check.");
+            _logger.LogWarning("Spc: No monitored locations resolved from Location.Zones/Location.Counties. Skipping outlook check.");
             return new();
         }
 

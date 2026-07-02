@@ -9,7 +9,7 @@ namespace NwsAlertBot.Services;
 
 /// <summary>
 /// Polls the NWS text products API for the Hazardous Weather Outlook (HWO) issued by the
-/// WFO(s) covering the monitored area (derived from Nws.Zones/Nws.Counties). HWO is a
+/// WFO(s) covering the monitored area (derived from Location.Zones/Location.Counties). HWO is a
 /// plain-text product — no polygon, no map image — issued 1-2x/day per office. This service
 /// fetches the latest issuance per WFO and returns it as a synthetic NwsAlert with the raw
 /// teletype formatting (header codes, UGC zone list, mid-sentence line wraps) cleaned up.
@@ -87,7 +87,7 @@ public class HwoService
         var wfos = await EnsureWfosResolvedAsync();
         if (wfos.Count == 0)
         {
-            _logger.LogWarning("Hwo: No WFOs resolved from Nws.Zones/Nws.Counties. Skipping HWO check.");
+            _logger.LogWarning("Hwo: No WFOs resolved from Location.Zones/Location.Counties. Skipping HWO check.");
             return new();
         }
 

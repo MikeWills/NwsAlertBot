@@ -528,7 +528,7 @@ public class SpcSettings
 {
     /// <summary>
     /// Whether to monitor SPC (Storm Prediction Center) Day 1/Day 2 Convective Outlooks
-    /// for the locations derived from Nws.Zones (or Nws.Counties if Zones is empty).
+    /// for the locations derived from Location.Zones (or Location.Counties if Zones is empty).
     /// Alerts when a monitored location is in any non-"None" categorical risk
     /// (Thunderstorm or higher) on either day, bundled with that location's
     /// tornado/wind/hail probability.
@@ -568,7 +568,7 @@ public class HwoSettings
 {
     /// <summary>
     /// Whether to monitor the Hazardous Weather Outlook (HWO) text product for the WFO(s)
-    /// covering Nws.Zones/Nws.Counties. HWO is plain text only — no polygon, no map image —
+    /// covering Location.Zones/Location.Counties. HWO is plain text only — no polygon, no map image —
     /// and is issued 1-2x/day per office. Intended for personal/informational use: delivery
     /// to each platform is controlled independently by IncludeHwo on that platform's settings,
     /// which defaults to false since the full product text is long and not well suited to

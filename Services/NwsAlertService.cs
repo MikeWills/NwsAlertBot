@@ -50,7 +50,7 @@ public class NwsAlertService
         try { return TimeZoneInfo.FindSystemTimeZoneById("America/Chicago"); }
         catch
         {
-            logger.LogWarning("Nws: Could not load America/Chicago as fallback timezone; using UTC. Set Nws.TimeZone to a valid IANA ID such as \"America/Chicago\".");
+            logger.LogWarning("Nws: Could not load America/Chicago as fallback timezone; using UTC. Set Location.TimeZone to a valid IANA ID such as \"America/Chicago\".");
             return TimeZoneInfo.Utc;
         }
     }
