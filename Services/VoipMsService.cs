@@ -7,9 +7,15 @@ using NwsAlertBot.Models;
 namespace NwsAlertBot.Services;
 
 /// <summary>
-/// Sends SMS alerts via the VoIP.ms REST API (no SDK — credentials POSTed as form body over HTTPS).
+/// Sends SMS alerts via the VoIP.ms REST API (no SDK — GET request with query parameters).
 /// API docs: https://voip.ms/m/apidocs.php (method: sendSMS)
 /// Message body limited to 160 characters (single SMS segment).
+///
+/// VoIP.ms's documented sample code uses GET with query-string parameters, not POST with a
+/// form body — confirmed by reproducing an identical generic SOAP "Bad Request" fault (HTTP 500,
+/// content-type application/soap+xml) for every POST attempt regardless of credentials, message
+/// content/encoding, or source IP allowlist status, while the equivalent GET request succeeds.
+/// Do not change this back to POST without re-verifying against a live account.
 /// </summary>
 public class VoipMsService
 {
@@ -75,18 +81,21 @@ public class VoipMsService
     {
         try
         {
-            // POST credentials in the body so they don't appear in URLs logged by HttpClient infrastructure
-            var formFields = new List<KeyValuePair<string, string>>
+            // GET with query parameters — see class remarks for why this isn't POST.
+            var qs = string.Join("&", new[]
             {
-                new("api_username", _settings.ApiUsername),
-                new("api_password", _settings.ApiPassword),
-                new("method",       "sendSMS"),
-                new("did",          _settings.Did),
-                new("dst",          toNumber),
-                new("message",      message),
-            };
+                $"api_username={Uri.EscapeDataString(_settings.ApiUsername)}",
+                $"api_password={Uri.EscapeDataString(_settings.ApiPassword)}",
+                $"method=sendSMS",
+                $"did={Uri.EscapeDataString(_settings.Did)}",
+                $"dst={Uri.EscapeDataString(toNumber)}",
+                $"message={Uri.EscapeDataString(message)}",
+            });
 
-            var response = await _http.PostAsync(ApiUrl, new FormUrlEncodedContent(formFields));
+            // The credentials are in the URL for this request (required by VoIP.ms's API), so
+            // HttpClient's own request-URL logging is suppressed for this service in Program.cs
+            // (System.Net.Http.HttpClient.VoipMsService -> Warning) to keep them out of logs.
+            var response = await _http.GetAsync($"{ApiUrl}?{qs}");
             var body     = await response.Content.ReadAsStringAsync();
 
             if (response.IsSuccessStatusCode)

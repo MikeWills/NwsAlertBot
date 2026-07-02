@@ -139,6 +139,7 @@ var host = Host.CreateDefaultBuilder(args)
         .MinimumLevel.Override("System.Net.Http.HttpClient.BlueskyService",  Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("System.Net.Http.HttpClient.XService",        Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("System.Net.Http.HttpClient.MastodonService", Serilog.Events.LogEventLevel.Warning)
+        .MinimumLevel.Override("System.Net.Http.HttpClient.VoipMsService",   Serilog.Events.LogEventLevel.Warning)
         .Enrich.FromLogContext()
         .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
         .WriteTo.File(

@@ -1352,14 +1352,24 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
-- **Fix: VoIP.ms rejecting messages with non-ASCII content** — the built-in startup confirmation
-  message contains a ✅ emoji and em-dash, which VoIP.ms's `sendSMS` API rejected outright with a
-  generic "Bad Request" SOAP fault instead of a normal error response (any Unicode content forces
-  UCS-2 SMS encoding at a much shorter per-segment limit than the code's GSM-7-oriented 160-char
-  truncation assumed). `VoipMsService` now normalizes smart-punctuation to ASCII and strips
-  anything else non-ASCII before sending, for both the confirmation message and real alert text.
-  Also documented that an un-allow-listed source IP causes a silent ~100s timeout hang rather
-  than a clean auth error, which looks identical to a network/firewall problem in the logs.
+- **Fix: VoIP.ms `sendSMS` requests must be GET, not POST.** Every SMS attempt failed with a
+  generic HTTP 500 SOAP fault ("Bad Request") regardless of credentials, message content, or
+  source IP allowlist status. Root cause: VoIP.ms's own documented sample code sends `sendSMS`
+  as a `GET` request with query-string parameters — the bot was POSTing a form-encoded body
+  instead, which their API silently rejects with that same generic fault. Confirmed by
+  reproducing the exact fault via `curl POST` with real, verified-correct credentials, then
+  confirming an identical `curl GET` request succeeded. `VoipMsService` now sends `GET` with a
+  URL-encoded query string; since credentials are now in the URL (required by the API),
+  `System.Net.Http.HttpClient.VoipMsService` request-URL logging is suppressed in `Program.cs`,
+  matching the existing pattern for Telegram/Bluesky/X/Mastodon.
+  Also fixed/documented two secondary issues found while diagnosing this:
+  - Non-ASCII message content (emoji, em-dashes, smart quotes) is now normalized to ASCII before
+    sending — not the root cause of the "Bad Request" fault, but a real independent gotcha, since
+    Unicode content forces UCS-2 SMS encoding at a much shorter per-segment limit than the
+    160-char GSM-7-oriented truncation accounted for.
+  - An un-allow-listed source IP causes the API to silently hang the connection for ~100s
+    (`HttpClient`'s default timeout) rather than a clean auth error, which looks identical to a
+    network/firewall problem in the logs.
 - **Fix: cancellation alerts silently dropped by severity/urgency/certainty filters** — NWS
   downgrades every `Cancel` message to `severity: Minor`, `urgency: Past`, `certainty: Observed`
   regardless of the original event's actual severity (confirmed live for cancelled Tornado
