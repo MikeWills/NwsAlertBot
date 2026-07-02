@@ -37,6 +37,7 @@ public class BlueskyService
     public string EventTypes => _settings.EventTypes;
     public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
     public bool IncludeSpcMcd     => _settings.IncludeSpcMcd;
+    public bool IncludeHwo        => _settings.IncludeHwo;
 
     public Task<bool> SendConfirmationAsync(string message) =>
         PostTextAsync(message.Length > CharLimit ? message[..(CharLimit - 3)] + "..." : message, "confirmation");

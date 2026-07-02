@@ -127,6 +127,13 @@ public class FacebookSettings
 
     /// <summary>Whether to post SPC Mesoscale Discussion alerts to this platform. Requires SpcMcd.Enabled = true.</summary>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <summary>
+    /// Whether to post the Hazardous Weather Outlook (HWO) text product to this platform.
+    /// Requires Hwo.Enabled = true. Defaults to false — the full HWO text is long and best
+    /// suited to a personal channel (e.g. Discord DM, Telegram) rather than short-form platforms.
+    /// </summary>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class InstagramSettings
@@ -151,6 +158,9 @@ public class InstagramSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class XSettings
@@ -172,6 +182,9 @@ public class XSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class BlueskySettings
@@ -191,6 +204,9 @@ public class BlueskySettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class MastodonSettings
@@ -210,6 +226,9 @@ public class MastodonSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class PushoverSettings
@@ -263,6 +282,9 @@ public class PushoverSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class TwilioSettings
@@ -296,6 +318,9 @@ public class TwilioSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class DiscordDmSettings
@@ -327,6 +352,9 @@ public class DiscordDmSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class DiscordSettings
@@ -358,6 +386,9 @@ public class DiscordSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class TelegramSettings
@@ -388,6 +419,9 @@ public class TelegramSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class VoipMsSettings
@@ -428,6 +462,9 @@ public class VoipMsSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeSpcMcd"/>
     public bool IncludeSpcMcd { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
+    public bool IncludeHwo { get; set; } = false;
 }
 
 public class MapSettings
@@ -492,6 +529,28 @@ public class SpcMcdSettings
     /// Minimum seconds between checks for active MCDs against the NWS products API.
     /// MCDs can be issued and expire within 1-3 hours, so frequent checks are fine.
     /// Default 300 (5 min) — matches the regular poll interval.
+    /// </summary>
+    public int CheckIntervalSeconds { get; set; } = 300;
+}
+
+public class HwoSettings
+{
+    /// <summary>
+    /// Whether to monitor the Hazardous Weather Outlook (HWO) text product for the WFO(s)
+    /// covering Nws.Zones/Nws.Counties. HWO is plain text only — no polygon, no map image —
+    /// and is issued 1-2x/day per office. Intended for personal/informational use: delivery
+    /// to each platform is controlled independently by IncludeHwo on that platform's settings,
+    /// which defaults to false since the full product text is long and not well suited to
+    /// short-form platforms like X/Bluesky. HWO alerts carry Severity "Unknown" — if a
+    /// platform's MinSeverity filter excludes "Unknown", it will not receive HWO posts even
+    /// with IncludeHwo enabled.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Minimum seconds between checks against the NWS text products API for a new HWO issuance.
+    /// HWO is typically issued 1-2x/day per office, so polling more than every few minutes
+    /// has no benefit. Default 300 (5 min) — matches the regular poll interval.
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 300;
 }

@@ -13,13 +13,14 @@ and DM), and Telegram — and sends real-time push notifications and SMS via Pus
 3. [Geographic Filtering: Zones and Counties](#geographic-filtering-zones-and-counties)
 4. [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)
 5. [SPC Mesoscale Discussion Monitoring](#spc-mesoscale-discussion-monitoring)
-6. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
-6. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
-7. [API Credentials — Social Media](#api-credentials)
-8. [Push / SMS Notifications](#push--sms-notifications)
-9. [Map Images (Mapbox)](#map-images-mapbox)
-10. [Running the Bot](#running-the-bot)
-11. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
+6. [Hazardous Weather Outlook (HWO)](#hazardous-weather-outlook-hwo)
+7. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
+8. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
+9. [API Credentials — Social Media](#api-credentials)
+10. [Push / SMS Notifications](#push--sms-notifications)
+11. [Map Images (Mapbox)](#map-images-mapbox)
+12. [Running the Bot](#running-the-bot)
+13. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
 
 ---
 
@@ -124,6 +125,7 @@ Each platform block also accepts:
 | `EventTypes` | Comma-separated NWS event names for this platform only. Leave empty to receive all event types. | `""` (all) |
 | `IncludeSpcOutlooks` | Whether SPC Convective Outlook alerts are posted to this platform. Requires `Spc.Enabled = true`. | `true` |
 | `IncludeSpcMcd` | Whether SPC Mesoscale Discussion alerts are posted to this platform. Requires `SpcMcd.Enabled = true`. | `true` |
+| `IncludeHwo` | Whether Hazardous Weather Outlook text posts are sent to this platform. Requires `Hwo.Enabled = true`. Defaults to `false` — HWO is long-form text intended for personal use, enable it selectively (e.g. a Discord DM or Telegram chat). | `false` |
 
 **Geographic filter:** `Zones` and `Counties` are combined into a single NWS API query — both
 sets of UGC codes are always sent together. `State` is used only when neither `Zones` nor
@@ -160,6 +162,23 @@ sets of UGC codes are always sent together. `State` is used only when neither `Z
 Per-platform, MCDs are controlled by the separate `IncludeSpcMcd` flag (independent of
 `IncludeSpcOutlooks`), so you can enable or suppress each product type per platform.
 Each new MCD also triggers expedited polling (same as a severe/extreme NWS alert).
+
+`Hwo` (see [Hazardous Weather Outlook (HWO)](#hazardous-weather-outlook-hwo)):
+
+```json
+"Hwo": {
+  "Enabled": false,
+  "CheckIntervalSeconds": 300
+}
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `Enabled` | Whether to monitor the Hazardous Weather Outlook text product | `false` |
+| `CheckIntervalSeconds` | Minimum seconds between HWO checks | `300` |
+
+Per-platform delivery is controlled by the separate `IncludeHwo` flag, which defaults to
+`false` (opt-in) since HWO is long-form text intended primarily for personal use.
 
 ---
 
@@ -359,6 +378,63 @@ controls how often the bot queries the NWS products API for new MCDs. MCDs are v
 The event name for `EventTypes` filtering is `SPC Mesoscale Discussion` (severity `Severe`).
 Per-platform delivery is controlled by `IncludeSpcMcd` (default `true`) — independent of
 `IncludeSpcOutlooks`, so you can enable or suppress each product type per platform.
+
+---
+
+## Hazardous Weather Outlook (HWO)
+
+The bot can also monitor the [Hazardous Weather Outlook](https://www.weather.gov/media/directives/010_docs/pd01005017curr.pdf)
+(HWO), a plain-text product each local NWS office issues 1-2x/day summarizing hazards expected
+over the next 7 days. Unlike every other alert type in this bot, HWO carries no polygon and no
+map image — it's pure text, and delivery is opt-in per platform since it's intended primarily
+for personal use rather than broad social media distribution.
+
+### How it works
+
+- **WFO resolution** — the bot resolves the responsible forecast office(s) (WFO) from the same
+  `Nws.Zones`/`Nws.Counties` used everywhere else, via the NWS zones API. If your monitored area
+  spans multiple WFOs, each office's latest HWO is fetched and posted independently.
+- **Data source** — HWO arrives via the NWS text products API
+  (`/products/types/HWO/locations/{wfo}`), the same family of endpoints used for SPC MCDs.
+  The bot fetches the most recent issuance per WFO each check cycle.
+- **Text cleanup** — the raw teletype product text is stripped of the WMO/AFOS header codes,
+  the UGC zone/county code list block, and the trailing `$$` terminator, then mid-sentence line
+  wraps within each paragraph are collapsed into single lines while section breaks (e.g.
+  `.DAY ONE...`) are preserved. The full cleaned text is posted — there is no separate
+  "instruction" field to summarize, so nothing is dropped for length except by each platform's
+  own character limit.
+- **Deduplication** uses the same `posted_alerts.txt` as everything else, keyed on the NWS
+  product's UUID (`HWO-{wfo}-{uuid}`), so each new issuance posts exactly once.
+- **No map image** — `DownloadMapImageAsync`/Mapbox fallback are skipped entirely for HWO
+  since there's no geometry to plot.
+- **Per-platform opt-in** — controlled by `IncludeHwo` on each platform's settings, defaulting
+  to `false`. Enable it only where you want the full text delivered (e.g. a personal Discord DM
+  or Telegram chat) — platforms with small character limits (X, Bluesky, Twilio) will receive a
+  truncated version since the full text commonly runs 800-2000+ characters.
+- **Severity** — HWO alerts are posted with `Severity: Unknown` (NWS has no severity concept for
+  this product). If a platform's `MinSeverity` filter excludes `Unknown` (e.g. it's set to
+  `"Severe,Extreme"`), that platform will not receive HWO posts even with `IncludeHwo: true`.
+
+### Setup
+
+```json
+"Hwo": {
+  "Enabled": true,
+  "CheckIntervalSeconds": 300
+}
+```
+
+No additional credentials or API keys required. Then enable `IncludeHwo: true` on whichever
+platform(s) you want it delivered to — for example, a personal Discord DM:
+
+```json
+"DiscordDm": {
+  "Enabled": true,
+  "IncludeHwo": true
+}
+```
+
+The event name for `EventTypes` filtering is `Hazardous Weather Outlook`.
 
 ---
 
@@ -1168,6 +1244,10 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Hazardous Weather Outlook (HWO) monitoring** — new `HwoService`/`Hwo` settings block.
+  Text-only product (no map image), opt-in per platform via `IncludeHwo` (defaults `false`).
+  Cleans up raw teletype formatting (header codes, UGC zone list, line wraps) before posting
+  the full product text.
 - **Map: IEM autoplot #217 for Special Weather Statements** — SPS alerts (non-VTEC) now use
   IEM's SPS-specific map endpoint. The bot parses `AWIPSidentifier` and `WMOidentifier` from the
   NWS alert parameters to build the IEM product ID. A pre-flight check against IEM's active SPS

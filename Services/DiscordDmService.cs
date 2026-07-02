@@ -36,6 +36,7 @@ public class DiscordDmService
     public string EventTypes => _settings.EventTypes;
     public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
     public bool IncludeSpcMcd     => _settings.IncludeSpcMcd;
+    public bool IncludeHwo        => _settings.IncludeHwo;
 
     public Task<bool> SendConfirmationAsync(string message) =>
         SendToAllUsersAsync(content: message, embed: null, label: "confirmation");

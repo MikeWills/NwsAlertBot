@@ -56,6 +56,12 @@ public class NwsAlert
     /// <summary>True when this alert was synthesized by SpcMcdService (SPC Mesoscale Discussion).</summary>
     public bool IsSpcMcd { get; set; }
 
+    /// <summary>True when this alert was synthesized by HwoService (Hazardous Weather Outlook). Text-only — no map image.</summary>
+    public bool IsHwo { get; set; }
+
+    /// <summary>Pre-cleaned full HWO product text (teletype header/UGC/line-wrap formatting stripped). Only set when IsHwo is true.</summary>
+    public string? HwoText { get; set; }
+
     /// <summary>Time zone used to format Valid/Expires on SPC outlook posts. Set from Spc.TimeZone config.</summary>
     public TimeZoneInfo? DisplayTimeZone { get; set; }
 
@@ -100,30 +106,43 @@ public class NwsAlert
             ? $"\nIssued by: {SenderName}"
             : "";
 
-        string prefix = MessageType?.ToLower() switch
-        {
-            "cancel" => "✅ CANCELLED: ",
-            "update" => "🔄 UPDATE: ",
-            _        => "⚠️ "
-        };
+        string prefix = IsHwo
+            ? "📋 "
+            : MessageType?.ToLower() switch
+            {
+                "cancel" => "✅ CANCELLED: ",
+                "update" => "🔄 UPDATE: ",
+                _        => "⚠️ "
+            };
 
         string body = $"{prefix}{header}{issuedLine}{expiresLine}{issuedBy}";
 
-        // Append instruction if it fits
-        if (!string.IsNullOrWhiteSpace(Instruction))
+        if (IsHwo)
         {
-            string withInstruction = body + $"\n\n{Instruction}";
-            if (withInstruction.Length <= maxLength)
-                body = withInstruction;
+            // HWO has no separate "instruction" field — the full cleaned product text
+            // is the entire payload of the post. Always include it; the truncation
+            // step below handles platforms with a character limit.
+            if (!string.IsNullOrWhiteSpace(HwoText))
+                body += $"\n\n{HwoText}";
         }
-
-        // Append IEM attribution for SPC outlook map images
-        if (IsSpcOutlook)
+        else
         {
-            const string attribution = "\n\nImages generated via Iowa State University (https://mesonet.agron.iastate.edu/)";
-            string withAttribution = body + attribution;
-            if (withAttribution.Length <= maxLength)
-                body = withAttribution;
+            // Append instruction if it fits
+            if (!string.IsNullOrWhiteSpace(Instruction))
+            {
+                string withInstruction = body + $"\n\n{Instruction}";
+                if (withInstruction.Length <= maxLength)
+                    body = withInstruction;
+            }
+
+            // Append IEM attribution for SPC outlook map images
+            if (IsSpcOutlook)
+            {
+                const string attribution = "\n\nImages generated via Iowa State University (https://mesonet.agron.iastate.edu/)";
+                string withAttribution = body + attribution;
+                if (withAttribution.Length <= maxLength)
+                    body = withAttribution;
+            }
         }
 
         // Truncate with ellipsis if still over limit

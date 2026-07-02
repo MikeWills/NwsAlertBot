@@ -55,6 +55,7 @@ var host = Host.CreateDefaultBuilder(args)
         var mapSettings       = cfg.GetSection("Map").Get<MapSettings>()             ?? new MapSettings();
         var spcSettings       = cfg.GetSection("Spc").Get<SpcSettings>()             ?? new SpcSettings();
         var spcMcdSettings    = cfg.GetSection("SpcMcd").Get<SpcMcdSettings>()       ?? new SpcMcdSettings();
+        var hwoSettings       = cfg.GetSection("Hwo").Get<HwoSettings>()             ?? new HwoSettings();
 
         // Register settings as singletons
         services.AddSingleton(nwsSettings);
@@ -72,6 +73,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton(mapSettings);
         services.AddSingleton(spcSettings);
         services.AddSingleton(spcMcdSettings);
+        services.AddSingleton(hwoSettings);
 
         // HttpClients — each service gets its own typed client
         services.AddHttpClient<NwsAlertService>(client =>
@@ -103,6 +105,11 @@ var host = Host.CreateDefaultBuilder(args)
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
         });
         services.AddHttpClient<SpcMcdService>(client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
+            client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
+        });
+        services.AddHttpClient<HwoService>(client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
