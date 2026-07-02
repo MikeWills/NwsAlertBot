@@ -1230,7 +1230,11 @@ enabled. Uses the VoIP.ms REST API directly — no SDK required.
    enable SMS
 2. Enable API access and set an API password: Main Menu → SOAP and REST/JSON API
    (https://voip.ms/m/api.php) — note this is a separate password from your account login
-3. Add your server's public IP address to the API allow list on the same page
+3. Add your server's public IP address to the API allow list on the same page. Find your
+   server's public IP with `curl -4 ifconfig.me` — **not** its Tailscale IP if you're using
+   Tailscale for anything else. Requests from a non-allow-listed IP don't get a clean error —
+   the connection just hangs until `HttpClient`'s 100-second timeout, which looks identical to
+   a network/firewall problem in the logs.
 4. Fill in `ApiUsername`, `ApiPassword`, `Did` (digits only, no `+` or punctuation), and
    `ToNumbers` in `appsettings.json`
 
@@ -1245,7 +1249,10 @@ enabled. Uses the VoIP.ms REST API directly — no SDK required.
 
 Each recipient receives a separate SMS.
 
-**SMS length:** Messages are kept to 160 characters (1 SMS segment).
+**SMS length:** Messages are kept to 160 characters (1 SMS segment). Non-ASCII characters
+(emoji, em-dashes, smart quotes) are stripped/normalized to plain ASCII before sending — VoIP.ms's
+API has been observed rejecting Unicode message content outright with a generic "Bad Request"
+SOAP fault rather than a normal error response.
 
 API docs: https://voip.ms/m/apidocs.php (method: `sendSMS`)
 
@@ -1345,6 +1352,14 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Fix: VoIP.ms rejecting messages with non-ASCII content** — the built-in startup confirmation
+  message contains a ✅ emoji and em-dash, which VoIP.ms's `sendSMS` API rejected outright with a
+  generic "Bad Request" SOAP fault instead of a normal error response (any Unicode content forces
+  UCS-2 SMS encoding at a much shorter per-segment limit than the code's GSM-7-oriented 160-char
+  truncation assumed). `VoipMsService` now normalizes smart-punctuation to ASCII and strips
+  anything else non-ASCII before sending, for both the confirmation message and real alert text.
+  Also documented that an un-allow-listed source IP causes a silent ~100s timeout hang rather
+  than a clean auth error, which looks identical to a network/firewall problem in the logs.
 - **Fix: cancellation alerts silently dropped by severity/urgency/certainty filters** — NWS
   downgrades every `Cancel` message to `severity: Minor`, `urgency: Past`, `certainty: Observed`
   regardless of the original event's actual severity (confirmed live for cancelled Tornado

@@ -58,7 +58,12 @@ public class VoipMsService
             return false;
         }
 
-        // Keep SMS to a single segment (160 chars)
+        // Non-ASCII content (emoji, em-dashes, smart quotes) forces UCS-2 SMS encoding at a
+        // ~70-char segment limit instead of GSM-7's 160 — and VoIP.ms's API has been observed
+        // rejecting such content outright with a generic "Bad Request" SOAP fault rather than a
+        // normal error response. Normalize to plain ASCII before the 160-char truncation below,
+        // which only holds for GSM-7 content.
+        message = SanitizeForSms(message);
         if (message.Length > 160) message = message[..157] + "...";
 
         var tasks = _settings.ToNumbers.Select(to => SendSmsAsync(to, message, label));
@@ -109,6 +114,26 @@ public class VoipMsService
             _logger.LogError(ex, "VoipMs: Exception sending SMS to {Number}.", toNumber);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Normalizes smart-punctuation to ASCII equivalents and strips anything else non-ASCII
+    /// (emoji, etc.). VoIP.ms's sendSMS API has been observed rejecting Unicode message content
+    /// outright with a generic "Bad Request" SOAP fault instead of a normal error response.
+    /// </summary>
+    private static string SanitizeForSms(string text)
+    {
+        text = text
+            .Replace('—', '-')                            // em dash —
+            .Replace('–', '-')                             // en dash –
+            .Replace('‘', '\'').Replace('’', '\'')   // smart single quotes
+            .Replace('“', '"').Replace('”', '"');    // smart double quotes
+
+        var sb = new StringBuilder(text.Length);
+        foreach (var c in text)
+            if (c < 128) sb.Append(c);
+
+        return sb.ToString().Trim();
     }
 
     private static string BuildSmsText(NwsAlert alert)
