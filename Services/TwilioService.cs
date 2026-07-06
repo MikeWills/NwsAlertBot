@@ -33,11 +33,14 @@ public class TwilioService
     public Task<bool> SendConfirmationAsync(string message) =>
         SendToAllAsync(message, "confirmation");
 
+    // Keep SMS to 2 segments to control cost.
+    private const int MaxSmsLength = 320;
+
     public async Task<bool> SendAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
         // Cache-bust the map URL so Twilio's servers don't serve a stale cached MMS image.
-        return await SendToAllAsync(BuildSmsText(alert), alert.Event, CacheBust(alert.MapImageUrl, alert.Id));
+        return await SendToAllAsync(BuildSmsText(alert, MaxSmsLength), alert.Event, CacheBust(alert.MapImageUrl, alert.Id));
     }
 
     private static string? CacheBust(string? url, string alertId)
@@ -57,9 +60,9 @@ public class TwilioService
             return false;
         }
 
-        // Keep SMS to 2 segments (320 chars) to control cost. Preserve the trailing
-        // "Details: {url}" line when truncating, rather than risking cutting it off.
-        if (message.Length > 320) message = TruncateKeepingDetailsLink(message, 320);
+        // Safety net only -- BuildSmsText already fits alert messages within MaxSmsLength field
+        // by field. This plain truncation only applies to confirmation messages (plain strings).
+        if (message.Length > MaxSmsLength) message = message[..(MaxSmsLength - 3)] + "...";
 
         var tasks = _settings.ToNumbers.Select(to => SendSmsAsync(to, message, label, mediaUrl));
         var results = await Task.WhenAll(tasks);
@@ -110,13 +113,15 @@ public class TwilioService
         }
     }
 
-    private static string BuildSmsText(NwsAlert alert)
+    /// <summary>
+    /// Builds the SMS body, fitting it within maxLength one field at a time: the header always
+    /// appears, and each of area/until/instruction is included only if it fits whole -- never
+    /// truncated mid-field (which would otherwise show a useless fragment like "Until: ...").
+    /// The details link is reserved for last and always kept if it fits at all.
+    /// </summary>
+    private static string BuildSmsText(NwsAlert alert, int maxLength)
     {
-        var sb = new StringBuilder();
-        sb.Append($"NWS ALERT: {alert.Event}");
-        if (!string.IsNullOrWhiteSpace(alert.AreaDesc)) sb.Append($"\n{alert.AreaDesc}");
-        var expiresAt = alert.Ends ?? alert.Expires;
-        if (expiresAt.HasValue) sb.Append($"\nUntil: {expiresAt.Value.ToLocalTime():ddd h:mm tt zzz}");
+        string header = $"NWS ALERT: {alert.Event}";
 
         // SPC MCD/Outlook embed the details link at the end of Instruction so platforms that
         // only render Instruction (no separate DetailsUrl line) still show it. SMS appends the
@@ -129,27 +134,25 @@ public class TwilioService
                 instruction = instruction[..^suffix.Length];
         }
 
-        if (!string.IsNullOrWhiteSpace(instruction)) sb.Append($"\n{instruction}");
-        if (!string.IsNullOrWhiteSpace(alert.DetailsUrl)) sb.Append($"\nDetails: {alert.DetailsUrl}");
-        return sb.ToString();
-    }
+        var expiresAt = alert.Ends ?? alert.Expires;
+        string detailsLine = !string.IsNullOrWhiteSpace(alert.DetailsUrl) ? $"\nDetails: {alert.DetailsUrl}" : "";
 
-    /// <summary>
-    /// Truncates the message to fit maxLength while keeping the trailing "Details: {url}" line
-    /// intact, so the link is never the part that gets cut off. Falls back to a plain tail
-    /// truncation if there's no details line, or if the details line alone doesn't fit.
-    /// </summary>
-    private static string TruncateKeepingDetailsLink(string message, int maxLength)
-    {
-        const string marker = "\nDetails: ";
-        int idx = message.LastIndexOf(marker, StringComparison.Ordinal);
-        if (idx < 0 || message.Length - idx > maxLength)
-            return message[..(maxLength - 3)] + "...";
+        string[] optionalLines =
+        {
+            !string.IsNullOrWhiteSpace(alert.AreaDesc) ? $"\n{alert.AreaDesc}" : "",
+            expiresAt.HasValue ? $"\nUntil: {expiresAt.Value.ToLocalTime():ddd h:mm tt zzz}" : "",
+            !string.IsNullOrWhiteSpace(instruction) ? $"\n{instruction}" : "",
+        };
 
-        string detailsLine = message[idx..];
-        int headBudget = maxLength - detailsLine.Length - 3;
-        return headBudget < 0
-            ? detailsLine[..maxLength]
-            : message[..headBudget] + "..." + detailsLine;
+        string body = header;
+        int budget = maxLength - detailsLine.Length;
+        foreach (var line in optionalLines)
+        {
+            if (line.Length > 0 && body.Length + line.Length <= budget)
+                body += line;
+        }
+
+        string result = body + detailsLine;
+        return result.Length <= maxLength ? result : result[..(maxLength - 3)] + "...";
     }
 }
