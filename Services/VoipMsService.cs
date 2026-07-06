@@ -154,7 +154,19 @@ public class VoipMsService
         if (!string.IsNullOrWhiteSpace(alert.AreaDesc)) sb.Append($"\n{alert.AreaDesc}");
         var expiresAt = alert.Ends ?? alert.Expires;
         if (expiresAt.HasValue) sb.Append($"\nUntil: {expiresAt.Value.ToLocalTime():ddd h:mm tt zzz}");
-        if (!string.IsNullOrWhiteSpace(alert.Instruction)) sb.Append($"\n{alert.Instruction}");
+
+        // SPC MCD/Outlook embed the details link at the end of Instruction so platforms that
+        // only render Instruction (no separate DetailsUrl line) still show it. SMS appends the
+        // link separately below, so strip a trailing duplicate here rather than showing it twice.
+        string instruction = alert.Instruction;
+        if (!string.IsNullOrWhiteSpace(alert.DetailsUrl) && !string.IsNullOrWhiteSpace(instruction))
+        {
+            string suffix = "\n" + alert.DetailsUrl;
+            if (instruction.EndsWith(suffix, StringComparison.Ordinal))
+                instruction = instruction[..^suffix.Length];
+        }
+
+        if (!string.IsNullOrWhiteSpace(instruction)) sb.Append($"\n{instruction}");
         if (!string.IsNullOrWhiteSpace(alert.DetailsUrl)) sb.Append($"\nDetails: {alert.DetailsUrl}");
         return sb.ToString();
     }
