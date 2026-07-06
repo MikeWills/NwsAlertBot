@@ -142,6 +142,9 @@ public class NwsAlertService
                 DisplayTimeZone = _timeZone,
             };
 
+            if (!string.IsNullOrWhiteSpace(alert.Id))
+                alert.DetailsUrl = $"https://api.weather.gov/alerts/{alert.Id}";
+
             if (feature.TryGetProperty("geometry", out var geo) && geo.ValueKind != JsonValueKind.Null)
                 alert.GeometryJson = geo.GetRawText();
 

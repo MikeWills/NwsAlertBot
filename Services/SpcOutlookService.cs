@@ -311,8 +311,9 @@ public class SpcOutlookService
         static string FormatWindHailPct(double? p, string? sig) =>
             (p.HasValue ? $"{p.Value * 100:0}%" : "< 5%") + Sig(sig);
 
+        string detailsUrl = $"https://www.spc.noaa.gov/products/outlook/day{day}otlk.html";
         string instruction = $"Tornado: {FormatTornPct(tornPct, sigTorn)}\nWind: {FormatWindHailPct(windPct, sigWind)}\nHail: {FormatWindHailPct(hailPct, sigHail)}" +
-                             $"\nFor more details: https://www.spc.noaa.gov/products/outlook/day{day}otlk.html";
+                             $"\nFor more details: {detailsUrl}";
         // Prefer ISSUE_ISO for the dedup ID; fall back to EXPIRE_ISO (stable for the outlook period).
         // Never use UtcNow — it changes every minute and would re-post the same outlook every poll cycle.
         var stamp = issue ?? expire;
@@ -331,6 +332,7 @@ public class SpcOutlookService
             Sent         = issue ?? DateTimeOffset.UtcNow,
             Expires      = expire,
             MapImageUrl      = BuildOutlookImageUrl(day, wfo, state),
+            DetailsUrl       = detailsUrl,
             IsSpcOutlook     = true,
             DisplayTimeZone  = timeZone,
         };

@@ -70,7 +70,9 @@ public class VoipMsService
         // normal error response. Normalize to plain ASCII before the 160-char truncation below,
         // which only holds for GSM-7 content.
         message = SanitizeForSms(message);
-        if (message.Length > 160) message = message[..157] + "...";
+        // Preserve the trailing "Details: {url}" line when truncating, rather than risking
+        // cutting it off — same approach as TwilioService.TruncateKeepingDetailsLink.
+        if (message.Length > 160) message = TruncateKeepingDetailsLink(message, 160);
 
         var tasks = _settings.ToNumbers.Select(to => SendSmsAsync(to, message, label));
         var results = await Task.WhenAll(tasks);
@@ -153,6 +155,26 @@ public class VoipMsService
         var expiresAt = alert.Ends ?? alert.Expires;
         if (expiresAt.HasValue) sb.Append($"\nUntil: {expiresAt.Value.ToLocalTime():ddd h:mm tt zzz}");
         if (!string.IsNullOrWhiteSpace(alert.Instruction)) sb.Append($"\n{alert.Instruction}");
+        if (!string.IsNullOrWhiteSpace(alert.DetailsUrl)) sb.Append($"\nDetails: {alert.DetailsUrl}");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Truncates the message to fit maxLength while keeping the trailing "Details: {url}" line
+    /// intact, so the link is never the part that gets cut off. Falls back to a plain tail
+    /// truncation if there's no details line, or if the details line alone doesn't fit.
+    /// </summary>
+    private static string TruncateKeepingDetailsLink(string message, int maxLength)
+    {
+        const string marker = "\nDetails: ";
+        int idx = message.LastIndexOf(marker, StringComparison.Ordinal);
+        if (idx < 0 || message.Length - idx > maxLength)
+            return message[..(maxLength - 3)] + "...";
+
+        string detailsLine = message[idx..];
+        int headBudget = maxLength - detailsLine.Length - 3;
+        return headBudget < 0
+            ? detailsLine[..maxLength]
+            : message[..headBudget] + "..." + detailsLine;
     }
 }

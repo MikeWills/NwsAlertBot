@@ -365,9 +365,11 @@ public class SpcMcdService
             ? $"SPC MCD #{mcdNum} — {concerning}"
             : $"SPC Mesoscale Discussion #{mcdNum}";
 
+        string detailsUrl = $"https://www.spc.noaa.gov/products/md/{issueUtc.Year}/md{mcdNum:D4}.html";
+
         // Instruction body: areas + SPC link. The concerning text is already in Headline.
         string instruction = $"Areas affected: {areas}";
-        instruction += $"\nhttps://www.spc.noaa.gov/products/md/{issueUtc.Year}/md{mcdNum:D4}.html";
+        instruction += $"\n{detailsUrl}";
 
         return new NwsAlert
         {
@@ -383,6 +385,7 @@ public class SpcMcdService
             Sent            = issueUtc,
             Expires         = expireUtc,
             MapImageUrl     = $"https://www.spc.noaa.gov/products/md/{issueUtc.Year}/mcd{mcdNum:D4}.png",
+            DetailsUrl      = detailsUrl,
             IsSpcMcd        = true,
             DisplayTimeZone = _timeZone,
         };

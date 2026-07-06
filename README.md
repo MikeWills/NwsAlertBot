@@ -1352,6 +1352,17 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Fix: SMS alerts (Twilio, VoIP.ms) could truncate the details link entirely.** Both services
+  build a single message string (headline + area + expiry + instruction) and hard-truncate it to
+  fit the segment budget (320 chars for Twilio, 160 for VoIP.ms). Any link that happened to be part
+  of `Instruction` (e.g. the SPC MCD/Outlook detail page URL) lived at the very end of that string,
+  so it was always the first thing cut once the message ran long — VoIP.ms's 160-char budget in
+  particular is regularly blown by just the headline + area + expiry, dropping the link every time.
+  Added `NwsAlert.DetailsUrl` (populated for all four alert sources: NWS VTEC alerts point to the
+  `api.weather.gov` alert record, SPC MCD/Outlook point to their SPC HTML page, HWO points to the
+  `api.weather.gov` product record) and a `TruncateKeepingDetailsLink()` helper in both SMS services
+  that truncates the *rest* of the message first and always preserves the trailing `Details: {url}`
+  line intact.
 - **Fix: SPC MCD polygon parsing decoded far-west longitudes incorrectly, causing false-positive
   alerts for monitored areas hundreds of miles outside the actual MCD.** `SpcMcdService.ParseLatLon`
   assumed 8-digit `LAT...LON` tokens always meant lon &lt; 100°W and that lon &gt;= 100°W used a
