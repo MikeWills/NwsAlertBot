@@ -15,9 +15,9 @@ namespace NwsAlertBot.Services;
 /// one monitored location.
 ///
 /// MCDs are issued from KWNS as product type "SWO" on the NWS API. They contain
-/// a LAT...LON polygon in concatenated lat/lon pairs (first 4 digits = lat×100 N,
-/// next 4–5 digits = lon×100 W) and a "Valid DDHHMM Z - DDHHMM Z" line for the
-/// active window. 8-digit tokens cover lon &lt; 100°W; 9-digit tokens cover lon ≥ 100°W.
+/// a LAT...LON polygon in concatenated lat/lon pairs (4-digit lat×100 N + 4-digit lon×100 W,
+/// always 8 chars — SPC drops the leading "1" when lon &gt;= 100.00°W rather than widening
+/// the field) and a "Valid DDHHMM Z - DDHHMM Z" line for the active window.
 /// Image URL: https://www.spc.noaa.gov/products/md/{year}/mcd{NNNN}.png
 /// </summary>
 public class SpcMcdService
@@ -308,8 +308,11 @@ public class SpcMcdService
 
     /// <summary>
     /// Parses the LAT...LON block from MCD product text.
-    /// Tokens are concatenated lat/lon pairs: 4-digit lat×100 + 4-digit lon×100 (8 chars total
-    /// for lon &lt; 100°W) or 4-digit lat×100 + 5-digit lon×100 (9 chars for lon ≥ 100°W).
+    /// Tokens are always 8 chars: 4-digit lat×100 + 4-digit lon×100 (e.g. 42769694 →
+    /// 42.76°N, 96.94°W). For lon &gt;= 100.00°W, SPC drops the leading "1" digit instead of
+    /// widening the field (e.g. 101.73°W is encoded as 0173, not 10173) — confirmed against
+    /// live MCD product text. CONUS longitudes run ~67-125°W, so the wrapped range (0000-2500)
+    /// never overlaps the unwrapped range (6700-9999), making the unwrap unambiguous.
     /// </summary>
     private static List<(double Lat, double Lon)>? ParseLatLon(string text)
     {
@@ -322,11 +325,10 @@ public class SpcMcdService
         var polygon = new List<(double, double)>();
         foreach (var token in tokens)
         {
-            // 8-char: lon < 100°W (e.g. 42769694 → 42.76°N, 96.94°W)
-            // 9-char: lon ≥ 100°W (e.g. 399310030 → 39.93°N, 100.30°W)
-            if (token.Length is not (8 or 9)) continue;
+            if (token.Length != 8) continue;
             if (!double.TryParse(token[..4], NumberStyles.Integer, CultureInfo.InvariantCulture, out double lat100)) continue;
             if (!double.TryParse(token[4..], NumberStyles.Integer, CultureInfo.InvariantCulture, out double lon100)) continue;
+            if (lon100 < 5000) lon100 += 10000;
             polygon.Add((lat100 / 100.0, -lon100 / 100.0));
         }
 

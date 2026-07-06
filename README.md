@@ -1352,6 +1352,17 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Fix: SPC MCD polygon parsing decoded far-west longitudes incorrectly, causing false-positive
+  alerts for monitored areas hundreds of miles outside the actual MCD.** `SpcMcdService.ParseLatLon`
+  assumed 8-digit `LAT...LON` tokens always meant lon &lt; 100°W and that lon &gt;= 100°W used a
+  9-digit token. In practice SPC always encodes 8-digit tokens and drops the leading "1" digit for
+  longitudes &gt;= 100.00°W (e.g. 101.73°W is encoded as `0173`, not `10173`) instead of widening the
+  field. This made western polygon vertices decode as ~0-2°W (off the coast of Europe), ballooning
+  the effective polygon shape and causing it to spuriously contain zone centroids far to the east
+  (e.g. an MCD over north-central Nebraska/northeast South Dakota was flagged as covering
+  south-central Minnesota zones). Fixed by unwrapping any decoded lon &lt; 5000 (i.e. &lt; 50.00) by
+  adding 100° — CONUS longitudes run ~67-125°W, so the wrapped range (0-25) never overlaps the
+  unwrapped range (67-99), making the unwrap unambiguous. See `Services/SpcMcdService.cs`.
 - **Fix: VoIP.ms `sendSMS` requests must be GET, not POST.** Every SMS attempt failed with a
   generic HTTP 500 SOAP fault ("Bad Request") regardless of credentials, message content, or
   source IP allowlist status. Root cause: VoIP.ms's own documented sample code sends `sendSMS`
