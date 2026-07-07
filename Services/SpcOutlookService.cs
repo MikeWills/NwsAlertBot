@@ -224,7 +224,7 @@ public class SpcOutlookService
 
         foreach (var feature in features.EnumerateArray())
         {
-            if (!PointInGeometry(feature.GetProperty("geometry"), lon, lat)) continue;
+            if (!PolygonGeometry.PointInGeometry(feature.GetProperty("geometry"), lon, lat)) continue;
 
             var props = feature.GetProperty("properties");
             if (!props.TryGetProperty("DN", out var dnEl) || !dnEl.TryGetInt32(out int dn)) continue;
@@ -253,7 +253,7 @@ public class SpcOutlookService
             if (labelStr == null || !double.TryParse(labelStr, CultureInfo.InvariantCulture, out var pct))
                 continue;
 
-            if (!PointInGeometry(feature.GetProperty("geometry"), lon, lat)) continue;
+            if (!PolygonGeometry.PointInGeometry(feature.GetProperty("geometry"), lon, lat)) continue;
             if (best == null || pct > best) best = pct;
         }
 
@@ -270,7 +270,7 @@ public class SpcOutlookService
             var props = feature.GetProperty("properties");
             var label = props.GetProperty("LABEL").GetString();
             if (label == null || !label.StartsWith("CIG", StringComparison.OrdinalIgnoreCase)) continue;
-            if (!PointInGeometry(feature.GetProperty("geometry"), lon, lat)) continue;
+            if (!PolygonGeometry.PointInGeometry(feature.GetProperty("geometry"), lon, lat)) continue;
             if (best == null || string.CompareOrdinal(label, best) > 0) best = label;
         }
         return best;
@@ -351,51 +351,6 @@ public class SpcOutlookService
 
         return "https://mesonet.agron.iastate.edu/plotting/auto/plot/220/" +
                $"which:{day}C::cat:categorical::t:cwa::network:WFO::wfo:{wfo}::csector:{state}::_r:t::dpi:100.png";
-    }
-
-    // --- Point-in-polygon (ray casting) ---
-
-    private static bool PointInGeometry(JsonElement geometry, double lon, double lat)
-    {
-        var type = geometry.GetProperty("type").GetString();
-        var coords = geometry.GetProperty("coordinates");
-
-        return type switch
-        {
-            "Polygon" => PointInPolygonRings(coords, lon, lat),
-            "MultiPolygon" => coords.EnumerateArray().Any(poly => PointInPolygonRings(poly, lon, lat)),
-            _ => false,
-        };
-    }
-
-    private static bool PointInPolygonRings(JsonElement rings, double lon, double lat)
-    {
-        if (!PointInRing(rings[0], lon, lat)) return false;
-
-        for (int i = 1; i < rings.GetArrayLength(); i++)
-            if (PointInRing(rings[i], lon, lat)) return false; // inside a hole
-
-        return true;
-    }
-
-    private static bool PointInRing(JsonElement ring, double lon, double lat)
-    {
-        bool inside = false;
-        int n = ring.GetArrayLength();
-
-        for (int i = 0, j = n - 1; i < n; j = i++)
-        {
-            var pi = ring[i];
-            var pj = ring[j];
-            double xi = pi[0].GetDouble(), yi = pi[1].GetDouble();
-            double xj = pj[0].GetDouble(), yj = pj[1].GetDouble();
-
-            if ((yi > lat) != (yj > lat) &&
-                lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)
-                inside = !inside;
-        }
-
-        return inside;
     }
 
 }

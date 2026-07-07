@@ -14,14 +14,15 @@ and DM), and Telegram — and sends real-time push notifications and SMS via Pus
 4. [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)
 5. [SPC Mesoscale Discussion Monitoring](#spc-mesoscale-discussion-monitoring)
 6. [Hazardous Weather Outlook (HWO)](#hazardous-weather-outlook-hwo)
-7. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
-8. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
-9. [API Credentials — Social Media](#api-credentials)
-10. [Push / SMS Notifications](#push--sms-notifications)
-11. [Map Images (Mapbox)](#map-images-mapbox)
-12. [Running the Bot](#running-the-bot)
-13. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
-14. [Cross-Platform Release Builds](#cross-platform-release-builds)
+7. [WPC Excessive Rainfall Outlook (ERO)](#wpc-excessive-rainfall-outlook-ero)
+8. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
+9. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
+10. [API Credentials — Social Media](#api-credentials)
+11. [Push / SMS Notifications](#push--sms-notifications)
+12. [Map Images (Mapbox)](#map-images-mapbox)
+13. [Running the Bot](#running-the-bot)
+14. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
+15. [Cross-Platform Release Builds](#cross-platform-release-builds)
 
 ---
 
@@ -72,14 +73,14 @@ You only need to include the sections/fields you are actually changing.
 ## Configuration Reference
 
 All configuration lives in `appsettings.json`. Settings are grouped by what they govern:
-`Location` and `Polling` are shared across every alert feed; `Nws`, `Spc`, `SpcMcd`, and `Hwo`
-are each one specific feed's own settings; everything else is a delivery platform.
+`Location` and `Polling` are shared across every alert feed; `Nws`, `Spc`, `SpcMcd`, `Hwo`, and
+`Ero` are each one specific feed's own settings; everything else is a delivery platform.
 
 ### Location — shared by every feed
 
 `Zones`/`Counties`/`TimeZone` are resolved once and used identically by the NWS alerts feed,
-SPC Outlook, SPC MCD, HWO, and the Mapbox bounding-box fallback. None of those feeds carry
-their own copy of this — if you add a new feed in the future, it should read from here too.
+SPC Outlook, SPC MCD, HWO, WPC ERO, and the Mapbox bounding-box fallback. None of those feeds
+carry their own copy of this — if you add a new feed in the future, it should read from here too.
 
 ```json
 "Location": {
@@ -93,12 +94,12 @@ their own copy of this — if you add a new feed in the future, it should read f
 |---|---|---|
 | `Zones` | NWS forecast zone codes (see below) | `[]` |
 | `Counties` | NWS county codes (see below) | `[]` |
-| `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS, SPC, and HWO). Works on Windows and Linux. | `"America/Chicago"` |
+| `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS, SPC, HWO, and ERO). Works on Windows and Linux. | `"America/Chicago"` |
 
 **Geographic filter:** `Zones` and `Counties` are combined into a single query — both sets of
 UGC codes are always sent together, for every feed. `Nws.State` (below) is a fallback used
-**only** by the main NWS alerts feed when both are empty — SPC Outlook, SPC MCD, and HWO always
-require explicit `Zones`/`Counties` and do not fall back to a whole state.
+**only** by the main NWS alerts feed when both are empty — SPC Outlook, SPC MCD, HWO, and WPC
+ERO always require explicit `Zones`/`Counties` and do not fall back to a whole state.
 
 **US IANA timezone IDs:**
 
@@ -116,7 +117,7 @@ require explicit `Zones`/`Counties` and do not fall back to a whole state.
 
 Drives how often the orchestrator checks all feeds. Each feed still self-gates on its own
 `CheckIntervalSeconds` below; this only controls the overall tick. Only NWS alerts and SPC MCDs
-ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook and HWO never do.
+ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook, HWO, and WPC ERO never do.
 
 ```json
 "Polling": {
@@ -161,8 +162,8 @@ directly to `api.weather.gov` as query parameters, so anything excluded here is 
 returned to the bot. Nothing downstream (per-platform `MinSeverity`/`EventTypes`) can un-filter
 it. `AdditionalEventTypes` is the one exception — it's additive, not restrictive, which is why
 it doesn't get the `Filter` prefix. This only governs the main NWS alerts feed (regular
-warnings/watches/advisories + SPS) — SPC Outlook, SPC MCD, and HWO below are separate feeds
-with their own severity values, gated only by each platform's own `MinSeverity`.
+warnings/watches/advisories + SPS) — SPC Outlook, SPC MCD, HWO, and WPC ERO below are separate
+feeds with their own severity values, gated only by each platform's own `MinSeverity`.
 
 Each platform block also accepts:
 
@@ -173,6 +174,7 @@ Each platform block also accepts:
 | `IncludeSpcOutlooks` | Whether SPC Convective Outlook alerts are posted to this platform. Requires `Spc.Enabled = true`. | `true` |
 | `IncludeSpcMcd` | Whether SPC Mesoscale Discussion alerts are posted to this platform. Requires `SpcMcd.Enabled = true`. | `true` |
 | `IncludeHwo` | Whether Hazardous Weather Outlook text posts are sent to this platform. Requires `Hwo.Enabled = true`. Defaults to `false` — HWO is long-form text intended for personal use, enable it selectively (e.g. a Discord DM or Telegram chat). | `false` |
+| `IncludeEro` | Whether WPC Excessive Rainfall Outlook alerts are posted to this platform. Requires `Ero.Enabled = true`. | `true` |
 
 `Spc` (see [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)):
 
@@ -222,6 +224,24 @@ Each new MCD also triggers expedited polling (same as a severe/extreme NWS alert
 
 Per-platform delivery is controlled by the separate `IncludeHwo` flag, which defaults to
 `false` (opt-in) since HWO is long-form text intended primarily for personal use.
+
+`Ero` (see [WPC Excessive Rainfall Outlook (ERO)](#wpc-excessive-rainfall-outlook-ero)):
+
+```json
+"Ero": {
+  "Enabled": false,
+  "CheckIntervalSeconds": 1800
+}
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `Enabled` | Whether to monitor the WPC Excessive Rainfall Outlook Day 1/2/3 categorical risk | `false` |
+| `CheckIntervalSeconds` | Minimum seconds between ERO checks | `1800` |
+
+Per-platform delivery is controlled by the separate `IncludeEro` flag (default `true`).
+Note: despite sitting alongside `Spc`/`SpcMcd` in this list, ERO is a WPC (Weather Prediction
+Center) product, not SPC.
 
 ---
 
@@ -480,6 +500,71 @@ platform(s) you want it delivered to — for example, a personal Discord DM:
 ```
 
 The event name for `EventTypes` filtering is `Hazardous Weather Outlook`.
+
+---
+
+## WPC Excessive Rainfall Outlook (ERO)
+
+The bot can also monitor the [WPC (Weather Prediction Center) Excessive Rainfall Outlook](https://www.wpc.ncep.noaa.gov/qpf/excessive_rainfall_outlook_ero.php)
+(ERO) — Day 1, 2, and 3 forecasts of the probability that rainfall will exceed flash flood
+guidance near a point, categorized into four risk levels: Marginal (≥5%), Slight (≥15%),
+Moderate (≥40%), and High (≥70%). Note: despite living alongside the SPC-issued feeds in this
+bot, ERO is a **WPC** product, not SPC.
+
+### How it works
+
+- **Locations monitored** reuse the same `Location.Zones`/`Location.Counties` centroids as
+  SPC Outlook/MCD — resolved once at startup and cached for the life of the process.
+- **Categorical risk** (`Marginal` / `Slight` / `Moderate` / `High`) is checked independently
+  for Day 1, 2, and 3 against WPC's GeoJSON feeds
+  (`https://www.wpc.ncep.noaa.gov/exper/eromap/geojson/Day{1,2,3}_Latest.geojson`). A location
+  with no categorical match ("None"/sub-5%) never triggers an alert, on any day.
+- **Checked every `Ero.CheckIntervalSeconds`** (default 1800s = 30 min) — independent of
+  `Polling.PollIntervalSeconds`.
+- **Re-alerts on every new WPC issuance**, not only on a category change, the same as SPC
+  Outlook. Deduplication keys off WPC's own issuance timestamp, reusing the same
+  `posted_alerts.txt` tracking file as everything else.
+- **Outlook map image** — each post includes a categorical risk map image generated by
+  [Iowa State's IEM Mesonet plotting service](https://mesonet.agron.iastate.edu/plotting/auto/?q=220)
+  (free, no API key), the same service used for SPC Outlook maps, cropped to the location's
+  forecast office (WFO) and state.
+- **Details link** — each post links to WPC's own interactive ERO page
+  (`https://www.wpc.ncep.noaa.gov/qpf/ero.php?opt=curr&day={day}`).
+
+> **Caveat:** Same as SPC Outlook — each location is reduced to a single centroid point, so a
+> location very near the edge of a risk area may not perfectly reflect that polygon's true
+> boundary.
+
+### Filtering ERO posts per platform
+
+ERO alerts flow through each platform's existing `MinSeverity`/`EventTypes` dials — no new
+filter fields were added beyond `IncludeEro` (see [Configuration Reference](#configuration-reference)):
+
+- **Event names** — `WPC Day 1 Excessive Rainfall Outlook`, `WPC Day 2 Excessive Rainfall Outlook`,
+  and `WPC Day 3 Excessive Rainfall Outlook`.
+- **Severity mapping** — WPC's own category names don't line up 1:1 in name with this bot's
+  Severity scale, only in rank order:
+
+  | WPC Category | Mapped Severity |
+  |---|---|
+  | High | Extreme |
+  | Moderate | Severe |
+  | Slight | Moderate |
+  | Marginal | Minor |
+
+  For example, a platform configured with `"MinSeverity": "Severe,Extreme"` will receive
+  `Moderate`/`High` ERO posts but not `Marginal`/`Slight` ones.
+
+### Setup
+
+```json
+"Ero": {
+  "Enabled": true,
+  "CheckIntervalSeconds": 1800
+}
+```
+
+No additional credentials or API keys required.
 
 ---
 
@@ -1352,6 +1437,18 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Add: WPC Excessive Rainfall Outlook (ERO) monitoring.** New `WpcEroService` polls WPC's
+  Day 1/2/3 categorical GeoJSON feeds (`Marginal`/`Slight`/`Moderate`/`High`, ≥5%/15%/40%/70%
+  probability of exceeding flash flood guidance) and checks them against the same monitored
+  zone/county centroids used by SPC Outlook/MCD. Follows the exact same pattern as SPC Outlook:
+  one alert per day per non-"None" risk, an IEM Mesonet categorical map image
+  (`which:{day}E` on the same autoplot #220 used for SPC outlooks), and a details link to WPC's
+  own interactive ERO page. New `Ero` settings block (`Enabled`, `CheckIntervalSeconds`, default
+  1800s) and a new per-platform `IncludeEro` flag (default `true`) on all 11 delivery platforms.
+  Despite living next to `Spc`/`SpcMcd` in config, ERO is issued by WPC, not SPC — confirmed
+  against WPC's live GeoJSON feed before implementing (see [WPC Excessive Rainfall Outlook (ERO)](#wpc-excessive-rainfall-outlook-ero)).
+  Extracted the GeoJSON point-in-polygon test (previously private to `SpcOutlookService`) into
+  the shared `PolygonGeometry.PointInGeometry()` so ERO didn't need a third copy.
 - **Fix: SMS alerts (Twilio, VoIP.ms) could truncate the details link entirely.** Both services
   build a single message string (headline + area + expiry + instruction) and hard-truncate it to
   fit the segment budget (320 chars for Twilio, 160 for VoIP.ms). Any link that happened to be part

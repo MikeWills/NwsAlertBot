@@ -65,6 +65,9 @@ public class NwsAlert
     /// <summary>Pre-cleaned full HWO product text (teletype header/UGC/line-wrap formatting stripped). Only set when IsHwo is true.</summary>
     public string? HwoText { get; set; }
 
+    /// <summary>True when this alert was synthesized by WpcEroService (WPC Excessive Rainfall Outlook).</summary>
+    public bool IsEro { get; set; }
+
     /// <summary>Time zone used to format Valid/Expires on SPC outlook posts. Set from Spc.TimeZone config.</summary>
     public TimeZoneInfo? DisplayTimeZone { get; set; }
 

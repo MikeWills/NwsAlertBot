@@ -15,6 +15,7 @@ public class SocialMediaOrchestrator
     private readonly SpcOutlookService _spc;
     private readonly SpcMcdService _spcMcd;
     private readonly HwoService _hwo;
+    private readonly WpcEroService _ero;
     private readonly AlertTrackerService _tracker;
     private readonly MapService _map;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -37,6 +38,7 @@ public class SocialMediaOrchestrator
         SpcOutlookService spc,
         SpcMcdService spcMcd,
         HwoService hwo,
+        WpcEroService ero,
         AlertTrackerService tracker,
         MapService map,
         IHttpClientFactory httpClientFactory,
@@ -58,6 +60,7 @@ public class SocialMediaOrchestrator
         _spc              = spc;
         _spcMcd           = spcMcd;
         _hwo              = hwo;
+        _ero              = ero;
         _tracker          = tracker;
         _map              = map;
         _httpClientFactory = httpClientFactory;
@@ -125,6 +128,9 @@ public class SocialMediaOrchestrator
         if (_hwo.IsEnabled)
             await CheckHwoAsync(ct);
 
+        if (_ero.IsEnabled)
+            await CheckEroAsync(ct);
+
         return stormCount;
     }
 
@@ -191,21 +197,39 @@ public class SocialMediaOrchestrator
         }
     }
 
+    private async Task CheckEroAsync(CancellationToken ct)
+    {
+        var eroAlerts = await _ero.GetEroAlertsAsync();
+
+        foreach (var alert in eroAlerts)
+        {
+            if (ct.IsCancellationRequested) break;
+            if (_tracker.HasBeenPosted(alert.Id)) continue;
+
+            _logger.LogInformation("New WPC ERO: [{Severity}] {Event} — {AreaDesc}",
+                alert.Severity, alert.Event, alert.AreaDesc);
+
+            await DownloadMapImageAsync(alert);
+            await PostToAllPlatformsAsync(alert);
+            _tracker.MarkPosted(alert.Id);
+        }
+    }
+
     private async Task PostToAllPlatformsAsync(NwsAlert alert)
     {
-        var all = new (string Name, bool Enabled, bool IncludeSpc, bool IncludeMcd, bool IncludeHwo, string MinSeverity, string EventTypes, Func<Task<bool>> Action)[]
+        var all = new (string Name, bool Enabled, bool IncludeSpc, bool IncludeMcd, bool IncludeHwo, bool IncludeEro, string MinSeverity, string EventTypes, Func<Task<bool>> Action)[]
         {
-            ("Facebook",  _facebook.IsEnabled,  _facebook.IncludeSpcOutlooks,  _facebook.IncludeSpcMcd,  _facebook.IncludeHwo,  _facebook.MinSeverity,  _facebook.EventTypes,  () => _facebook.PostAlertAsync(alert)),
-            ("Instagram", _instagram.IsEnabled, _instagram.IncludeSpcOutlooks, _instagram.IncludeSpcMcd, _instagram.IncludeHwo, _instagram.MinSeverity, _instagram.EventTypes, () => _instagram.PostAlertAsync(alert)),
-            ("X",         _x.IsEnabled,         _x.IncludeSpcOutlooks,         _x.IncludeSpcMcd,         _x.IncludeHwo,         _x.MinSeverity,         _x.EventTypes,         () => _x.PostAlertAsync(alert)),
-            ("Bluesky",   _bluesky.IsEnabled,   _bluesky.IncludeSpcOutlooks,   _bluesky.IncludeSpcMcd,   _bluesky.IncludeHwo,   _bluesky.MinSeverity,   _bluesky.EventTypes,   () => _bluesky.PostAlertAsync(alert)),
-            ("Mastodon",  _mastodon.IsEnabled,  _mastodon.IncludeSpcOutlooks,  _mastodon.IncludeSpcMcd,  _mastodon.IncludeHwo,  _mastodon.MinSeverity,  _mastodon.EventTypes,  () => _mastodon.PostAlertAsync(alert)),
-            ("Pushover",  _pushover.IsEnabled,  _pushover.IncludeSpcOutlooks,  _pushover.IncludeSpcMcd,  _pushover.IncludeHwo,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
-            ("Twilio",    _twilio.IsEnabled,    _twilio.IncludeSpcOutlooks,    _twilio.IncludeSpcMcd,    _twilio.IncludeHwo,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
-            ("Discord",   _discord.IsEnabled,   _discord.IncludeSpcOutlooks,   _discord.IncludeSpcMcd,   _discord.IncludeHwo,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
-            ("DiscordDm", _discordDm.IsEnabled, _discordDm.IncludeSpcOutlooks, _discordDm.IncludeSpcMcd, _discordDm.IncludeHwo, _discordDm.MinSeverity, _discordDm.EventTypes, () => _discordDm.PostAlertAsync(alert)),
-            ("Telegram",  _telegram.IsEnabled,  _telegram.IncludeSpcOutlooks,  _telegram.IncludeSpcMcd,  _telegram.IncludeHwo,  _telegram.MinSeverity,  _telegram.EventTypes,  () => _telegram.SendAlertAsync(alert)),
-            ("VoipMs",    _voipMs.IsEnabled,    _voipMs.IncludeSpcOutlooks,    _voipMs.IncludeSpcMcd,    _voipMs.IncludeHwo,    _voipMs.MinSeverity,    _voipMs.EventTypes,    () => _voipMs.SendAlertAsync(alert)),
+            ("Facebook",  _facebook.IsEnabled,  _facebook.IncludeSpcOutlooks,  _facebook.IncludeSpcMcd,  _facebook.IncludeHwo,  _facebook.IncludeEro,  _facebook.MinSeverity,  _facebook.EventTypes,  () => _facebook.PostAlertAsync(alert)),
+            ("Instagram", _instagram.IsEnabled, _instagram.IncludeSpcOutlooks, _instagram.IncludeSpcMcd, _instagram.IncludeHwo, _instagram.IncludeEro, _instagram.MinSeverity, _instagram.EventTypes, () => _instagram.PostAlertAsync(alert)),
+            ("X",         _x.IsEnabled,         _x.IncludeSpcOutlooks,         _x.IncludeSpcMcd,         _x.IncludeHwo,         _x.IncludeEro,         _x.MinSeverity,         _x.EventTypes,         () => _x.PostAlertAsync(alert)),
+            ("Bluesky",   _bluesky.IsEnabled,   _bluesky.IncludeSpcOutlooks,   _bluesky.IncludeSpcMcd,   _bluesky.IncludeHwo,   _bluesky.IncludeEro,   _bluesky.MinSeverity,   _bluesky.EventTypes,   () => _bluesky.PostAlertAsync(alert)),
+            ("Mastodon",  _mastodon.IsEnabled,  _mastodon.IncludeSpcOutlooks,  _mastodon.IncludeSpcMcd,  _mastodon.IncludeHwo,  _mastodon.IncludeEro,  _mastodon.MinSeverity,  _mastodon.EventTypes,  () => _mastodon.PostAlertAsync(alert)),
+            ("Pushover",  _pushover.IsEnabled,  _pushover.IncludeSpcOutlooks,  _pushover.IncludeSpcMcd,  _pushover.IncludeHwo,  _pushover.IncludeEro,  _pushover.MinSeverity,  _pushover.EventTypes,  () => _pushover.SendAlertAsync(alert)),
+            ("Twilio",    _twilio.IsEnabled,    _twilio.IncludeSpcOutlooks,    _twilio.IncludeSpcMcd,    _twilio.IncludeHwo,    _twilio.IncludeEro,    _twilio.MinSeverity,    _twilio.EventTypes,    () => _twilio.SendAlertAsync(alert)),
+            ("Discord",   _discord.IsEnabled,   _discord.IncludeSpcOutlooks,   _discord.IncludeSpcMcd,   _discord.IncludeHwo,   _discord.IncludeEro,   _discord.MinSeverity,   _discord.EventTypes,   () => _discord.PostAlertAsync(alert)),
+            ("DiscordDm", _discordDm.IsEnabled, _discordDm.IncludeSpcOutlooks, _discordDm.IncludeSpcMcd, _discordDm.IncludeHwo, _discordDm.IncludeEro, _discordDm.MinSeverity, _discordDm.EventTypes, () => _discordDm.PostAlertAsync(alert)),
+            ("Telegram",  _telegram.IsEnabled,  _telegram.IncludeSpcOutlooks,  _telegram.IncludeSpcMcd,  _telegram.IncludeHwo,  _telegram.IncludeEro,  _telegram.MinSeverity,  _telegram.EventTypes,  () => _telegram.SendAlertAsync(alert)),
+            ("VoipMs",    _voipMs.IsEnabled,    _voipMs.IncludeSpcOutlooks,    _voipMs.IncludeSpcMcd,    _voipMs.IncludeHwo,    _voipMs.IncludeEro,    _voipMs.MinSeverity,    _voipMs.EventTypes,    () => _voipMs.SendAlertAsync(alert)),
         };
 
         var filtered = all
@@ -213,6 +237,7 @@ public class SocialMediaOrchestrator
                 (alert.IsSpcOutlook && !p.IncludeSpc) ||
                 (alert.IsSpcMcd && !p.IncludeMcd) ||
                 (alert.IsHwo && !p.IncludeHwo) ||
+                (alert.IsEro && !p.IncludeEro) ||
                 !PassesFilter(alert.Severity, p.MinSeverity) ||
                 !PassesFilter(alert.Event, p.EventTypes)))
             .Select(p => p.Name)
@@ -226,6 +251,7 @@ public class SocialMediaOrchestrator
                 !(alert.IsSpcOutlook && !p.IncludeSpc) &&
                 !(alert.IsSpcMcd && !p.IncludeMcd) &&
                 !(alert.IsHwo && !p.IncludeHwo) &&
+                !(alert.IsEro && !p.IncludeEro) &&
                 PassesFilter(alert.Severity, p.MinSeverity) &&
                 PassesFilter(alert.Event, p.EventTypes))
             .Select(p => WrapPost(p.Name, p.Action))

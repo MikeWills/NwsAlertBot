@@ -1,8 +1,8 @@
 namespace NwsAlertBot.Config;
 
 /// <summary>
-/// Geographic area and time zone shared by every feed (Nws, Spc, SpcMcd, Hwo, and the map
-/// image bounding-box fallback in MapService). None of the four alert feeds have their own
+/// Geographic area and time zone shared by every feed (Nws, Spc, SpcMcd, Hwo, Ero, and the map
+/// image bounding-box fallback in MapService). None of the five alert feeds have their own
 /// notion of location — they all resolve WFOs/centroids/geometry from these same Zones and
 /// Counties. Adding a new feed in the future should inject LocationSettings, not duplicate
 /// its own copy of these fields.
@@ -165,6 +165,12 @@ public class FacebookSettings
     /// suited to a personal channel (e.g. Discord DM, Telegram) rather than short-form platforms.
     /// </summary>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <summary>
+    /// Whether to post WPC Excessive Rainfall Outlook (ERO) alerts to this platform.
+    /// Requires Ero.Enabled = true.
+    /// </summary>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class InstagramSettings
@@ -192,6 +198,9 @@ public class InstagramSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class XSettings
@@ -216,6 +225,9 @@ public class XSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class BlueskySettings
@@ -238,6 +250,9 @@ public class BlueskySettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class MastodonSettings
@@ -260,6 +275,9 @@ public class MastodonSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class PushoverSettings
@@ -316,6 +334,9 @@ public class PushoverSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class TwilioSettings
@@ -352,6 +373,9 @@ public class TwilioSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class DiscordDmSettings
@@ -386,6 +410,9 @@ public class DiscordDmSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class DiscordSettings
@@ -420,6 +447,9 @@ public class DiscordSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class TelegramSettings
@@ -453,6 +483,9 @@ public class TelegramSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class VoipMsSettings
@@ -496,6 +529,9 @@ public class VoipMsSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeHwo"/>
     public bool IncludeHwo { get; set; } = false;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
+    public bool IncludeEro { get; set; } = true;
 }
 
 public class MapSettings
@@ -584,5 +620,24 @@ public class HwoSettings
     /// has no benefit. Default 300 (5 min) — matches the regular poll interval.
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 300;
+}
+
+public class EroSettings
+{
+    /// <summary>
+    /// Whether to monitor the WPC (Weather Prediction Center) Excessive Rainfall Outlook (ERO)
+    /// Day 1/2/3 categorical risk for the locations derived from Location.Zones (or
+    /// Location.Counties if Zones is empty). Alerts when a monitored location is in any
+    /// non-"None" categorical risk (Marginal or higher) on any of the three days. Note: despite
+    /// the "Spc"-prefixed sibling settings (Spc, SpcMcd), ERO is issued by WPC, not SPC.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Minimum seconds between checks against the WPC ERO GeoJSON feeds. WPC re-issues Day 1
+    /// several times a day and Day 2/3 less often, so polling more than every few minutes has
+    /// no benefit. Default 1800 (30 min) — matches Spc.CheckIntervalSeconds.
+    /// </summary>
+    public int CheckIntervalSeconds { get; set; } = 1800;
 }
 

@@ -38,6 +38,7 @@ public class VoipMsService
     public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
     public bool IncludeSpcMcd     => _settings.IncludeSpcMcd;
     public bool IncludeHwo        => _settings.IncludeHwo;
+    public bool IncludeEro        => _settings.IncludeEro;
 
     public Task<bool> SendConfirmationAsync(string message) =>
         SendToAllAsync(message, "confirmation");

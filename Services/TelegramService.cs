@@ -33,6 +33,7 @@ public class TelegramService
     public bool IncludeSpcOutlooks => _settings.IncludeSpcOutlooks;
     public bool IncludeSpcMcd     => _settings.IncludeSpcMcd;
     public bool IncludeHwo        => _settings.IncludeHwo;
+    public bool IncludeEro        => _settings.IncludeEro;
 
     public Task<bool> SendConfirmationAsync(string message) =>
         SendMessageAsync(message, "confirmation");
