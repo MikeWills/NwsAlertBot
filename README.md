@@ -67,6 +67,8 @@ You only need to include the sections/fields you are actually changing.
 - `Microsoft.Extensions.Hosting`
 - `Microsoft.Extensions.Http`
 - `Microsoft.Extensions.Configuration.Json`
+- `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`, `Serilog.Sinks.File` — structured logging
+- `NetTopologySuite`, `NetTopologySuite.IO.GeoJSON4STJ` — GeoJSON geometry (union/dissolve, point-in-polygon, convex hull, simplification)
 
 ---
 
@@ -1437,6 +1439,25 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Refactor: replaced hand-rolled computational geometry with NetTopologySuite.** `PolygonGeometry.cs`
+  and `MapService.cs` previously hand-rolled ~500 lines of GIS logic: a Graham-scan convex hull, a
+  custom edge-counting polygon dissolve (for merging adjacent county/zone shapes into an outer
+  perimeter), ray-casting point-in-polygon, ring centroid/area (shoelace formula), a naive
+  "simplification" that just rounded/deduped coordinates instead of real simplification, and manual
+  `StringBuilder` GeoJSON construction with no escaping. Replaced all of it with
+  `NetTopologySuite` + `NetTopologySuite.IO.GeoJSON4STJ` (the `System.Text.Json`-based GeoJSON I/O
+  variant — no Newtonsoft dependency): `Geometry.Union()` for dissolve (more robust than the old
+  edge-matching, which could dead-end on floating-point mismatches between adjacent county
+  boundaries), `Geometry.Covers()` for point-in-polygon (holes handled natively), `Geometry.Centroid`
+  for centroid, `Geometry.ConvexHull()` for the hull fallback, and
+  `TopologyPreservingSimplifier` + `GeometryPrecisionReducer` for URL-length simplification
+  (guaranteed-valid output, unlike naive coordinate rounding). Behavior is intended to be equivalent;
+  verified with a standalone script exercising union/dissolve, disjoint-geometry MultiPolygon output,
+  convex hull, point-in-polygon with holes, multi-polygon centroid selection, and simplification —
+  see commit history for details. Both `PolygonGeometry.ComputeCentroid`/`PointInGeometry` and
+  `MapService`'s NTS calls are wrapped in try/catch (matching the old code's fully defensive
+  posture), since some NTS operations (e.g. `GeometryPrecisionReducer.Reduce`) can throw on
+  topologically awkward input rather than returning null/empty.
 - **Fix: Discord/DiscordDm reported success on partial multi-recipient failure.** Both
   `DiscordService.SendAsync` and `DiscordDmService.SendToAllUsersAsync` aggregated per-recipient
   send results with `Any()`, so if only one of several webhook URLs or DM user IDs succeeded, the

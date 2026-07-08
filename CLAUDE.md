@@ -77,6 +77,7 @@ The project currently uses only:
 - `Microsoft.Extensions.Http`
 - `Microsoft.Extensions.Configuration.Json`
 - `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`, `Serilog.Sinks.File`
+- `NetTopologySuite`, `NetTopologySuite.IO.GeoJSON4STJ` (GeoJSON geometry — union/dissolve, point-in-polygon, convex hull, simplification; the STJ IO variant needs no Newtonsoft)
 - Built-in `System.Text.Json` — no other JSON library needed so far, but pull in `Newtonsoft.Json`
   (or anything else) if a package genuinely earns its place; it's not a standing ban.
 
