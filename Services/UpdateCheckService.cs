@@ -153,6 +153,8 @@ public class UpdateCheckService
             psi.ArgumentList.Add(Environment.ProcessId.ToString());
             psi.ArgumentList.Add("-InstallDir");
             psi.ArgumentList.Add(installDir);
+            psi.ArgumentList.Add("-ServiceName");
+            psi.ArgumentList.Add(_settings.ServiceName);
 
             Process.Start(psi);
             return true;

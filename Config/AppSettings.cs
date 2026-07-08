@@ -687,5 +687,15 @@ public class UpdateSettings
     /// if you're running your own fork with its own release/tagging cadence.
     /// </summary>
     public string GitHubRepo { get; set; } = "MikeWills/NwsAlertBot";
+
+    /// <summary>
+    /// Passed to scripts/update.ps1 as -ServiceName so it restarts the right systemd unit/Windows
+    /// Service after swapping the executable. Must match whatever -ServiceName you gave
+    /// scripts/setup-service.ps1 for this instance — required if you're running more than one
+    /// instance on the same machine (each needs a distinct name; see README "Running as a
+    /// Service"). Defaults to setup-service.ps1's own default, so single-instance setups don't
+    /// need to touch this.
+    /// </summary>
+    public string ServiceName { get; set; } = "nwsalertbot";
 }
 

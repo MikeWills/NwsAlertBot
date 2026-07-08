@@ -196,12 +196,12 @@ sudo ./setup-service.ps1 -ServiceName nwsalertbot-serverone -InstallDir /opt/nws
 sudo ./setup-service.ps1 -ServiceName nwsalertbot-servertwo -InstallDir /opt/nwsalertbot-servertwo
 ```
 
-If you also use [Auto-Update](#auto-update) (`Update.AutoApply: true`), each instance's
-`appsettings.json` doesn't need to know its own service name — `update.ps1` auto-detects
-whichever systemd unit/Windows Service exists using its own `-ServiceName` default
-(`nwsalertbot`), so for any instance other than the first, `Update.AutoApply` alone isn't
-enough: pass the matching name when `update.ps1` runs, or just rely on manual updates
-(`AutoApply: false`) for secondary instances.
+If you also use [Auto-Update](#auto-update) (`Update.AutoApply: true`), set that instance's
+`appsettings.json` `Update.ServiceName` to match whatever name you gave `setup-service.ps1` here
+— e.g. the `nwsalertbot-serverone` instance above needs `"Update": { "ServiceName":
+"nwsalertbot-serverone", ... }`. Otherwise `UpdateCheckService` restarts the default
+`nwsalertbot` service after updating (missing this one, or restarting a different instance
+entirely if one happens to use the default name).
 
 ### What it does (and doesn't) do
 
@@ -241,7 +241,8 @@ enough — `pwsh` is a separate, newer install).
 "Update": {
   "AutoApply": false,
   "CheckIntervalHours": 24,
-  "GitHubRepo": "MikeWills/NwsAlertBot"
+  "GitHubRepo": "MikeWills/NwsAlertBot",
+  "ServiceName": "nwsalertbot"
 }
 ```
 
@@ -254,22 +255,27 @@ enough — `pwsh` is a separate, newer install).
   no benefit checking more than once a day.
 - **`GitHubRepo`** (default `"MikeWills/NwsAlertBot"`) — change this if you're running your own
   fork with its own tags/releases.
+- **`ServiceName`** (default `"nwsalertbot"`, matching `setup-service.ps1`'s own default) — passed
+  to `update.ps1` as its `-ServiceName` so it restarts the right service after swapping the
+  executable. Only matters if you're [running more than one instance](#running-as-a-service) on
+  the same machine: set this to whatever name you gave `setup-service.ps1` for *this* instance,
+  so `AutoApply` restarts the correct one instead of silently missing it (or restarting the wrong
+  instance, if another one on the machine happens to use the default name).
 
 ### What gets touched (and what doesn't)
 
-The update only ever replaces the **executable** and **`update.ps1` itself** (so future updater
-fixes apply on the next run too). It never touches `appsettings.json`, `appsettings.Local.json`,
-or any runtime state file (`posted_alerts.txt`, `confirmed_platforms.txt`, `logs/`,
-`x_post_count.txt`, `twilio_sms_count.txt`) — your configuration and history survive every
-update. The old executable is backed up to `NwsAlertBot.bak` (or `NwsAlertBot.exe.bak` on
-Windows) before being replaced, in case something goes wrong.
+The update only ever replaces the **executable** and **`update.ps1`/`setup-service.ps1`
+themselves** (so future updater fixes apply on the next run too). It never touches
+`appsettings.json`, `appsettings.Local.json`, or any runtime state file (`posted_alerts.txt`,
+`confirmed_platforms.txt`, `logs/`, `x_post_count.txt`, `twilio_sms_count.txt`) — your
+configuration and history survive every update. The old executable is backed up to
+`NwsAlertBot.bak` (or `NwsAlertBot.exe.bak` on Windows) before being replaced, in case something
+goes wrong.
 
-**Restart behavior:** if a systemd service (Linux) or Windows Service named `nwsalertbot` exists
-(see [Running as a Service](#running-as-a-service) — this is the default name `setup-service.ps1`
-uses), it's restarted via `systemctl`/`Restart-Service`. Otherwise the new executable is just
-launched directly — this covers the common case of simply running the `.exe`/binary yourself with
-no service installed. If you named your service something else (e.g. running two instances —
-see below), pass the matching `-ServiceName` to `update.ps1` too.
+**Restart behavior:** if a systemd service (Linux) or Windows Service matching `Update.ServiceName`
+exists (see [Running as a Service](#running-as-a-service)), it's restarted via
+`systemctl`/`Restart-Service`. Otherwise the new executable is just launched directly — this
+covers the common case of simply running the `.exe`/binary yourself with no service installed.
 
 ### Running it manually
 
@@ -1617,8 +1623,10 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
   systemd unit (Linux) or Windows Service (Windows), pointed at the executable with its working
   directory pinned correctly, set to start on boot and restart on failure. `-ServiceName` lets
   you run more than one instance on the same machine under different names (e.g. one bot per
-  Discord server) — `update.ps1`'s own `-ServiceName` must match for its auto-restart-after-update
-  logic to find the right service. Required two supporting fixes for Windows Service mode to
+  Discord server) — new `Update.ServiceName` setting (default `"nwsalertbot"`, matching
+  `setup-service.ps1`'s own default) must match for `UpdateCheckService` to pass the right
+  `-ServiceName` to `update.ps1`'s auto-restart-after-update logic. Required two supporting fixes
+  for Windows Service mode to
   work at all: added `Microsoft.Extensions.Hosting.WindowsServices` + `.UseWindowsService()` (a
   no-op everywhere else) since a bare console app doesn't respond to the Windows Service Control
   Manager's start/stop handshake and gets killed almost immediately otherwise; and pinned the
