@@ -9,6 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- NwsAlertBot.Tests lives in a subdirectory of this project (rather than a sibling
+         directory), so the SDK's default recursive **/*.cs glob would otherwise pull its
+         files into this project's own compilation too. -->
+    <Compile Remove="NwsAlertBot.Tests\**" />
+    <None Remove="NwsAlertBot.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
@@ -17,6 +25,7 @@
     <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageReference Include="NetTopologySuite" Version="2.6.0" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

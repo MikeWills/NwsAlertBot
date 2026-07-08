@@ -259,13 +259,13 @@ public class SpcMcdService
         return resolved;
     }
 
-    private static int? ParseMcdNumber(string text)
+    internal static int? ParseMcdNumber(string text)
     {
         var m = McdNumberRegex.Match(text);
         return m.Success && int.TryParse(m.Groups[1].Value, out var n) ? n : null;
     }
 
-    private static (DateTimeOffset? Issue, DateTimeOffset? Expire) ParseValidWindow(string text, DateTimeOffset now)
+    internal static (DateTimeOffset? Issue, DateTimeOffset? Expire) ParseValidWindow(string text, DateTimeOffset now)
     {
         var m = ValidTimeRegex.Match(text);
         if (!m.Success) return (null, null);
@@ -314,7 +314,7 @@ public class SpcMcdService
     /// live MCD product text. CONUS longitudes run ~67-125°W, so the wrapped range (0000-2500)
     /// never overlaps the unwrapped range (6700-9999), making the unwrap unambiguous.
     /// </summary>
-    private static List<(double Lat, double Lon)>? ParseLatLon(string text)
+    internal static List<(double Lat, double Lon)>? ParseLatLon(string text)
     {
         var m = LatLonRegex.Match(text);
         if (!m.Success) return null;

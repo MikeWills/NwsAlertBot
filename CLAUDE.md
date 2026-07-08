@@ -24,7 +24,9 @@ dotnet publish -c Release -r win-x64 --self-contained
 # without starting the polling loop). See ImageSmokeTestService / README "Image Smoke Test".
 dotnet run -- --smoke-test-image
 
-# There are no automated tests in this project.
+# Run the unit test suite (NwsAlertBot.Tests) -- pure logic only (parsing, formatting,
+# geometry), no live HTTP calls. See "Automated Tests" below.
+dotnet test NwsAlertBot.Tests/NwsAlertBot.Tests.csproj
 ```
 
 **Local configuration**: Create `appsettings.Local.json` alongside `appsettings.json` to override settings without modifying the committed file. It is loaded automatically and is `.gitignore`d. Keep real credentials here, not in `appsettings.json`.
@@ -32,6 +34,16 @@ dotnet run -- --smoke-test-image
 **Runtime state files** written to the working directory:
 - `posted_alerts.txt` — deduplication log; persists across restarts. Safe to delete to re-post all active alerts.
 - `confirmed_platforms.txt` — tracks which platforms have sent a startup confirmation. Delete to re-run confirmation on next startup.
+
+**Automated tests** (`NwsAlertBot.Tests/`, xunit): covers pure logic only — parsing (SPC MCD's
+LAT...LON/valid-window/MCD-number regexes), formatting (`NwsAlert.FormatPost`, `PlatformHelpers`),
+and geometry (`PolygonGeometry`). Nothing that makes a live HTTP call is tested. Several of the
+tested methods (`SpcMcdService.ParseLatLon`/`ParseMcdNumber`/`ParseValidWindow`,
+`NwsAlertService.NormalizeNwsText`, `MapService.BuildIemSpsUrl`) are `internal` rather than
+`public` — the test project sees them via `InternalsVisibleTo` (`InternalsVisibleTo.cs` at the
+repo root), not by widening the public API. When adding tests for a new pure-logic method that's
+currently `private`, change it to `internal` (not `public`) and it becomes visible to
+`NwsAlertBot.Tests` automatically.
 
 ---
 
@@ -79,6 +91,8 @@ The project currently uses only:
 - `Microsoft.Extensions.Configuration.Json`
 - `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`, `Serilog.Sinks.File`
 - `NetTopologySuite`, `NetTopologySuite.IO.GeoJSON4STJ` (GeoJSON geometry — union/dissolve, point-in-polygon, convex hull, simplification; the STJ IO variant needs no Newtonsoft)
+- `Microsoft.Extensions.Http.Resilience` (Polly-based retry/circuit-breaker for read-only weather/mapping HTTP clients — see "HTTP resilience" below)
+- `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`, `coverlet.collector` (test-only, in `NwsAlertBot.Tests`, not the main app)
 - Built-in `System.Text.Json` — no other JSON library needed so far, but pull in `Newtonsoft.Json`
   (or anything else) if a package genuinely earns its place; it's not a standing ban.
 
@@ -158,6 +172,7 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 
 ## Common Pitfalls
 
+- **HTTP resilience is scoped to read-only weather/mapping clients only** — `Program.cs` adds `.AddStandardResilienceHandler()` to `NwsAlertService`, `NwsZoneService`, `SpcOutlookService`, `SpcMcdService`, `HwoService`, `WpcEroService`, and the named `"WeatherImagery"`/`"WeatherImageryPrimary"` clients (MapService's IEM pre-flight checks; `SocialMediaOrchestrator`'s map image download). Do **not** add it to `XService` — its OAuth1.0a signature includes a per-request timestamp/nonce, so an automatic retry resending an identical signed request looks like a replay to X's API. Do **not** add it to `BlueskyService` either — it already has its own hand-rolled 401-reauth retry (see below); a generic retry layered on top risks double-retrying auth failures.
 - **Instagram requires an image** — text-only posts are not supported. If `ImageUrl` is not set, the service logs a warning and skips.
 - **Facebook personal profiles** — Graph API cannot post to personal profiles (deprecated since 2018). Pages only.
 - **Facebook Business Manager System User tokens can fail with OAuthException #200** even with correct scopes (`pages_read_engagement`, `pages_manage_posts`) and Full control on the Page — confirmed in production debugging. The fix that worked: derive the Page token from a personal long-lived **User** Access Token (`GET /{page-id}?fields=access_token`) instead of generating one via Business Settings → System Users. See README "Facebook Page" setup section for the full gotcha writeup before assuming a config/code bug.

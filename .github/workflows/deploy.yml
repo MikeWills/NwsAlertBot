@@ -16,6 +16,12 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Run tests
+        # Targets the test project explicitly, same reasoning as the publish step below — dotnet
+        # doesn't build the whole solution from -o, but here it also means a failing test in a
+        # project this deploy doesn't even publish would otherwise never block the deploy.
+        run: dotnet test NwsAlertBot.Tests/NwsAlertBot.Tests.csproj -c Release
+
       - name: Publish
         # Target the .csproj explicitly rather than letting dotnet auto-discover NwsAlertBot.sln —
         # -o is not fully supported at solution scope (NETSDK1194) and would break if the

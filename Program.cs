@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using System.Text.Json;
@@ -81,13 +82,20 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton(hwoSettings);
         services.AddSingleton(eroSettings);
 
-        // HttpClients — each service gets its own typed client
+        // HttpClients — each service gets its own typed client.
+        // The read-only weather/mapping feeds (NWS, SPC, HWO, WPC ERO, IEM, Mapbox) get a
+        // standard resilience handler (retry + circuit breaker + timeouts) since they're all
+        // idempotent GETs against occasionally-flaky government/free-tier APIs polled every few
+        // minutes anyway — a transient failure just means waiting for the next poll otherwise.
+        // Deliberately NOT applied to platform-posting clients: X's OAuth1.0a signature includes
+        // a per-request timestamp/nonce (retrying an identical signed request looks like a replay),
+        // and Bluesky already has its own hand-rolled 401-reauth retry (CLAUDE.md says don't touch).
         services.AddHttpClient<NwsAlertService>(client =>
         {
             // NWS API requires a descriptive User-Agent with contact info
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
-        });
+        }).AddStandardResilienceHandler();
 
         services.AddHttpClient<FacebookService>();
         services.AddHttpClient<InstagramService>();
@@ -104,27 +112,41 @@ var host = Host.CreateDefaultBuilder(args)
         {
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
-        });
+        }).AddStandardResilienceHandler();
         services.AddHttpClient<SpcOutlookService>(client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
-        });
+        }).AddStandardResilienceHandler();
         services.AddHttpClient<SpcMcdService>(client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
-        });
+        }).AddStandardResilienceHandler();
         services.AddHttpClient<HwoService>(client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
-        });
+        }).AddStandardResilienceHandler();
         services.AddHttpClient<WpcEroService>(client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
-        });
+        }).AddStandardResilienceHandler();
+
+        // Named client for MapService's read-only IEM pre-flight checks (ResolveIemPhenomenaAsync,
+        // VerifyIemSpsAsync), which currently go through IHttpClientFactory.CreateClient() with no
+        // name and no existing retry logic.
+        services.AddHttpClient("WeatherImagery").AddStandardResilienceHandler();
+
+        // SocialMediaOrchestrator's map image download previously hand-rolled its own retry loop
+        // (TryDownloadAsync). Replaced with named clients so the retry policy lives in one place,
+        // consistent with every other read-only feed above, instead of a bespoke for-loop. Primary
+        // (IEM) gets the standard resilience handler like everything else; the Mapbox fallback
+        // deliberately doesn't (it's already the last resort, so there's nothing further to fall
+        // back to if a retry also fails).
+        services.AddHttpClient("WeatherImageryPrimary").AddStandardResilienceHandler();
+        services.AddHttpClient("WeatherImageryFallback");
 
         // Core services
         services.AddSingleton<AlertTrackerService>();
