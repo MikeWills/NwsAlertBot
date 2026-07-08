@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**NwsAlertBot** is a .NET 10 C# console application (Generic Host / BackgroundService pattern) that polls the NWS REST API for active weather alerts and distributes them concurrently to social media (Facebook, Instagram, X, Bluesky, Mastodon, Discord, Telegram), push notifications (Pushover), and SMS (Twilio, VoIP.ms).
+**NwsAlertBot** is a .NET 10 C# console application (Generic Host / BackgroundService pattern) that polls the NWS REST API for active weather alerts — plus four separate synthetic-alert feeds (SPC Convective Outlooks, SPC Mesoscale Discussions, Hazardous Weather Outlooks, WPC Excessive Rainfall Outlooks) — and distributes them concurrently to social media (Facebook, Instagram, X, Bluesky, Mastodon, Discord, Discord DM, Telegram), push notifications (Pushover), and SMS (Twilio, VoIP.ms).
 
 ---
 
@@ -44,6 +44,7 @@ dotnet run -- --smoke-test-image
 3. Each `SocialMediaOrchestrator` cycle: fetches active alerts from `NwsAlertService` → filters via `AlertTrackerService.HasBeenPosted()` → posts new alerts to all platforms concurrently via `Task.WhenAll()` → marks each posted alert via `AlertTrackerService.MarkPosted()`.
 4. `NwsAlertService.BuildUrl()` pushes all filters (zone/county/state, severity, urgency, certainty, event type) to the NWS API as query parameters — no client-side filtering.
 5. `NwsAlert.FormatPost(maxLength)` formats and truncates the alert text for each platform's character limit.
+6. After the main NWS loop, the same `RunAsync` cycle also checks `SpcOutlookService`, `SpcMcdService`, `HwoService`, and `WpcEroService` (if each is individually `Enabled`) — separate synthetic-alert feeds with their own severity assignment (not the NWS `Filter*` gate), each self-throttled by its own `CheckIntervalSeconds` in `appsettings.json` rather than the main `PollIntervalSeconds`. Posted through the same per-platform pipeline as NWS alerts, gated by each platform's own `IncludeSpcOutlooks`/`IncludeSpcMcd`/`IncludeHwo`/`IncludeEro` flags.
 
 **DI pattern**: Settings classes are bound once in `Program.cs` and registered as singletons. Every platform service receives its typed `{Platform}Settings` singleton via constructor injection. All platform `HttpClient`s are registered with `AddHttpClient<T>()`.
 
@@ -122,13 +123,16 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 | Service | Auth method |
 |---|---|
 | NWS API | None (User-Agent header required — set in `Program.cs`, do not remove) |
-| Facebook/Instagram | Long-lived Page Access Token |
-| X (Twitter) | OAuth 1.0a HMAC-SHA1 — signature recalculated per-request in `XService.BuildOAuth1Header()` |
 | Bluesky | AT Protocol App Password — `accessJwt` cached; re-authenticates on 401 (do not remove) |
+| Discord | Webhook URL — no separate auth header, the token is embedded in the URL itself |
+| Discord DM | Bot token — `Authorization: Bot {token}` header (Discord Bot API) |
+| Facebook/Instagram | Long-lived Page Access Token |
 | Mastodon | Bearer token |
+| Telegram | Bot token (Bot API) |
+| X (Twitter) | OAuth 1.0a HMAC-SHA1 — signature recalculated per-request in `XService.BuildOAuth1Header()` |
 | Pushover | API token + User key (form POST) |
 | Twilio | Basic auth (AccountSid:AuthToken) |
-| Telegram | Bot token (Bot API) |
+| VoIP.ms | `api_username`/`api_password` as query parameters on a GET request (see Common Pitfalls — must be GET, not POST) |
 
 ---
 
@@ -138,14 +142,17 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 
 | Platform | Limit | Notes |
 |---|---|---|
+| Bluesky | 300 | Hard limit |
+| Discord | 4,096 | Embed description limit |
+| Discord DM | 4,096 | Embed description limit |
 | Facebook | 63,206 | Effectively unlimited |
 | Instagram | 2,200 | Caption limit |
-| X | 280 | Hard limit |
-| Bluesky | 300 | Hard limit |
 | Mastodon | 500 | Default; varies by instance |
+| Telegram | 4,096 | 1,024 if a map image caption is attached |
+| X | 280 | Hard limit |
 | Pushover | 1,024 | Message body limit |
 | Twilio | 320 | Keep to 2 SMS segments |
-| Telegram | 4,096 | 1,024 if a map image caption is attached |
+| VoIP.ms | 160 | Stricter than Twilio's 320 — single SMS segment budget |
 
 ---
 
