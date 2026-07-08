@@ -66,7 +66,7 @@ public class DiscordService
 
         var tasks = urls.Select(url => PostToWebhookAsync(url, content, embed, label, imageBytes));
         var results = await Task.WhenAll(tasks);
-        return results.Any(r => r);
+        return results.All(r => r);
     }
 
     private async Task<bool> PostToWebhookAsync(string webhookUrl, string? content, Dictionary<string, object?>? embed, string label, byte[]? imageBytes)
