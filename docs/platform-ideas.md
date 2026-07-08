@@ -152,3 +152,39 @@ future reference, not because Pushover needs replacing.
   during an active severe weather stretch could plausibly approach or exceed that on its own,
   before multiplying by however many recipients. Would need to check current paid-tier pricing
   before treating this as viable for anything beyond light personal use.
+
+### Bark — strong pick, iOS-only, matches Pushover's emergency-priority use case
+- Confirmed active and well-documented. API is a plain GET/POST:
+  `https://api.day.app/{device_key}/{title}/{body}` against the free hosted `day.app`, or
+  self-host `bark-server` (small Docker image). No account beyond the device key from the app.
+- Notably supports iOS **critical / time-sensitive interruption levels** — same purpose as
+  `PushoverSettings.ExtremePriority` (bypassing Do Not Disturb/silent mode) but native to iOS,
+  which could make it a good Extreme-severity companion specifically for iPhone users, alongside
+  or instead of Pushover.
+- **Complexity**: Very low — simplest full-featured option in this doc alongside ntfy. iOS-only is
+  the one real limitation (no Android/desktop story).
+
+### Pushsafer — direct Pushover alternative
+- Confirmed active (2016–2026 site copyright), cross-platform (iOS/Android/Windows), API shape
+  closely mirrors Pushover's (message, title, priority, sound, device key). Would mainly make sense
+  as a second option for users who specifically don't want to use Pushover, not as a replacement.
+
+### Prowl, Boxcar, SimplePush — checked, not worth pursuing further
+- All three show up as recognized service names in the Apprise notification library's service
+  list, but none could be confirmed as a genuinely current, actively-developed standalone service:
+  Boxcar's own API repo is unmaintained, and Prowl/SimplePush have no clear 2026 activity signal
+  beyond being listed as legacy Apprise targets. Not worth spending more research time on unless a
+  specific user asks for one by name.
+
+### Apprise — a different strategy: one gateway instead of N services
+- Not a single service — **`apprise-api`** is a self-hosted REST gateway (one Docker container)
+  that speaks to 80-130+ notification services through a single unified API, including ntfy,
+  Gotify, Pushover, Bark, Pushsafer, Slack, Discord, Telegram, and email. One `AppriseService.cs`
+  hitting your own Apprise container could cover most of this entire "Pushover-style" category (and
+  several full-messenger candidates above) in one integration, instead of writing a new
+  `Service.cs` per app.
+- **Tradeoff**: same "one more container to run and keep alive" cost as Signal, but far
+  lower-risk — Apprise is a mature, popular, actively-maintained project that calls each target
+  service's own official API under the hood, not a reverse-engineered protocol. Worth considering
+  as an alternative to adding individual services one at a time if the goal becomes "support as many
+  notification channels as possible" rather than a specific named app.
