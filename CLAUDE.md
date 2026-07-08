@@ -68,17 +68,19 @@ Any new settings class in `Config/AppSettings.cs` must have a matching block in 
 
 ### 3. No Twilio SDK — use REST directly
 
-Twilio uses the REST API with Basic auth. Do **not** add the `Twilio` NuGet package.
+Twilio uses the REST API with Basic auth. Do **not** add the `Twilio` NuGet package — reconsidered under Rule #4 and confirmed still correct on its own terms, independent of the Newtonsoft question: the official SDK (`Twilio` on NuGet, v7.14.9) also pulls in `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` for API-key/JWT auth flows this app doesn't use (it authenticates with Basic auth only). That's a real dependency footprint for zero functional gain over the existing ~50-line REST call.
 
-### 4. No external NuGet packages without asking
+### 4. Third-party NuGet packages require asking first
 
-The project uses only:
+The project currently uses only:
 - `Microsoft.Extensions.Hosting`
 - `Microsoft.Extensions.Http`
 - `Microsoft.Extensions.Configuration.Json`
-- Built-in `System.Text.Json` (no Newtonsoft)
+- `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`, `Serilog.Sinks.File`
+- Built-in `System.Text.Json` — no other JSON library needed so far, but pull in `Newtonsoft.Json`
+  (or anything else) if a package genuinely earns its place; it's not a standing ban.
 
-You can find and suggest third-party packages, but do **not** add third-party packages without asking.
+Adding a well-justified third-party package is fine — flag it and explain the tradeoff, but do **not** add one without asking first.
 
 ### 5. All new platforms follow the established pattern
 

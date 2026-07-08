@@ -12,10 +12,11 @@ actually bundles several distinct WPC products with very different data-feed qua
 
 - **Snowfall/ice accumulation probability forecasts** (`≥4"/8"/12" snow`, `≥0.25" ice`) — these are
   **shapefile-only** (`https://ftp.wpc.ncep.noaa.gov/shapefiles/ww/day{1,2,3}/*.tar`). No GeoJSON,
-  no ArcGIS REST layer. Parsing them would mean writing a `.shp`/`.dbf` binary reader from scratch
-  (the project has no GIS library and CLAUDE.md forbids new NuGet packages without asking) — a much
-  bigger lift than every other feed in this bot, for a product that's arguably redundant with WSSI's
-  own Snow Amount/Ice Accumulation components below. **Recommendation: skip these entirely.**
+  no ArcGIS REST layer. Parsing them would mean either writing a `.shp`/`.dbf` binary reader from
+  scratch or asking to add a shapefile-reading NuGet package (the project has no GIS library today —
+  see CLAUDE.md Rule #4) — a much bigger lift than every other feed in this bot, for a product that's
+  arguably redundant with WSSI's own Snow Amount/Ice Accumulation components below.
+  **Recommendation: skip these entirely.**
 - **Winter Storm Severity Index (WSSI)** — a categorical, impact-based product (Minor/Moderate/
   Major/Extreme + a "Winter Weather Area" placeholder tier) for Days 1-3, **served as a clean ArcGIS
   REST FeatureLayer that supports `f=geojson`** — same shape of integration as `SpcOutlookService`/
