@@ -76,7 +76,7 @@ public class DiscordDmService
 
         var tasks = _settings.UserIds.Select(userId => SendToUserAsync(userId, content, embed, label, imageBytes));
         var results = await Task.WhenAll(tasks);
-        return results.Any(r => r);
+        return results.All(r => r);
     }
 
     private async Task<bool> SendToUserAsync(string userId, string? content, Dictionary<string, object?>? embed, string label, byte[]? imageBytes)
