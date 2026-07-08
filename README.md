@@ -1437,6 +1437,12 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Fix: Discord/DiscordDm reported success on partial multi-recipient failure.** Both
+  `DiscordService.SendAsync` and `DiscordDmService.SendToAllUsersAsync` aggregated per-recipient
+  send results with `Any()`, so if only one of several webhook URLs or DM user IDs succeeded, the
+  whole post/DM was reported as an overall success and the orchestrator's failure warning never
+  logged. Changed both to `All()` to match the existing multi-recipient pattern used by
+  `TwilioService`/`VoipMsService`.
 - **Add: WPC Excessive Rainfall Outlook (ERO) monitoring.** New `WpcEroService` polls WPC's
   Day 1/2/3 categorical GeoJSON feeds (`Marginal`/`Slight`/`Moderate`/`High`, ≥5%/15%/40%/70%
   probability of exceeding flash flood guidance) and checks them against the same monitored
