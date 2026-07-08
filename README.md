@@ -1664,6 +1664,13 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
 
 ## Recent Changes
 
+- **Add: `.github/workflows/ci.yml` to run the test suite on every pull request.** Previously
+  tests only ran in `deploy.yml`, on push to master — meaning a broken PR could merge with no
+  automated signal until it had already landed and `deploy.yml` failed afterward, discovered only
+  by whoever noticed the deploy failure. This new workflow runs independently on `pull_request`
+  (and `push` to master, for a clean "tests pass" signal separate from `deploy.yml`'s deployment
+  concerns) so every PR gets a dedicated, fast check before merge. Pairs with a GitHub branch
+  protection rule requiring it, to actually block a bad merge rather than just flag one.
 - **Add: `scripts/setup-service.ps1` to install NwsAlertBot as a background service.** Creates a
   systemd unit (Linux) or Windows Service (Windows), pointed at the executable with its working
   directory pinned correctly, set to start on boot and restart on failure. Running more than one

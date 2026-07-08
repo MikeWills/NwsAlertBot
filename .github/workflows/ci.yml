@@ -1,0 +1,33 @@
+name: CI
+
+# Runs the test suite on every pull request, before merge -- the gap this closes: previously
+# tests only ran in deploy.yml, on push to master, meaning a broken PR could merge with no
+# automated signal until it had already landed and deploy.yml failed afterward. This workflow is
+# independent of deploy.yml (which keeps its own test step as a deploy-time safety net) so PRs
+# get a fast, dedicated signal. Pair with a branch protection rule requiring this check to make
+# it actually block a bad merge, not just warn about one.
+on:
+  pull_request:
+  push:
+    branches: [ master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore NwsAlertBot.sln
+
+      - name: Build
+        run: dotnet build NwsAlertBot.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test NwsAlertBot.Tests/NwsAlertBot.Tests.csproj --no-build --configuration Release
