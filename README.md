@@ -1450,6 +1450,15 @@ If nothing is enabled, it logs a warning and exits without posting anything.
   **Fix included**: Pushover's alert title truncation (`PushoverService.SendAlertAsync`) previously
   hard-cut at 250 chars with no ellipsis, unlike every other truncation in the codebase — now uses
   the shared helper and gets the same "..." marker as everywhere else.
+- **Fix: validate AfosId/WmoIdentifier character classes before building IEM SPS URLs.**
+  `MapService.BuildIemSpsUrl`/`VerifyIemSpsAsync` previously only length-checked `alert.AfosId` and
+  `alert.WmoIdentifier` before embedding substrings of them into a colon-delimited IEM autoplot #217
+  URL — unlike the VTEC fields used by `BuildIemUrl`/`ResolveIemPhenomenaAsync`, which are already
+  constrained to safe character classes by `NwsAlertService.VtecPattern`'s regex before they ever
+  reach `MapService`. Added the same style of character-class validation (`^SPS[A-Z]{3}$` for
+  AfosId, `^[A-Z0-9]{6}$` for the WMO6 substring) so a malformed value can't inject unexpected
+  segments into the URL; falls back to Mapbox exactly like every other IEM-unavailable case, same
+  as before. Verified against real example values and injection-shaped strings before landing.
 - **Refactor: replaced hand-rolled computational geometry with NetTopologySuite.** `PolygonGeometry.cs`
   and `MapService.cs` previously hand-rolled ~500 lines of GIS logic: a Graham-scan convex hull, a
   custom edge-counting polygon dissolve (for merging adjacent county/zone shapes into an outer

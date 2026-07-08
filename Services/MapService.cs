@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
@@ -407,6 +408,15 @@ public class MapService
         $"phenomenav:{iemPhenomena}::significancev:{alert.VtecSignificance}::" +
         $"etn:{alert.VtecEtn}::opt:single::n:auto::_r:t::dpi:100.png";
 
+    // AFOS SPS PIL: "SPS" + 3-char WFO, letters only (e.g. "SPSMPX"). WMO6: 2-letter/2-digit/2-digit
+    // bulletin header, uppercase alphanumeric (e.g. "WWUS83"). Unlike the VTEC fields used by
+    // BuildIemUrl/ResolveIemPhenomenaAsync (already constrained by NwsAlertService.VtecPattern's
+    // character classes before they ever reach MapService), AfosId/WmoIdentifier previously had
+    // only a length check here — validate their character classes too before embedding them in an
+    // IEM autoplot URL segment.
+    private static readonly Regex AfosSpsPattern = new(@"^SPS[A-Z]{3}$", RegexOptions.Compiled);
+    private static readonly Regex Wmo6Pattern     = new(@"^[A-Z0-9]{6}$", RegexOptions.Compiled);
+
     /// <summary>
     /// Builds an IEM autoplot #217 URL for a Special Weather Statement.
     /// PID format: YYYYMMDDHHmm-K{WFO}-{WMO6}-SPS{WFO}
@@ -417,12 +427,12 @@ public class MapService
     /// </summary>
     private static string? BuildIemSpsUrl(NwsAlert alert)
     {
-        // Standard SPS PIL is exactly 6 chars: "SPS" + 3-char WFO
-        if (alert.AfosId == null || alert.AfosId.Length != 6) return null;
+        if (alert.AfosId == null || !AfosSpsPattern.IsMatch(alert.AfosId)) return null;
         if (string.IsNullOrEmpty(alert.WmoIdentifier) || alert.WmoIdentifier.Length < 6) return null;
 
         string wfo  = alert.AfosId[3..];        // "MPX" from "SPSMPX"
         string wmo6 = alert.WmoIdentifier[..6]; // "WWUS83" from "WWUS83 KMPX 011045"
+        if (!Wmo6Pattern.IsMatch(wmo6)) return null;
 
         // Parse DDHHMM from WMO header (e.g. "011045" from "WWUS83 KMPX 011045") for the PID
         // timestamp, combining with year/month from alert.Sent. Fall back to Sent if parsing fails.
@@ -452,7 +462,7 @@ public class MapService
     /// </summary>
     private async Task<bool> VerifyIemSpsAsync(NwsAlert alert)
     {
-        if (alert.AfosId == null || alert.AfosId.Length != 6) return false;
+        if (alert.AfosId == null || !AfosSpsPattern.IsMatch(alert.AfosId)) return false;
         var wfo = alert.AfosId[3..]; // "MPX" from "SPSMPX"
 
         try
@@ -460,7 +470,7 @@ public class MapService
             var http = _httpFactory.CreateClient();
             http.Timeout = TimeSpan.FromSeconds(10);
             var json = await http.GetStringAsync(
-                $"https://mesonet.agron.iastate.edu/geojson/sps.geojson?wfo={wfo}");
+                $"https://mesonet.agron.iastate.edu/geojson/sps.geojson?wfo={Uri.EscapeDataString(wfo)}");
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("features", out var features)) return false;
 
