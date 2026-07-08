@@ -295,7 +295,7 @@ public class NwsAlertService
         @"/[A-Z]\.(?<action>[A-Z]+)\.(?<wfo>[A-Z]{4})\.(?<phenom>[A-Z]{2})\.(?<sig>[A-Z])\.(?<etn>\d{4})\.",
         RegexOptions.Compiled);
 
-    private static string NormalizeNwsText(string text)
+    internal static string NormalizeNwsText(string text)
     {
         if (string.IsNullOrEmpty(text)) return text;
         text = text.Replace("\r\n", "\n").Replace("\r", "\n");

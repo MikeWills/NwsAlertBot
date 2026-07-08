@@ -69,6 +69,7 @@ You only need to include the sections/fields you are actually changing.
 - `Microsoft.Extensions.Configuration.Json`
 - `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`, `Serilog.Sinks.File` — structured logging
 - `NetTopologySuite`, `NetTopologySuite.IO.GeoJSON4STJ` — GeoJSON geometry (union/dissolve, point-in-polygon, convex hull, simplification)
+- `Microsoft.Extensions.Http.Resilience` — retry/circuit-breaker for read-only weather/mapping HTTP clients
 
 ---
 
@@ -1437,8 +1438,47 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ---
 
+## Running Tests
+
+```bash
+dotnet test NwsAlertBot.Tests/NwsAlertBot.Tests.csproj
+```
+
+The `NwsAlertBot.Tests` project (xunit) covers pure logic only — no live HTTP calls, no
+credentials needed:
+
+- **Parsing** — SPC MCD's `LAT...LON` polygon parsing (including the lon-wrap-at-100°W encoding),
+  MCD number extraction, and valid-window parsing (including the midnight-crossover fix)
+- **Formatting** — `NwsAlert.FormatPost`'s per-platform truncation, and the shared
+  `PlatformHelpers` (SMS body building, cache-busting, Discord embed colors)
+- **Geometry** — `PolygonGeometry`'s centroid and point-in-polygon logic (the NetTopologySuite-backed
+  replacement for the old hand-rolled GIS code)
+- **URL validation** — `MapService.BuildIemSpsUrl`'s AFOS/WMO identifier handling
+
+Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.ParseLatLon`,
+`NwsAlertService.NormalizeNwsText`) — the test project sees them via `InternalsVisibleTo`
+(`InternalsVisibleTo.cs` at the repo root), not by widening the public API surface.
+
+---
+
 ## Recent Changes
 
+- **Add: HTTP resilience for read-only weather/mapping clients + first automated test suite.**
+  Added `Microsoft.Extensions.Http.Resilience` (`.AddStandardResilienceHandler()`, retry + circuit
+  breaker + timeouts) to `NwsAlertService`, `NwsZoneService`, `SpcOutlookService`, `SpcMcdService`,
+  `HwoService`, `WpcEroService`, and the named `"WeatherImagery"`/`"WeatherImageryPrimary"` clients
+  used by `MapService`'s IEM pre-flight checks and `SocialMediaOrchestrator`'s map image download
+  (replacing a hand-rolled retry loop there with the same handler used everywhere else). Deliberately
+  **not** applied to `XService` (its OAuth1.0a signature includes a per-request timestamp/nonce — an
+  automatic retry resending an identical signed request looks like a replay) or `BlueskyService`
+  (already has its own 401-reauth retry). Also added `NwsAlertBot.Tests` (xunit), the project's first
+  automated test suite — 64 tests covering pure logic only (SPC MCD parsing including the
+  lon-wrap-at-100°W case, `NwsAlert.FormatPost` truncation, `PlatformHelpers`, `PolygonGeometry`,
+  `MapService.BuildIemSpsUrl`). Several tested methods were changed from `private` to `internal`
+  (visible to the test project via `InternalsVisibleTo`) rather than made `public`. `deploy.yml`
+  now runs `dotnet test` before publishing — a failing test blocks the live deploy to production
+  rather than shipping anyway (previously nothing gated `deploy.yml`, which runs on every push to
+  master).
 - **Refactor: extracted duplicated per-platform text/URL helpers into `Services/PlatformHelpers.cs`.**
   `BuildSmsText` was byte-for-byte identical between `TwilioService` and `VoipMsService`; `CacheBust`
   was identical between `InstagramService` and `TwilioService`; `Truncate`/`GetColor` (renamed

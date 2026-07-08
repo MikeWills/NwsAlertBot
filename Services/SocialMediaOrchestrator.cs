@@ -263,45 +263,37 @@ public class SocialMediaOrchestrator
 
     private async Task DownloadMapImageAsync(NwsAlert alert, CancellationToken ct = default)
     {
-        // If a primary URL is set, try it first (IEM may take a few seconds to index a new event).
+        // If a primary URL is set, try it first ("WeatherImageryPrimary" retries transient
+        // failures — IEM may take a few seconds to index a new event).
         if (!string.IsNullOrEmpty(alert.MapImageUrl) &&
-            await TryDownloadAsync(alert.MapImageUrl, maxAttempts: 4, retryDelay: 5, alert, ct))
+            await TryDownloadAsync("WeatherImageryPrimary", alert.MapImageUrl, alert, ct))
             return;
 
-        // Fall back to Mapbox when the primary URL is absent or its download fails.
+        // Fall back to Mapbox when the primary URL is absent or its download fails. No retry here
+        // ("WeatherImageryFallback") — this is already the last resort.
         var mapboxUrl = await _map.GetMapboxFallbackUrlAsync(alert);
         if (mapboxUrl != null)
         {
             _logger.LogInformation("Map: Primary image unavailable; trying Mapbox fallback for {Event}.", alert.Event);
-            if (await TryDownloadAsync(mapboxUrl, maxAttempts: 1, retryDelay: 0, alert, ct))
+            if (await TryDownloadAsync("WeatherImageryFallback", mapboxUrl, alert, ct))
                 return;
         }
 
         _logger.LogWarning("Map: Image unavailable for {Event}; platforms will post without image.", alert.Event);
     }
 
-    private async Task<bool> TryDownloadAsync(string url, int maxAttempts, int retryDelay, NwsAlert alert, CancellationToken ct)
+    private async Task<bool> TryDownloadAsync(string clientName, string url, NwsAlert alert, CancellationToken ct)
     {
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        try
         {
-            try
-            {
-                alert.MapImageBytes = await _httpClientFactory.CreateClient().GetByteArrayAsync(url, ct);
-                return true;
-            }
-            catch (Exception ex) when (attempt < maxAttempts)
-            {
-                _logger.LogInformation(
-                    "Map: Download attempt {Attempt}/{Max} failed ({Error}); retrying in {Delay}s.",
-                    attempt, maxAttempts, ex.Message, retryDelay);
-                await Task.Delay(TimeSpan.FromSeconds(retryDelay), ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning("Map: Download failed after {Max} attempt(s) — {Error}.", maxAttempts, ex.Message);
-            }
+            alert.MapImageBytes = await _httpClientFactory.CreateClient(clientName).GetByteArrayAsync(url, ct);
+            return true;
         }
-        return false;
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Map: Download failed for {Event} — {Error}.", alert.Event, ex.Message);
+            return false;
+        }
     }
 
     private static bool PassesFilter(string? value, string? allowList)

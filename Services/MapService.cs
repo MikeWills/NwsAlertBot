@@ -134,7 +134,7 @@ public class MapService
     /// </summary>
     private async Task<string?> ResolveIemPhenomenaAsync(NwsAlert alert)
     {
-        var http = _httpFactory.CreateClient();
+        var http = _httpFactory.CreateClient("WeatherImagery");
         http.Timeout = TimeSpan.FromSeconds(10);
 
         // IEM's VTEC API uses the 4-letter WFO format (e.g. KMPX, not MPX)
@@ -425,7 +425,7 @@ public class MapService
     /// The timestamp is parsed from the DDHHMM token in WmoIdentifier rather than alert.Sent,
     /// because NWS API processing can add 1-2 minutes of latency after WMO transmission.
     /// </summary>
-    private static string? BuildIemSpsUrl(NwsAlert alert)
+    internal static string? BuildIemSpsUrl(NwsAlert alert)
     {
         if (alert.AfosId == null || !AfosSpsPattern.IsMatch(alert.AfosId)) return null;
         if (string.IsNullOrEmpty(alert.WmoIdentifier) || alert.WmoIdentifier.Length < 6) return null;
@@ -467,7 +467,7 @@ public class MapService
 
         try
         {
-            var http = _httpFactory.CreateClient();
+            var http = _httpFactory.CreateClient("WeatherImagery");
             http.Timeout = TimeSpan.FromSeconds(10);
             var json = await http.GetStringAsync(
                 $"https://mesonet.agron.iastate.edu/geojson/sps.geojson?wfo={Uri.EscapeDataString(wfo)}");
