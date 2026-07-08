@@ -9,20 +9,22 @@ and DM), and Telegram — and sends real-time push notifications and SMS via Pus
 ## Table of Contents
 
 1. [Setup](#setup)
-2. [Configuration Reference](#configuration-reference)
-3. [Geographic Filtering: Zones and Counties](#geographic-filtering-zones-and-counties)
-4. [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)
-5. [SPC Mesoscale Discussion Monitoring](#spc-mesoscale-discussion-monitoring)
-6. [Hazardous Weather Outlook (HWO)](#hazardous-weather-outlook-hwo)
-7. [WPC Excessive Rainfall Outlook (ERO)](#wpc-excessive-rainfall-outlook-ero)
-8. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
-9. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
-10. [API Credentials — Social Media](#api-credentials)
-11. [Push / SMS Notifications](#push--sms-notifications)
-12. [Map Images (Mapbox)](#map-images-mapbox)
-13. [Running the Bot](#running-the-bot)
-14. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
-15. [Cross-Platform Release Builds](#cross-platform-release-builds)
+2. [Running the Bot](#running-the-bot)
+3. [Cross-Platform Release Builds](#cross-platform-release-builds)
+4. [Running as a Service](#running-as-a-service)
+5. [Auto-Update](#auto-update)
+6. [Configuration Reference](#configuration-reference)
+7. [Geographic Filtering: Zones and Counties](#geographic-filtering-zones-and-counties)
+8. [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)
+9. [SPC Mesoscale Discussion Monitoring](#spc-mesoscale-discussion-monitoring)
+10. [Hazardous Weather Outlook (HWO)](#hazardous-weather-outlook-hwo)
+11. [WPC Excessive Rainfall Outlook (ERO)](#wpc-excessive-rainfall-outlook-ero)
+12. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
+13. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
+14. [API Credentials — Social Media](#api-credentials)
+15. [Push / SMS Notifications](#push--sms-notifications)
+16. [Map Images (Mapbox)](#map-images-mapbox)
+17. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
 
 ---
 
@@ -70,6 +72,273 @@ You only need to include the sections/fields you are actually changing.
 - `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`, `Serilog.Sinks.File` — structured logging
 - `NetTopologySuite`, `NetTopologySuite.IO.GeoJSON4STJ` — GeoJSON geometry (union/dissolve, point-in-polygon, convex hull, simplification)
 - `Microsoft.Extensions.Http.Resilience` — retry/circuit-breaker for read-only weather/mapping HTTP clients
+
+---
+
+## Running the Bot
+
+### Development (Visual Studio)
+Press F5. The bot starts polling immediately and logs to the console.
+
+### As a Background Service (Recommended for Production)
+For a downloaded release build (or your own self-contained publish), run
+`scripts/setup-service.ps1` to install it as a systemd unit (Linux) or Windows Service
+(Windows) — starts on boot, restarts automatically if it crashes. See
+[Running as a Service](#running-as-a-service) below for details, including how to run more than
+one instance on the same machine.
+
+### As a Windows Scheduled Task
+A lighter-weight alternative to a full Windows Service: publish as a self-contained executable
+and schedule it to run on startup via `Task Scheduler`, with a trigger of "At system startup" and
+a repeat interval.
+
+### Log Files
+
+The bot writes daily rolling log files to a `logs/` subdirectory of the working directory:
+
+```
+logs/nwsalertbot-20260625.log
+logs/nwsalertbot-20260626.log
+...
+```
+
+Logs are retained for **30 days** and then automatically deleted. The file format includes full timestamps and the source class name, making it easy to grep for specific services:
+
+```
+[2026-06-25 14:32:01 INF] NwsAlertBot.Services.AlertPollingService: Active storm mode engaged — polling every 60s for 4h.
+[2026-06-25 14:32:03 ERR] NwsAlertBot.Services.FacebookService: Facebook: Post failed. Status=400
+```
+
+To change the log retention period, update `retainedFileCountLimit` in the `UseSerilog` call in `Program.cs`.
+
+### Alert Deduplication
+The bot tracks posted alert IDs in `posted_alerts.txt` in the working directory. This file
+persists across restarts so the bot won't re-post alerts after a restart. The file is pruned
+automatically when it exceeds 10,000 entries.
+
+---
+
+## Cross-Platform Release Builds
+
+Separate from `deploy.yml` (which continuously deploys `linux-x64` to your own server on every
+push to `master`), `.github/workflows/release.yml` builds downloadable, self-contained binaries
+for Windows, Linux, and macOS (both Intel and Apple Silicon) whenever you push a version tag.
+
+### How it works
+
+- **Trigger:** push a tag matching `v*` (e.g. `v1.0.0`). No manual dispatch — cutting a release
+  is always tied to a version tag.
+- **Build:** all four platforms are cross-compiled from a single `ubuntu-latest` runner —
+  `dotnet publish` fetches the target runtime pack via NuGet regardless of host OS, so no
+  matrix of OS runners is needed. Explicitly targets `NwsAlertBot.csproj` (not the `.sln`),
+  since `-o` isn't fully supported at solution scope.
+- **Output:** each platform is published self-contained + single-file
+  (`-p:PublishSingleFile=true`), so the result is one executable with no separate .NET runtime
+  install required on the target machine.
+- **Packaging:** Windows ships as `.zip`; Linux and macOS ship as `.tar.gz` (zip doesn't
+  reliably preserve the Unix executable bit, which would otherwise require the user to manually
+  `chmod +x` after extracting).
+- **Publishing:** all four archives are attached to a new GitHub Release named after the tag,
+  created via the GitHub CLI (`gh release create`) using the built-in `GITHUB_TOKEN` — no
+  third-party release-management action required.
+- **Versioning:** the tag (minus its leading `v`) is passed to `dotnet publish` as
+  `-p:Version=X.Y.Z`, so the running executable knows its own version — this is what
+  [Auto-Update](#auto-update) compares against GitHub Releases.
+
+### Cutting a release
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Produces `NwsAlertBot-win-x64.zip`, `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`,
+and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release, each also containing
+`scripts/update.ps1` (see [Auto-Update](#auto-update)).
+
+### Running a downloaded build
+
+Each archive contains the executable, `appsettings.json`, `update.ps1`, and `setup-service.ps1`.
+Extract it, create `appsettings.Local.json` alongside it with your real credentials (see
+[Keeping Secrets Out of Git](#keeping-secrets-out-of-git)), and either run the executable
+directly — `./NwsAlertBot` on Linux/macOS (`chmod +x` first if the executable bit didn't survive
+transfer) or `NwsAlertBot.exe` on Windows — or install it as a background service (see
+[Running as a Service](#running-as-a-service)). No .NET runtime install is required — the
+self-contained build bundles it.
+
+---
+
+## Running as a Service
+
+`scripts/setup-service.ps1` (bundled in every release archive alongside `update.ps1`) installs
+the bot as a background service — a systemd unit on Linux, a Windows Service on Windows — so it
+starts on boot and restarts automatically if it crashes, without needing a terminal window left
+open. Requires PowerShell 7+ (`pwsh`), same as `update.ps1`.
+
+Must be run elevated: as **Administrator** on Windows, with **`sudo`** on Linux.
+
+```bash
+# Linux
+sudo ./setup-service.ps1 -ServiceName nwsalertbot
+
+# Windows (run PowerShell as Administrator)
+./setup-service.ps1 -ServiceName nwsalertbot
+```
+
+### Running more than one instance on the same machine
+
+Each instance needs its own install directory (its own copy of the executable,
+`appsettings.json`, and `appsettings.Local.json`) and its own service name. Set the name **once**,
+in `Update.ServiceName` in that instance's `appsettings.json` — both `setup-service.ps1` and
+`update.ps1` read it from there automatically if you don't pass `-ServiceName` explicitly, so
+there's a single place to get it right instead of typing the same string into two separate
+commands and risking a mismatch:
+
+```json
+// /opt/nwsalertbot-serverone/appsettings.json
+"Update": { "ServiceName": "nwsalertbot-serverone", ... }
+```
+```json
+// /opt/nwsalertbot-servertwo/appsettings.json
+"Update": { "ServiceName": "nwsalertbot-servertwo", ... }
+```
+
+```bash
+sudo ./setup-service.ps1 -InstallDir /opt/nwsalertbot-serverone
+sudo ./setup-service.ps1 -InstallDir /opt/nwsalertbot-servertwo
+```
+
+If you'd rather not touch `appsettings.json`, `-ServiceName` still works as an explicit override
+on either script — just remember it needs to match on both.
+
+### What it does (and doesn't) do
+
+- Creates the service pointed at the executable in `-InstallDir` (default: this script's own
+  directory), with the working directory pinned there too — so `appsettings.json` and runtime
+  state files are found/written in the right place regardless of how the service starts.
+- Sets it to start automatically on boot and restart automatically on failure/crash
+  (`Restart=always` on systemd; a 3-attempt restart policy on Windows).
+- Does **not** touch `appsettings.json`, `appsettings.Local.json`, or install any credentials —
+  set those up yourself first (see [Setup](#setup)).
+- `-Uninstall` stops and removes the service registration only — it doesn't delete the
+  executable, config, or any runtime state file.
+- `-DryRun` reports exactly what would be created/removed without touching anything — safe to
+  run without elevation.
+
+### macOS
+
+Not supported by this script yet — run the executable directly, or set up a `launchd` `.plist`
+manually.
+
+---
+
+## Auto-Update
+
+If you're running a downloaded release build (rather than this repo owner's own
+continuously-deployed server — see [Cross-Platform Release Builds](#cross-platform-release-builds)),
+the bot can check GitHub Releases for a newer version and optionally install it automatically.
+
+**Requires PowerShell 7+ (`pwsh`)** on the machine running the bot — it's what `update.ps1` runs
+under, cross-platform. Install it from https://github.com/PowerShell/PowerShell if it isn't
+already present (Windows PowerShell 5.1, the version that ships built into Windows, is **not**
+enough — `pwsh` is a separate, newer install).
+
+### Configuration
+
+```json
+"Update": {
+  "AutoApply": false,
+  "CheckIntervalHours": 24,
+  "GitHubRepo": "MikeWills/NwsAlertBot",
+  "ServiceName": "nwsalertbot"
+}
+```
+
+- **`AutoApply`** is the single on/off switch for the whole feature — there's no separate
+  "check but don't install" mode. `false` (default): the bot makes no GitHub API calls at all;
+  upgrade manually whenever you want by running `update.ps1` yourself (see below). `true`: the
+  bot checks GitHub Releases every `CheckIntervalHours` and, the moment it finds a newer tagged
+  version, downloads it, replaces its own executable, and restarts itself.
+- **`CheckIntervalHours`** (default `24`) — how often to check. Releases are infrequent; there's
+  no benefit checking more than once a day.
+- **`GitHubRepo`** (default `"MikeWills/NwsAlertBot"`) — change this if you're running your own
+  fork with its own tags/releases.
+- **`ServiceName`** (default `"nwsalertbot"`) — passed to `update.ps1` as its `-ServiceName` so it
+  restarts the right service after swapping the executable. This is the **single source of
+  truth**: `setup-service.ps1` reads this same value automatically (if you don't pass
+  `-ServiceName` to it explicitly), so you only ever set the name in one place. Only matters if
+  you're [running more than one instance](#running-as-a-service) on the same machine — set each
+  instance's own `appsettings.json` to a distinct name before running `setup-service.ps1`.
+
+### What gets touched (and what doesn't)
+
+The update only ever replaces the **executable** and **`update.ps1`/`setup-service.ps1`
+themselves** (so future updater fixes apply on the next run too). It never touches
+`appsettings.json`, `appsettings.Local.json`, or any runtime state file (`posted_alerts.txt`,
+`confirmed_platforms.txt`, `logs/`, `x_post_count.txt`, `twilio_sms_count.txt`) — your
+configuration and history survive every update. The old executable is backed up to
+`NwsAlertBot.bak` (or `NwsAlertBot.exe.bak` on Windows) before being replaced, in case something
+goes wrong.
+
+**Restart behavior:** if a systemd service (Linux) or Windows Service matching `Update.ServiceName`
+exists (see [Running as a Service](#running-as-a-service)), it's restarted via
+`systemctl`/`Restart-Service`. Otherwise the new executable is just launched directly — this
+covers the common case of simply running the `.exe`/binary yourself with no service installed.
+
+### Running it manually
+
+With `AutoApply: false` (the default), nothing happens automatically — check
+[the releases page](https://github.com/MikeWills/NwsAlertBot/releases) yourself and run:
+
+```bash
+./update.ps1 -Tag v1.2.3
+```
+
+To safely verify the script works on your machine (downloads and extracts, but doesn't touch
+your install or restart anything) before trusting it with `AutoApply: true`:
+
+```bash
+./update.ps1 -Tag v1.2.3 -DryRun
+```
+
+See `Get-Help ./update.ps1 -Full` for all parameters (`-Repo`, `-ServiceName`, etc.).
+
+### Known Limitations
+
+This feature is aimed at unattended, "set and forget" use — which is also exactly where its
+weakest points matter most, since nobody's watching. Worth understanding before turning on
+`AutoApply` unattended:
+
+- **Linux auto-restart requires passwordless `sudo`.** After swapping the executable,
+  `update.ps1` runs `sudo systemctl restart $ServiceName` non-interactively. If the account
+  running the bot doesn't have a `NOPASSWD` sudoers rule for that command, this silently fails
+  (or hangs waiting for a password that will never come) — the binary gets updated, but the old
+  process keeps running until you restart it yourself.
+- **The Windows-Service self-stop-during-update path hasn't been verified against a real
+  service.** `AutoApply` calls `StopApplication()` so `update.ps1` can swap the binary, while
+  `setup-service.ps1` separately configures Windows failure-recovery to auto-restart the service
+  if it crashes. In theory a clean, self-initiated stop reports `SERVICE_STOPPED` to the SCM and
+  doesn't trigger recovery — but this hasn't been exercised against a live Windows Service, so
+  there's a theoretical race if that assumption is wrong (recovery restarting the old exe while
+  `update.ps1` is mid-copy).
+- **No automatic rollback if a bad release is applied.** The old executable is backed up to
+  `.bak`, but nothing checks that the new version actually starts successfully and restores it
+  automatically if not — a broken release could leave the bot down indefinitely with no
+  automatic recovery.
+- **No confirmation an update actually succeeded.** Nothing logs the running version at startup,
+  so there's no way to confirm from logs (let alone a notification) that an auto-update
+  completed. Combined with the point above, a failed update can go unnoticed.
+- **No integrity check on downloaded releases** beyond HTTPS transport security — no
+  checksum/signature verification against what `release.yml` actually built.
+- **`setup-service.ps1` doesn't check `appsettings.json` exists before creating the service** —
+  if it's missing, you get a service that's created, starts, and immediately crashes, rather than
+  a clear upfront error.
+- **A locally-built dev binary (`Version` `0.0.0`) with `AutoApply: true` will always see any
+  real release as newer** and immediately overwrite itself the first time it checks — harmless in
+  practice (it just becomes a real release build), but can be surprising if unexpected.
+
+If you want the peace of mind this feature is meant to provide, start with `AutoApply: false` and
+run `update.ps1` by hand for a while, or watch the logs closely the first few times you enable it.
 
 ---
 
@@ -914,6 +1183,12 @@ Uses the same Meta Developer app as Facebook.
 
 ## Deploying to Ubuntu (GitHub Actions)
 
+This section covers continuous deployment straight from this repo's own CI (`deploy.yml`) — for
+your own fork with its own GitHub Actions secrets. If you just want to run a downloaded release
+build as a background service without setting up CI, see
+[Running as a Service](#running-as-a-service) instead — `scripts/setup-service.ps1` automates
+the systemd unit shown below.
+
 Every push to `master` builds a self-contained `linux-x64` binary and deploys it to your server
 via SSH over Tailscale, then restarts the systemd service automatically.
  
@@ -1025,51 +1300,6 @@ sudo systemctl status nwsalertbot
 
 ---
 
-## Cross-Platform Release Builds
-
-Separate from `deploy.yml` (which continuously deploys `linux-x64` to your own server on every
-push to `master`), `.github/workflows/release.yml` builds downloadable, self-contained binaries
-for Windows, Linux, and macOS (both Intel and Apple Silicon) whenever you push a version tag.
-
-### How it works
-
-- **Trigger:** push a tag matching `v*` (e.g. `v1.0.0`). No manual dispatch — cutting a release
-  is always tied to a version tag.
-- **Build:** all four platforms are cross-compiled from a single `ubuntu-latest` runner —
-  `dotnet publish` fetches the target runtime pack via NuGet regardless of host OS, so no
-  matrix of OS runners is needed. Explicitly targets `NwsAlertBot.csproj` (not the `.sln`),
-  since `-o` isn't fully supported at solution scope.
-- **Output:** each platform is published self-contained + single-file
-  (`-p:PublishSingleFile=true`), so the result is one executable with no separate .NET runtime
-  install required on the target machine.
-- **Packaging:** Windows ships as `.zip`; Linux and macOS ship as `.tar.gz` (zip doesn't
-  reliably preserve the Unix executable bit, which would otherwise require the user to manually
-  `chmod +x` after extracting).
-- **Publishing:** all four archives are attached to a new GitHub Release named after the tag,
-  created via the GitHub CLI (`gh release create`) using the built-in `GITHUB_TOKEN` — no
-  third-party release-management action required.
-
-### Cutting a release
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Produces `NwsAlertBot-win-x64.zip`, `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`,
-and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release.
-
-### Running a downloaded build
-
-Each archive contains the executable plus `appsettings.json`. Extract it, create
-`appsettings.Local.json` alongside it with your real credentials (see
-[Keeping Secrets Out of Git](#keeping-secrets-out-of-git)), and run the executable directly —
-`./NwsAlertBot` on Linux/macOS (`chmod +x` first if the executable bit didn't survive transfer)
-or `NwsAlertBot.exe` on Windows. No .NET runtime install is required — the self-contained build
-bundles it.
-
----
-
 ## Map Images (Mapbox)
 
 When enabled, the bot generates a **Mapbox Static Images** URL for each NWS alert (warnings,
@@ -1158,48 +1388,6 @@ is present. The map area and overlay are determined by:
 | Telegram | Image is downloaded and uploaded via multipart `sendPhoto`. If download fails, falls back to `sendMessage` using the full 4,096-character limit instead of the 1,024-character caption limit. |
 | Twilio | Sent as MMS via the `MediaUrl` field — Twilio fetches the URL itself. Direct upload is not supported by the Twilio REST API. |
 | Pushover, VoIP.ms | No change — text-only. |
-
----
-
-## Running the Bot
-
-### Development (Visual Studio)
-Press F5. The bot starts polling immediately and logs to the console.
-
-### As a Windows Scheduled Task
-Publish as a self-contained executable and schedule it to run on startup, or use `Task Scheduler`
-with a trigger of "At system startup" and a repeat interval.
-
-### As a Windows Service
-Add `UseWindowsService()` to `Program.cs` and publish. Then:
-```
-sc create NwsAlertBot binpath="C:\path\to\NwsAlertBot.exe"
-sc start NwsAlertBot
-```
-
-### Log Files
-
-The bot writes daily rolling log files to a `logs/` subdirectory of the working directory:
-
-```
-logs/nwsalertbot-20260625.log
-logs/nwsalertbot-20260626.log
-...
-```
-
-Logs are retained for **30 days** and then automatically deleted. The file format includes full timestamps and the source class name, making it easy to grep for specific services:
-
-```
-[2026-06-25 14:32:01 INF] NwsAlertBot.Services.AlertPollingService: Active storm mode engaged — polling every 60s for 4h.
-[2026-06-25 14:32:03 ERR] NwsAlertBot.Services.FacebookService: Facebook: Post failed. Status=400
-```
-
-To change the log retention period, update `retainedFileCountLimit` in the `UseSerilog` call in `Program.cs`.
-
-### Alert Deduplication
-The bot tracks posted alert IDs in `posted_alerts.txt` in the working directory. This file
-persists across restarts so the bot won't re-post alerts after a restart. The file is pruned
-automatically when it exceeds 10,000 entries.
 
 ---
 
@@ -1476,6 +1664,36 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
 
 ## Recent Changes
 
+- **Add: `scripts/setup-service.ps1` to install NwsAlertBot as a background service.** Creates a
+  systemd unit (Linux) or Windows Service (Windows), pointed at the executable with its working
+  directory pinned correctly, set to start on boot and restart on failure. Running more than one
+  instance on the same machine (e.g. one bot per Discord server) needs a distinct service name
+  per instance — set once via `Update.ServiceName` (default `"nwsalertbot"`) in that instance's
+  `appsettings.json`; both `setup-service.ps1` and `update.ps1` read it from there automatically
+  (a `-ServiceName` argument on either still overrides it), so there's a single place to set the
+  name instead of two independently-typed values that merely have to happen to match. Required
+  two supporting fixes for Windows Service mode to
+  work at all: added `Microsoft.Extensions.Hosting.WindowsServices` + `.UseWindowsService()` (a
+  no-op everywhere else) since a bare console app doesn't respond to the Windows Service Control
+  Manager's start/stop handshake and gets killed almost immediately otherwise; and pinned the
+  process's working directory to the executable's own folder at startup, since Windows Services
+  otherwise default to `C:\Windows\System32` and every relative path in this app
+  (`appsettings.json`, state files, `logs/`) would resolve against the wrong directory. `-DryRun`
+  mode (works without elevation) reports what would happen without creating/removing anything.
+- **Add: self-update for standalone release binaries.** New `UpdateCheckService` checks GitHub
+  Releases against the running executable's own version (injected at publish time via
+  `-p:Version=` from the git tag — see `release.yml`) once per `Update.CheckIntervalHours`
+  (default 24). Single on/off switch: `Update.AutoApply` (default `false`) — no separate
+  "check but don't apply" mode, since that added a second setting for no real benefit. When
+  `true`, a newer version triggers `scripts/update.ps1` (bundled in every release archive),
+  which downloads the release, replaces only the executable and itself (never
+  `appsettings.json`/`appsettings.Local.json`/any runtime state file), backs up the old
+  executable first, and restarts via systemd/Windows Service if one exists or just relaunches
+  the binary directly otherwise. Cross-platform PowerShell (`pwsh`) script with a `-DryRun` mode
+  for safely verifying it works on a given machine before trusting it with `AutoApply: true`.
+  9 new unit tests for the pure version-parsing/comparison and check-interval logic; the
+  download/extract/restart logic was verified by hand against the project's own real `v0.1.0`
+  release before landing (see [Auto-Update](#auto-update)).
 - **Add: persisted quota/cost guards for X and Twilio.** New `RateLimitTracker` (a small,
   file-persisted fixed-window counter, deliberately not `System.Threading.RateLimiting` — see
   CLAUDE.md Common Pitfalls for why) backs two new settings: `XSettings.MaxPostsPerMonth` (default

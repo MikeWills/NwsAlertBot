@@ -37,12 +37,24 @@ jobs:
       - name: Publish ${{ matrix.rid }}
         # Target the .csproj explicitly rather than letting dotnet auto-discover NwsAlertBot.sln —
         # -o is not fully supported at solution scope (NETSDK1194) and would break if the
-        # solution ever gains a second project.
+        # solution ever gains a second project. -p:Version strips the leading "v" from the pushed
+        # tag (e.g. "v1.2.3" -> "1.2.3") so UpdateCheckService can compare its own running version
+        # against GitHub Releases.
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           dotnet publish NwsAlertBot.csproj -c Release -r ${{ matrix.rid }} --self-contained \
             -p:PublishSingleFile=true \
             -p:DebugType=none \
+            -p:Version="$VERSION" \
             -o ./publish/${{ matrix.rid }}
+
+      - name: Bundle helper scripts
+        # scripts/update.ps1 (self-updater, launched by UpdateCheckService or run by hand) and
+        # scripts/setup-service.ps1 (installs the systemd unit / Windows Service) need to ship
+        # alongside the executable in every release archive.
+        run: |
+          cp scripts/update.ps1 ./publish/${{ matrix.rid }}/update.ps1
+          cp scripts/setup-service.ps1 ./publish/${{ matrix.rid }}/setup-service.ps1
 
       # zip loses the Unix executable bit, so Windows gets .zip and everything else gets
       # .tar.gz (which preserves permissions) to avoid a "permission denied" surprise on
@@ -56,6 +68,8 @@ jobs:
         if: matrix.archive == 'tar.gz'
         run: |
           chmod +x ./publish/${{ matrix.rid }}/NwsAlertBot
+          chmod +x ./publish/${{ matrix.rid }}/update.ps1
+          chmod +x ./publish/${{ matrix.rid }}/setup-service.ps1
           tar -czf ./NwsAlertBot-${{ matrix.rid }}.tar.gz -C ./publish/${{ matrix.rid }} .
 
       - name: Upload artifact
