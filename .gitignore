@@ -11,6 +11,10 @@ posted_alerts.txt
 # Startup platform confirmation tracking (runtime data, not source)
 confirmed_platforms.txt
 
+# Rate-limit quota/cost-guard state (runtime data, not source)
+x_post_count.txt
+twilio_sms_count.txt
+
 # Log files (rolling daily logs written by Serilog)
 logs/
 

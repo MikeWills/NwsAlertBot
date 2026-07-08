@@ -18,6 +18,7 @@ public class XService
     private readonly HttpClient _http;
     private readonly XSettings _settings;
     private readonly ILogger<XService> _logger;
+    private readonly RateLimitTracker _rateLimiter;
 
     private const string PostTweetUrl = "https://api.twitter.com/2/tweets";
     private const string MediaUploadUrl = "https://upload.twitter.com/1.1/media/upload.json";
@@ -27,6 +28,7 @@ public class XService
         _http = http;
         _settings = settings;
         _logger = logger;
+        _rateLimiter = new RateLimitTracker("x_post_count.txt", settings.MaxPostsPerMonth, TimeSpan.FromDays(30));
     }
 
     public bool IsEnabled => _settings.Enabled;
@@ -49,6 +51,13 @@ public class XService
     private async Task<bool> PostTextAsync(string text, string label, byte[]? imageBytes = null)
     {
         if (!_settings.Enabled) return false;
+
+        if (!_rateLimiter.TryAcquire())
+        {
+            var (count, limit) = _rateLimiter.GetStatus();
+            _logger.LogWarning("X: Monthly post quota reached ({Count}/{Limit}); skipping {Label}.", count, limit, label);
+            return false;
+        }
 
         try
         {

@@ -15,12 +15,14 @@ public class TwilioService
     private readonly HttpClient _http;
     private readonly TwilioSettings _settings;
     private readonly ILogger<TwilioService> _logger;
+    private readonly RateLimitTracker _rateLimiter;
 
     public TwilioService(HttpClient http, TwilioSettings settings, ILogger<TwilioService> logger)
     {
         _http = http;
         _settings = settings;
         _logger = logger;
+        _rateLimiter = new RateLimitTracker("twilio_sms_count.txt", settings.MaxSmsPerDay, TimeSpan.FromDays(1));
     }
 
     public bool IsEnabled => _settings.Enabled;
@@ -66,6 +68,14 @@ public class TwilioService
 
     private async Task<bool> SendSmsAsync(string toNumber, string message, string label, string? mediaUrl = null)
     {
+        if (!_rateLimiter.TryAcquire())
+        {
+            var (count, limit) = _rateLimiter.GetStatus();
+            _logger.LogWarning("Twilio: Daily SMS cost guard reached ({Count}/{Limit}); skipping {Label} to {Number}.",
+                count, limit, label, toNumber);
+            return false;
+        }
+
         try
         {
             string url         = $"https://api.twilio.com/2010-04-01/Accounts/{_settings.AccountSid}/Messages.json";

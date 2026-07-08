@@ -34,6 +34,7 @@ dotnet test NwsAlertBot.Tests/NwsAlertBot.Tests.csproj
 **Runtime state files** written to the working directory:
 - `posted_alerts.txt` — deduplication log; persists across restarts. Safe to delete to re-post all active alerts.
 - `confirmed_platforms.txt` — tracks which platforms have sent a startup confirmation. Delete to re-run confirmation on next startup.
+- `x_post_count.txt`, `twilio_sms_count.txt` — `RateLimitTracker` quota/cost-guard state (window start + count) for `XSettings.MaxPostsPerMonth`/`TwilioSettings.MaxSmsPerDay`. Safe to delete to reset the counter early.
 
 **Automated tests** (`NwsAlertBot.Tests/`, xunit): covers pure logic only — parsing (SPC MCD's
 LAT...LON/valid-window/MCD-number regexes), formatting (`NwsAlert.FormatPost`, `PlatformHelpers`),
@@ -179,6 +180,7 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 - **Bluesky tokens expire** — `BlueskyService` caches `accessJwt` and re-authenticates on 401. Do not remove this logic.
 - **X OAuth 1.0a** — signature must be recalculated per-request (timestamp + nonce). See `XService.BuildOAuth1Header()`.
 - **X media upload signing** — `XService.UploadMediaAsync()` reuses `BuildOAuth1Header(method, url)` with no body params signed. This matches X's own (non-strict-OAuth1.0a) behavior for multipart media upload — do not add multipart fields to the signature base, it will break the upload.
+- **`RateLimitTracker` is hand-rolled, not `System.Threading.RateLimiting`** — `XService`/`TwilioService` use it to guard `MaxPostsPerMonth`/`MaxSmsPerDay`. The BCL's rate limiters (e.g. `FixedWindowRateLimiter`) are in-memory only with no way to reconstruct state from external storage, and this bot redeploys on every push to master (`deploy.yml`) — an in-memory-only counter would reset on every deploy, making a monthly/daily cap nearly meaningless. `RateLimitTracker` persists window-start + count to a small state file instead (`x_post_count.txt`, `twilio_sms_count.txt`). Don't swap it for a BCL limiter without solving the persistence problem first.
 - **Pushover priority 2 (emergency) requires `retry` + `expire`** — omitting causes a 400 error. Always include them when priority == 2.
 - **Image attachment failure modes differ by platform** — X/Bluesky/Mastodon have a separate upload step; if it fails, they fall back to posting text-only (don't change this to abort the whole post). Facebook (`/photos`) and Twilio (`MediaUrl`) instead pass the image URL directly in the same request as the text — if that URL is bad, the entire post/SMS fails, since there's no separate upload step to fail independently.
 - **IEM autoplot URL format** — IEM path-based PNG URLs use `key:value` (colon) separated by `::`, NOT `key=value` (equals). Wrong separators are silently ignored and IEM returns its default demo image (HTTP 200, not a 404). Correct format: `/plotting/auto/plot/208/network:WFO::wfo:MPX::year:2026::phenomenav:XH::significancev:W::etn:1::opt:single::n:auto::_r:t::dpi:100.png`. Note `phenomenav` and `significancev` (with `v` suffix), and `n` for NEXRAD (not `nexrad`).

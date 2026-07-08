@@ -833,6 +833,12 @@ Uses the same Meta Developer app as Facebook.
 - Set app permissions to **Read and Write**
 - Free tier: 500 posts/month. Basic tier ($100/month): 3,000 posts/month
 - A busy severe weather season can exceed the free tier
+- `MaxPostsPerMonth` (default `500`, matching the free tier) is a client-side quota guard —
+  once reached, further posts are skipped and logged (`X: Monthly post quota reached...`)
+  instead of burning requests X would reject anyway. Raise it to `3000` if you're on the Basic
+  tier, or set it to `0` to disable the guard entirely. The counter persists across restarts in
+  `x_post_count.txt` (rolling 30-day window) — this bot redeploys on every push to master, so an
+  in-memory-only counter would reset far too often to track a real monthly quota.
 - When a map image is available, it's downloaded and uploaded via the v1.1 media endpoint before
   the tweet posts — no extra credentials needed, same OAuth 1.0a tokens are reused.
 
@@ -1294,6 +1300,13 @@ Each recipient receives a separate SMS. Each message is billed individually.
 **SMS length:** The bot keeps messages to 320 characters (2 SMS segments) to control cost.
 At $0.0079/segment × 3 recipients = ~$0.047 per alert event for 3 people.
 
+**Cost guard:** `MaxSmsPerDay` (default `100`) caps the number of individual SMS sends per
+rolling 24-hour window, counted per recipient (one alert to 3 `ToNumbers` counts as 3) — protects
+against runaway Twilio charges during a busy severe weather outbreak. Once reached, further sends
+are skipped and logged (`Twilio: Daily SMS cost guard reached...`). Set it to `0` to disable. The
+counter persists across restarts in `twilio_sms_count.txt`, since this bot redeploys on every push
+to master and an in-memory-only counter would reset too often to be a meaningful daily cap.
+
 **MMS (map images):** When a `MapImageUrl` is available (Mapbox alert maps, SPC outlook maps —
 see [Map Images](#map-images-mapbox)), it's sent as `MediaUrl`, turning the message into MMS.
 Twilio fetches the image itself; no extra setup needed. MMS pricing is higher than SMS — check
@@ -1463,6 +1476,16 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
 
 ## Recent Changes
 
+- **Add: persisted quota/cost guards for X and Twilio.** New `RateLimitTracker` (a small,
+  file-persisted fixed-window counter, deliberately not `System.Threading.RateLimiting` — see
+  CLAUDE.md Common Pitfalls for why) backs two new settings: `XSettings.MaxPostsPerMonth` (default
+  500, matching the free tier — rolling 30-day window, `x_post_count.txt`) and
+  `TwilioSettings.MaxSmsPerDay` (default 100 — rolling 24-hour window, counted per recipient,
+  `twilio_sms_count.txt`). Once a limit is reached, further posts/sends are skipped and logged
+  rather than burning requests X would reject anyway or racking up SMS costs during a busy
+  outbreak. Both persist across restarts (this bot redeploys on every push to master) and default
+  to enabled; set either to `0` to disable. 6 new unit tests covering the tracker's window
+  rollover, persistence-across-instances, and zero-means-unlimited behavior.
 - **Add: HTTP resilience for read-only weather/mapping clients + first automated test suite.**
   Added `Microsoft.Extensions.Http.Resilience` (`.AddStandardResilienceHandler()`, retry + circuit
   breaker + timeouts) to `NwsAlertService`, `NwsZoneService`, `SpcOutlookService`, `SpcMcdService`,
