@@ -12,9 +12,12 @@
     apply too) are replaced.
 
     Normally launched automatically by UpdateCheckService when Update.AutoApply is true in
-    appsettings.json, passing -WaitForPid so it waits for the running bot to exit before
-    swapping the binary. Can also be run manually (omit -WaitForPid) to upgrade by hand when
-    Update.AutoApply is false -- pass -Tag with the version you want, e.g. "v1.2.3".
+    appsettings.json, passing -WaitForPid (so it waits for the running bot to exit before
+    swapping the binary) and -ServiceName (read from Update.ServiceName, so this always matches
+    without relying on anyone keeping two separately-typed values in sync). Can also be run
+    manually (omit -WaitForPid) to upgrade by hand when Update.AutoApply is false -- pass -Tag
+    with the version you want, e.g. "v1.2.3"; -ServiceName can still be omitted, since it's
+    resolved from Update.ServiceName the same way if not passed explicitly.
 
     Restart behavior: if a systemd service (Linux) or Windows Service matching -ServiceName is
     found, it's restarted via systemctl/Restart-Service. Otherwise the new executable is simply
@@ -35,8 +38,9 @@
     to the bot's own process ID so the executable isn't locked/in-use during the swap.
 
 .PARAMETER ServiceName
-    Name of a systemd (Linux) or Windows Service to restart after installing, if one exists.
-    Defaults to "nwsalertbot" to match this project's own deploy.yml.
+    Name of a systemd (Linux) or Windows Service to restart after installing, if one exists. If
+    omitted, resolved from Update.ServiceName in appsettings.Local.json (checked first) or
+    appsettings.json in -InstallDir, falling back to "nwsalertbot" if neither sets it.
 
 .PARAMETER DryRun
     Detects the platform, resolves the download URL, and reports what would happen without
@@ -52,7 +56,7 @@ param(
     [string]$Tag,
     [string]$InstallDir = $PSScriptRoot,
     [int]$WaitForPid = 0,
-    [string]$ServiceName = "nwsalertbot",
+    [string]$ServiceName,
     [switch]$DryRun
 )
 
@@ -60,6 +64,35 @@ $ErrorActionPreference = "Stop"
 
 function Write-Step($message) {
     Write-Host "[update] $message"
+}
+
+# Resolves the service name from Update.ServiceName in appsettings.Local.json (checked first,
+# matching the app's own override precedence) or appsettings.json in $dir, falling back to
+# $fallback if neither file exists, is unreadable, or doesn't set it. Kept in sync with the
+# identical function in setup-service.ps1 (duplicated rather than shared, since each script is
+# meant to run standalone with nothing else to dot-source).
+function Resolve-ServiceName([string]$dir, [string]$fallback) {
+    foreach ($file in @("appsettings.Local.json", "appsettings.json")) {
+        $path = Join-Path $dir $file
+        if (-not (Test-Path $path)) { continue }
+        try {
+            $raw = Get-Content -Path $path -Raw
+            $lines = $raw -split "`r?`n" | Where-Object { $_.TrimStart() -notmatch '^//' }
+            $stripped = ($lines -join "`n") -replace ',(\s*[\]\}])', '$1'
+            $config = $stripped | ConvertFrom-Json
+            if ($config.Update -and $config.Update.ServiceName) {
+                return $config.Update.ServiceName
+            }
+        }
+        catch {
+            # Malformed or unreadable -- fall through to the next file, then the fallback.
+        }
+    }
+    return $fallback
+}
+
+if (-not $ServiceName) {
+    $ServiceName = Resolve-ServiceName -dir $InstallDir -fallback "nwsalertbot"
 }
 
 # --- 1. Wait for the running process to exit, if one was specified ---------------------------

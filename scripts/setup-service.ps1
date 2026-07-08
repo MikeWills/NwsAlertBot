@@ -9,17 +9,21 @@
     directory pinned to that same directory so appsettings.json and runtime state files
     (posted_alerts.txt, logs/, etc.) are found/written in the right place.
 
-    -ServiceName lets you run more than one instance on the same machine under different names --
-    e.g. running this bot for two different Discord servers from two separate install
-    directories. Give each instance its own -ServiceName and -InstallDir. If you also use
-    Update.AutoApply / update.ps1, pass the same -ServiceName there too (its default,
-    "nwsalertbot", only matches the first instance) so its auto-restart-after-update logic finds
-    the right service.
+    Running more than one instance on the same machine (e.g. one bot per Discord server) means
+    each instance needs a distinct service name. Rather than typing that name twice in two
+    different places (a CLI argument here, a JSON value in appsettings.json) and risking a typo
+    that silently breaks Update.AutoApply's auto-restart-after-update logic, -ServiceName is
+    optional: if omitted, it's read straight out of Update.ServiceName in that instance's
+    appsettings.Local.json (checked first) or appsettings.json (in -InstallDir) -- the same value
+    UpdateCheckService already uses. Set it once there and every script agrees on the name
+    automatically. Passing -ServiceName explicitly still overrides this.
 
     Must be run with elevated privileges: as Administrator on Windows, with sudo on Linux.
 
 .PARAMETER ServiceName
     Name to register the service under. Must be unique per machine if running multiple instances.
+    If omitted, resolved from Update.ServiceName in appsettings.Local.json/appsettings.json (see
+    DESCRIPTION), falling back to "nwsalertbot" if neither sets it.
 
 .PARAMETER InstallDir
     Directory containing the executable and appsettings.json. Defaults to this script's own
@@ -39,14 +43,15 @@
     sudo ./setup-service.ps1 -ServiceName nwsalertbot-mainserver
 
 .EXAMPLE
-    # Run as Administrator
-    ./setup-service.ps1 -ServiceName nwsalertbot-friendserver -InstallDir C:\bots\friendserver
+    # Run as Administrator. Reads the service name from appsettings.json/appsettings.Local.json
+    # in C:\bots\friendserver -- set Update.ServiceName there first.
+    ./setup-service.ps1 -InstallDir C:\bots\friendserver
 
 .EXAMPLE
     sudo ./setup-service.ps1 -ServiceName nwsalertbot-mainserver -Uninstall
 #>
 param(
-    [string]$ServiceName = "nwsalertbot",
+    [string]$ServiceName,
     [string]$InstallDir = $PSScriptRoot,
     [string]$Description,
     [switch]$Uninstall,
@@ -55,12 +60,44 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not $Description) {
-    $Description = "NWS Alert Bot ($ServiceName)"
-}
-
 function Write-Step($message) {
     Write-Host "[setup-service] $message"
+}
+
+# Resolves the service name from Update.ServiceName in appsettings.Local.json (checked first,
+# matching the app's own override precedence) or appsettings.json in $dir, falling back to
+# $fallback if neither file exists, is unreadable, or doesn't set it. Kept in sync with the
+# identical function in update.ps1 (duplicated rather than shared, since each script is meant to
+# run standalone with nothing else to dot-source).
+function Resolve-ServiceName([string]$dir, [string]$fallback) {
+    foreach ($file in @("appsettings.Local.json", "appsettings.json")) {
+        $path = Join-Path $dir $file
+        if (-not (Test-Path $path)) { continue }
+        try {
+            $raw = Get-Content -Path $path -Raw
+            # appsettings.json uses only full-line "//" comments (never inline-after-value) and
+            # sometimes trailing commas -- ConvertFrom-Json accepts neither, so strip/fix both,
+            # matching the leniency System.Text.Json is configured with on the C# side.
+            $lines = $raw -split "`r?`n" | Where-Object { $_.TrimStart() -notmatch '^//' }
+            $stripped = ($lines -join "`n") -replace ',(\s*[\]\}])', '$1'
+            $config = $stripped | ConvertFrom-Json
+            if ($config.Update -and $config.Update.ServiceName) {
+                return $config.Update.ServiceName
+            }
+        }
+        catch {
+            # Malformed or unreadable -- fall through to the next file, then the fallback.
+        }
+    }
+    return $fallback
+}
+
+if (-not $ServiceName) {
+    $ServiceName = Resolve-ServiceName -dir $InstallDir -fallback "nwsalertbot"
+}
+
+if (-not $Description) {
+    $Description = "NWS Alert Bot ($ServiceName)"
 }
 
 $exeName = if ($IsWindows) { "NwsAlertBot.exe" } elseif ($IsLinux -or $IsMacOS) { "NwsAlertBot" } else {

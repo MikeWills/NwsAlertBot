@@ -187,21 +187,29 @@ sudo ./setup-service.ps1 -ServiceName nwsalertbot
 
 ### Running more than one instance on the same machine
 
-Each instance needs its own install directory (its own copy of the executable +
-`appsettings.json`/`appsettings.Local.json`) and its own **`-ServiceName`** — e.g. if you're
-running this bot for two different Discord servers on one machine:
+Each instance needs its own install directory (its own copy of the executable,
+`appsettings.json`, and `appsettings.Local.json`) and its own service name. Set the name **once**,
+in `Update.ServiceName` in that instance's `appsettings.json` — both `setup-service.ps1` and
+`update.ps1` read it from there automatically if you don't pass `-ServiceName` explicitly, so
+there's a single place to get it right instead of typing the same string into two separate
+commands and risking a mismatch:
 
-```bash
-sudo ./setup-service.ps1 -ServiceName nwsalertbot-serverone -InstallDir /opt/nwsalertbot-serverone
-sudo ./setup-service.ps1 -ServiceName nwsalertbot-servertwo -InstallDir /opt/nwsalertbot-servertwo
+```json
+// /opt/nwsalertbot-serverone/appsettings.json
+"Update": { "ServiceName": "nwsalertbot-serverone", ... }
+```
+```json
+// /opt/nwsalertbot-servertwo/appsettings.json
+"Update": { "ServiceName": "nwsalertbot-servertwo", ... }
 ```
 
-If you also use [Auto-Update](#auto-update) (`Update.AutoApply: true`), set that instance's
-`appsettings.json` `Update.ServiceName` to match whatever name you gave `setup-service.ps1` here
-— e.g. the `nwsalertbot-serverone` instance above needs `"Update": { "ServiceName":
-"nwsalertbot-serverone", ... }`. Otherwise `UpdateCheckService` restarts the default
-`nwsalertbot` service after updating (missing this one, or restarting a different instance
-entirely if one happens to use the default name).
+```bash
+sudo ./setup-service.ps1 -InstallDir /opt/nwsalertbot-serverone
+sudo ./setup-service.ps1 -InstallDir /opt/nwsalertbot-servertwo
+```
+
+If you'd rather not touch `appsettings.json`, `-ServiceName` still works as an explicit override
+on either script — just remember it needs to match on both.
 
 ### What it does (and doesn't) do
 
@@ -255,12 +263,12 @@ enough — `pwsh` is a separate, newer install).
   no benefit checking more than once a day.
 - **`GitHubRepo`** (default `"MikeWills/NwsAlertBot"`) — change this if you're running your own
   fork with its own tags/releases.
-- **`ServiceName`** (default `"nwsalertbot"`, matching `setup-service.ps1`'s own default) — passed
-  to `update.ps1` as its `-ServiceName` so it restarts the right service after swapping the
-  executable. Only matters if you're [running more than one instance](#running-as-a-service) on
-  the same machine: set this to whatever name you gave `setup-service.ps1` for *this* instance,
-  so `AutoApply` restarts the correct one instead of silently missing it (or restarting the wrong
-  instance, if another one on the machine happens to use the default name).
+- **`ServiceName`** (default `"nwsalertbot"`) — passed to `update.ps1` as its `-ServiceName` so it
+  restarts the right service after swapping the executable. This is the **single source of
+  truth**: `setup-service.ps1` reads this same value automatically (if you don't pass
+  `-ServiceName` to it explicitly), so you only ever set the name in one place. Only matters if
+  you're [running more than one instance](#running-as-a-service) on the same machine — set each
+  instance's own `appsettings.json` to a distinct name before running `setup-service.ps1`.
 
 ### What gets touched (and what doesn't)
 
@@ -1621,12 +1629,13 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
 
 - **Add: `scripts/setup-service.ps1` to install NwsAlertBot as a background service.** Creates a
   systemd unit (Linux) or Windows Service (Windows), pointed at the executable with its working
-  directory pinned correctly, set to start on boot and restart on failure. `-ServiceName` lets
-  you run more than one instance on the same machine under different names (e.g. one bot per
-  Discord server) — new `Update.ServiceName` setting (default `"nwsalertbot"`, matching
-  `setup-service.ps1`'s own default) must match for `UpdateCheckService` to pass the right
-  `-ServiceName` to `update.ps1`'s auto-restart-after-update logic. Required two supporting fixes
-  for Windows Service mode to
+  directory pinned correctly, set to start on boot and restart on failure. Running more than one
+  instance on the same machine (e.g. one bot per Discord server) needs a distinct service name
+  per instance — set once via `Update.ServiceName` (default `"nwsalertbot"`) in that instance's
+  `appsettings.json`; both `setup-service.ps1` and `update.ps1` read it from there automatically
+  (a `-ServiceName` argument on either still overrides it), so there's a single place to set the
+  name instead of two independently-typed values that merely have to happen to match. Required
+  two supporting fixes for Windows Service mode to
   work at all: added `Microsoft.Extensions.Hosting.WindowsServices` + `.UseWindowsService()` (a
   no-op everywhere else) since a bare console app doesn't respond to the Windows Service Control
   Manager's start/stop handshake and gets killed almost immediately otherwise; and pinned the
