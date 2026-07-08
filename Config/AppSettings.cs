@@ -228,6 +228,15 @@ public class XSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <summary>
+    /// Quota guard: max posts per rolling 30-day window, matching X's free-tier limit (500
+    /// posts/month; Basic tier is 3,000/month — raise this to match if you're on Basic). Once
+    /// reached, further posts are skipped and logged until the window rolls over, rather than
+    /// burning requests X would reject anyway. Persists across restarts (x_post_count.txt).
+    /// Set to 0 to disable (no limit).
+    /// </summary>
+    public int MaxPostsPerMonth { get; set; } = 500;
 }
 
 public class BlueskySettings
@@ -376,6 +385,15 @@ public class TwilioSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <summary>
+    /// Cost/quota guard: max SMS sends per rolling 24-hour window, counted per individual message
+    /// (i.e. one alert to 3 ToNumbers counts as 3). Once reached, further sends are skipped and
+    /// logged until the window rolls over — protects against runaway Twilio charges during a busy
+    /// severe weather outbreak. Persists across restarts (twilio_sms_count.txt). Set to 0 to
+    /// disable (no limit).
+    /// </summary>
+    public int MaxSmsPerDay { get; set; } = 100;
 }
 
 public class DiscordDmSettings
