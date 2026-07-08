@@ -1,6 +1,9 @@
-using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using NetTopologySuite.Features;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.Precision;
+using NetTopologySuite.Simplify;
 using NwsAlertBot.Config;
 using NwsAlertBot.Models;
 
@@ -17,10 +20,9 @@ namespace NwsAlertBot.Services;
 ///
 /// Mapbox fallback: Overlay geometry priority:
 ///   1. Alert's own GeoJSON polygon (when NWS provides one).
-///   2. Dissolved outer perimeter of the alert's UGC zone/county geometries. Adjacent
-///      counties have their shared borders removed so only the outer edge is drawn. Falls
-///      back to a MultiPolygon of individual county outlines if dissolve fails, then to a
-///      convex hull if still too large for the 8000-char URL limit.
+///   2. Union of the alert's UGC zone/county geometries (NetTopologySuite), which dissolves
+///      shared borders between adjacent counties so only the outer perimeter is drawn — falls
+///      back to a convex hull if still too large for the 8000-char URL limit.
 ///
 /// Bounding box falls back to configured zones/counties if no geometry is available.
 /// </summary>
@@ -255,45 +257,54 @@ public class MapService
 
     private async Task<(double[]? Bbox, string? Overlay, string? Hull)> GetBboxAndOverlayAsync(IList<string> codes)
     {
-        double minLon = double.MaxValue, minLat = double.MaxValue;
-        double maxLon = double.MinValue, maxLat = double.MinValue;
-        bool found = false;
-        var geoStrings = new List<string>();
-        var allPoints  = new List<(double Lon, double Lat)>();
-
         var geos = await Task.WhenAll(codes.Select(c => _zones.GetGeometryAsync(c)));
 
+        var geometries = new List<Geometry>();
         foreach (var geo in geos)
         {
             if (geo == null) continue;
-            string raw = geo.Value.GetRawText();
-            var b = ExtractBbox(raw);
-            if (b == null) continue;
-
-            if (b[0] < minLon) minLon = b[0];
-            if (b[1] < minLat) minLat = b[1];
-            if (b[2] > maxLon) maxLon = b[2];
-            if (b[3] > maxLat) maxLat = b[3];
-            found = true;
-            geoStrings.Add(raw);
-            CollectPoints(raw, allPoints);
+            var geom = PolygonGeometry.Parse(geo.Value.GetRawText());
+            if (geom != null) geometries.Add(geom);
         }
 
-        if (!found) return (null, null, null);
+        if (geometries.Count == 0) return (null, null, null);
 
-        double[] bbox = new[] { minLon, minLat, maxLon, maxLat };
+        try
+        {
+            // Union dissolves shared borders between adjacent zones/counties automatically
+            // (falling back to a simple MultiPolygon for disjoint pieces) — no manual edge-matching needed.
+            var union = geometries[0].Factory.BuildGeometry(geometries).Union();
+            _logger.LogInformation("Map: Unioned {Count} zone/county geometries.", geometries.Count);
 
-        // Try dissolving shared borders first; fall back to individual county MultiPolygon.
-        string? dissolved = DissolveGeometries(geoStrings);
-        _logger.LogInformation(dissolved != null
-            ? "Map: Dissolved {Count} geometries into outer perimeter."
-            : "Map: Dissolve failed; using individual county polygons.",
-            geoStrings.Count);
+            var env = union.EnvelopeInternal;
+            double[] bbox = { env.MinX, env.MinY, env.MaxX, env.MaxY };
+            string overlay = PolygonGeometry.ToGeoJson(union);
+            string hull    = PolygonGeometry.ToGeoJson(union.ConvexHull());
 
-        string? overlay = dissolved ?? CombineGeometries(geoStrings);
-        string? hull    = ConvexHullJson(allPoints);
+            return (bbox, overlay, hull);
+        }
+        catch (Exception ex)
+        {
+            // Fall back to a bbox from each geometry's own envelope (cheap arithmetic, can't
+            // fail the way Union()/ConvexHull() can on malformed input) — still lets the alert
+            // get a bbox-only Mapbox image instead of losing the map entirely.
+            _logger.LogWarning(ex, "Map: Union of {Count} zone/county geometries failed; using bbox only, no overlay.", geometries.Count);
+            return (EnvelopeUnionBbox(geometries), null, null);
+        }
+    }
 
-        return (bbox, overlay, hull);
+    private static double[] EnvelopeUnionBbox(IReadOnlyList<Geometry> geometries)
+    {
+        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+        foreach (var g in geometries)
+        {
+            var env = g.EnvelopeInternal;
+            if (env.MinX < minX) minX = env.MinX;
+            if (env.MinY < minY) minY = env.MinY;
+            if (env.MaxX > maxX) maxX = env.MaxX;
+            if (env.MaxY > maxY) maxY = env.MaxY;
+        }
+        return new[] { minX, minY, maxX, maxY };
     }
 
     private async Task<double[]?> GetFallbackBboxAsync()
@@ -339,7 +350,7 @@ public class MapService
         string baseUrl    = $"https://api.mapbox.com/styles/v1/{_settings.Style}/static/";
         string suffix     = $"?access_token={_settings.AccessToken}";
 
-        // Try primary overlay geometry (dissolved or combined) at reducing precision
+        // Try primary overlay geometry (unioned zone/county shapes) at reducing precision
         if (!string.IsNullOrEmpty(geometryJson))
         {
             foreach (int precision in new[] { 2, 1 })
@@ -347,7 +358,8 @@ public class MapService
                 string? simplified = SimplifyGeometry(geometryJson, precision);
                 if (simplified == null) break;
 
-                string feature   = BuildFeatureJson(simplified);
+                string? feature = BuildFeatureJson(simplified);
+                if (feature == null) break;
                 string encoded   = Uri.EscapeDataString(feature);
                 string candidate = $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
 
@@ -371,7 +383,8 @@ public class MapService
                 string? simplified = SimplifyGeometry(hullJson, precision);
                 if (simplified == null) break;
 
-                string feature   = BuildFeatureJson(simplified);
+                string? feature = BuildFeatureJson(simplified);
+                if (feature == null) break;
                 string encoded   = Uri.EscapeDataString(feature);
                 string candidate = $"{baseUrl}geojson({encoded})/{bboxStr}/{dimensions}{suffix}";
 
@@ -472,182 +485,27 @@ public class MapService
         }
     }
 
-    private static string BuildFeatureJson(string geometryJson) =>
-        $"{{\"type\":\"Feature\",\"properties\":{{" +
-        $"\"fill\":\"{FillColor}\",\"fill-opacity\":0.3," +
-        $"\"stroke\":\"{StrokeColor}\",\"stroke-width\":2,\"stroke-opacity\":0.9" +
-        $"}},\"geometry\":{geometryJson}}}";
-
-    // -------------------------------------------------------------------------
-    // Dissolve: remove shared county borders, return outer perimeter only
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Combines county/zone polygons by dissolving shared borders.
-    /// Uses edge-counting: edges that appear in exactly one polygon are outer boundary edges;
-    /// edges that appear twice are shared borders between adjacent counties and are removed.
-    /// Returns a Polygon or MultiPolygon, or null if the topology reconstruction fails
-    /// (e.g. when NWS zone data for adjacent counties doesn't have matching shared-border coordinates).
-    /// </summary>
-    private static string? DissolveGeometries(List<string> geometries)
+    private static string? BuildFeatureJson(string geometryJson)
     {
-        if (geometries.Count == 0) return null;
+        var geom = PolygonGeometry.Parse(geometryJson);
+        if (geom == null) return null;
 
-        // Use precision=3 (~111m) for edge matching. This normalizes small floating-point
-        // differences between adjacent county boundary definitions in the NWS zone API.
-        const int matchPrecision = 3;
-
-        // Count how many times each undirected edge appears across all exterior rings.
-        // Canonical form: smaller endpoint first, so (A→B) and (B→A) share the same key.
-        var edgeCount = new Dictionary<((double, double), (double, double)), int>();
-        var edgeDirs  = new Dictionary<((double, double), (double, double)), ((double, double) From, (double, double) To)>();
-
-        foreach (var geo in geometries)
-        {
-            foreach (var ring in ExtractExteriorRings(geo, matchPrecision))
-            {
-                for (int i = 0; i < ring.Count - 1; i++)
-                {
-                    var a = (ring[i].Lon, ring[i].Lat);
-                    var b = (ring[i + 1].Lon, ring[i + 1].Lat);
-                    var key = CanonicalEdge(a, b);
-
-                    if (!edgeCount.TryGetValue(key, out int c))
-                    {
-                        edgeCount[key] = 1;
-                        edgeDirs[key]  = (a, b);
-                    }
-                    else
-                    {
-                        edgeCount[key] = c + 1;
-                    }
-                }
-            }
-        }
-
-        // Build directed adjacency from outer edges only (count == 1).
-        // Each outer boundary point should have exactly one outgoing edge.
-        var adj = new Dictionary<(double, double), (double, double)>();
-        foreach (var (key, count) in edgeCount)
-        {
-            if (count != 1) continue;
-            var (from, to) = edgeDirs[key];
-            if (adj.ContainsKey(from))
-                return null; // topology error — multiple outgoing edges from same point
-            adj[from] = to;
-        }
-
-        if (adj.Count == 0) return null;
-
-        // Walk the adjacency chains to reconstruct closed rings.
-        var rings   = new List<List<(double Lon, double Lat)>>();
-        var visited = new HashSet<(double, double)>();
-
-        foreach (var startKey in adj.Keys.ToList())
-        {
-            if (visited.Contains(startKey)) continue;
-
-            var ring    = new List<(double Lon, double Lat)> { (startKey.Item1, startKey.Item2) };
-            var current = startKey;
-            visited.Add(current);
-
-            while (true)
-            {
-                if (!adj.TryGetValue(current, out var next))
-                    return null; // dead end — shared borders didn't cancel cleanly
-
-                if (next == startKey)
-                {
-                    ring.Add((startKey.Item1, startKey.Item2)); // close the ring
-                    break;
-                }
-
-                if (visited.Contains(next))
-                    return null; // unexpected loop — broken topology
-
-                ring.Add((next.Item1, next.Item2));
-                visited.Add(next);
-                current = next;
-            }
-
-            if (ring.Count >= 4)
-                rings.Add(ring);
-        }
-
-        if (rings.Count == 0) return null;
-
-        if (rings.Count == 1)
-            return BuildPolygonJson(new List<List<(double Lon, double Lat)>> { rings[0] });
-
-        return BuildMultiPolygonJson(
-            rings.Select(r => new List<List<(double Lon, double Lat)>> { r }).ToList());
-    }
-
-    /// <summary>
-    /// Returns the canonical (undirected) form of an edge: smaller endpoint first.
-    /// </summary>
-    private static ((double, double), (double, double)) CanonicalEdge((double, double) a, (double, double) b)
-    {
-        int cmp = a.Item1.CompareTo(b.Item1);
-        if (cmp == 0) cmp = a.Item2.CompareTo(b.Item2);
-        return cmp <= 0 ? (a, b) : (b, a);
-    }
-
-    /// <summary>
-    /// Parses a GeoJSON geometry and returns only the exterior ring of each polygon,
-    /// with coordinates rounded to the given precision. Interior rings (holes) are dropped.
-    /// </summary>
-    private static List<List<(double Lon, double Lat)>> ExtractExteriorRings(string geometryJson, int precision)
-    {
-        var result = new List<List<(double Lon, double Lat)>>();
         try
         {
-            using var doc = JsonDocument.Parse(geometryJson);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("type", out var typeEl) ||
-                !root.TryGetProperty("coordinates", out var coords)) return result;
-
-            void AddExteriorRing(JsonElement polygon)
+            var feature = new Feature(geom, new AttributesTable(new Dictionary<string, object>
             {
-                // First element of a polygon's coordinate array is the exterior ring
-                using var ringEnum = polygon.EnumerateArray();
-                if (!ringEnum.MoveNext()) return;
-                var exteriorRingEl = ringEnum.Current;
-
-                var pts = new List<(double Lon, double Lat)>();
-                (double Lon, double Lat) prev = (double.NaN, double.NaN);
-
-                foreach (var pt in exteriorRingEl.EnumerateArray())
-                {
-                    double lon = Math.Round(pt[0].GetDouble(), precision);
-                    double lat = Math.Round(pt[1].GetDouble(), precision);
-                    if (lon == prev.Lon && lat == prev.Lat) continue;
-                    pts.Add((lon, lat));
-                    prev = (lon, lat);
-                }
-
-                // Ensure ring is closed
-                if (pts.Count >= 2 && (pts[0].Lon != pts[^1].Lon || pts[0].Lat != pts[^1].Lat))
-                    pts.Add(pts[0]);
-
-                if (pts.Count >= 4)
-                    result.Add(pts);
-            }
-
-            switch (typeEl.GetString())
-            {
-                case "Polygon":
-                    AddExteriorRing(coords);
-                    break;
-                case "MultiPolygon":
-                    foreach (var polygon in coords.EnumerateArray())
-                        AddExteriorRing(polygon);
-                    break;
-            }
+                ["fill"] = FillColor,
+                ["fill-opacity"] = 0.3,
+                ["stroke"] = StrokeColor,
+                ["stroke-width"] = 2,
+                ["stroke-opacity"] = 0.9,
+            }));
+            return JsonSerializer.Serialize(feature, PolygonGeometry.JsonOptions);
         }
-        catch { }
-
-        return result;
+        catch
+        {
+            return null;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -656,240 +514,47 @@ public class MapService
 
     private static double[]? ExtractBbox(string geometryJson)
     {
+        var geom = PolygonGeometry.Parse(geometryJson);
+        if (geom == null) return null;
+
         try
         {
-            using var doc = JsonDocument.Parse(geometryJson);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("type", out var typeEl)) return null;
-            if (!root.TryGetProperty("coordinates", out var coords)) return null;
-
-            double minLon = double.MaxValue, minLat = double.MaxValue;
-            double maxLon = double.MinValue, maxLat = double.MinValue;
-
-            void Visit(JsonElement pt)
-            {
-                var lon = pt[0].GetDouble();
-                var lat = pt[1].GetDouble();
-                if (lon < minLon) minLon = lon;
-                if (lon > maxLon) maxLon = lon;
-                if (lat < minLat) minLat = lat;
-                if (lat > maxLat) maxLat = lat;
-            }
-
-            switch (typeEl.GetString())
-            {
-                case "Polygon":
-                    foreach (var ring in coords.EnumerateArray())
-                        foreach (var pt in ring.EnumerateArray()) Visit(pt);
-                    break;
-                case "MultiPolygon":
-                    foreach (var polygon in coords.EnumerateArray())
-                        foreach (var ring in polygon.EnumerateArray())
-                            foreach (var pt in ring.EnumerateArray()) Visit(pt);
-                    break;
-                default:
-                    return null;
-            }
-
-            return minLon == double.MaxValue ? null : new[] { minLon, minLat, maxLon, maxLat };
+            var env = geom.EnvelopeInternal;
+            return env.IsNull ? null : new[] { env.MinX, env.MinY, env.MaxX, env.MaxY };
         }
-        catch { return null; }
-    }
-
-    private static void CollectPoints(string geometryJson, List<(double Lon, double Lat)> points)
-    {
-        try
+        catch
         {
-            using var doc = JsonDocument.Parse(geometryJson);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("type", out var typeEl) ||
-                !root.TryGetProperty("coordinates", out var coords)) return;
-
-            void VisitRing(JsonElement ring)
-            {
-                foreach (var pt in ring.EnumerateArray())
-                    if (pt.GetArrayLength() >= 2)
-                        points.Add((pt[0].GetDouble(), pt[1].GetDouble()));
-            }
-
-            switch (typeEl.GetString())
-            {
-                case "Polygon":
-                    foreach (var ring in coords.EnumerateArray()) VisitRing(ring);
-                    break;
-                case "MultiPolygon":
-                    foreach (var polygon in coords.EnumerateArray())
-                        foreach (var ring in polygon.EnumerateArray()) VisitRing(ring);
-                    break;
-            }
+            return null;
         }
-        catch { }
     }
 
-    private static string? CombineGeometries(List<string> geometries)
-    {
-        if (geometries.Count == 0) return null;
-        if (geometries.Count == 1) return geometries[0];
-
-        var allPolygons = new List<List<List<(double Lon, double Lat)>>>();
-
-        foreach (var geo in geometries)
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(geo);
-                var root = doc.RootElement;
-                if (!root.TryGetProperty("type", out var typeEl) ||
-                    !root.TryGetProperty("coordinates", out var coords)) continue;
-
-                switch (typeEl.GetString())
-                {
-                    case "Polygon":
-                        var rings = SimplifyRings(coords, 4);
-                        if (rings.Count > 0) allPolygons.Add(rings);
-                        break;
-                    case "MultiPolygon":
-                        foreach (var polygon in coords.EnumerateArray())
-                        {
-                            var pRings = SimplifyRings(polygon, 4);
-                            if (pRings.Count > 0) allPolygons.Add(pRings);
-                        }
-                        break;
-                }
-            }
-            catch { }
-        }
-
-        return BuildMultiPolygonJson(allPolygons);
-    }
-
-    private static string? ConvexHullJson(List<(double Lon, double Lat)> points)
-    {
-        var hull = GrahamScan(points);
-        if (hull == null || hull.Count < 3) return null;
-
-        hull.Add(hull[0]);
-
-        var sb = new StringBuilder("{\"type\":\"Polygon\",\"coordinates\":[[");
-        for (int i = 0; i < hull.Count; i++)
-        {
-            if (i > 0) sb.Append(',');
-            sb.Append($"[{hull[i].Lon:F2},{hull[i].Lat:F2}]");
-        }
-        sb.Append("]]}");
-        return sb.ToString();
-    }
-
-    private static List<(double Lon, double Lat)>? GrahamScan(List<(double Lon, double Lat)> points)
-    {
-        if (points.Count < 3) return null;
-
-        var pivot  = points.MinBy(p => (p.Lat, p.Lon));
-        var sorted = points
-            .Where(p => p != pivot)
-            .OrderBy(p => Math.Atan2(p.Lat - pivot.Lat, p.Lon - pivot.Lon))
-            .ThenBy(p => DistSq(pivot, p))
-            .ToList();
-
-        var hull = new List<(double Lon, double Lat)> { pivot };
-        foreach (var pt in sorted)
-        {
-            while (hull.Count >= 2 && Cross(hull[^2], hull[^1], pt) <= 0)
-                hull.RemoveAt(hull.Count - 1);
-            hull.Add(pt);
-        }
-
-        return hull.Count >= 3 ? hull : null;
-    }
-
-    private static double Cross((double Lon, double Lat) o, (double Lon, double Lat) a, (double Lon, double Lat) b)
-        => (a.Lon - o.Lon) * (b.Lat - o.Lat) - (a.Lat - o.Lat) * (b.Lon - o.Lon);
-
-    private static double DistSq((double Lon, double Lat) a, (double Lon, double Lat) b)
-        => (a.Lon - b.Lon) * (a.Lon - b.Lon) + (a.Lat - b.Lat) * (a.Lat - b.Lat);
-
+    /// <summary>
+    /// Simplifies a GeoJSON geometry for a shorter Mapbox URL: reduces vertex count with a
+    /// topology-preserving simplification (never produces self-intersecting output, unlike
+    /// naive coordinate rounding) and snaps remaining coordinates to a coarser grid to shrink
+    /// their decimal digit width. <paramref name="precision"/> follows the old "decimal places"
+    /// convention (2 then 1) purely to keep call sites unchanged: 2 ≈ 0.01° tolerance/grid
+    /// (~1.1km), 1 ≈ 0.1° (~11km).
+    /// </summary>
     private static string? SimplifyGeometry(string geometryJson, int precision)
     {
+        var geom = PolygonGeometry.Parse(geometryJson);
+        if (geom == null) return null;
+
         try
         {
-            using var doc = JsonDocument.Parse(geometryJson);
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("type", out var typeEl) ||
-                !root.TryGetProperty("coordinates", out var coords))
-                return null;
+            double tolerance = precision >= 2 ? 0.01 : 0.1;
+            var simplified = TopologyPreservingSimplifier.Simplify(geom, tolerance);
+            if (simplified.IsEmpty) return null;
 
-            return typeEl.GetString() switch
-            {
-                "Polygon"      => BuildPolygonJson(SimplifyRings(coords, precision)),
-                "MultiPolygon" => BuildMultiPolygonJson(
-                    coords.EnumerateArray()
-                          .Select(p => SimplifyRings(p, precision))
-                          .Where(r => r.Count > 0)
-                          .ToList()),
-                _ => null
-            };
+            var reduced = GeometryPrecisionReducer.Reduce(simplified, new PrecisionModel(1 / tolerance));
+            return reduced.IsEmpty ? null : PolygonGeometry.ToGeoJson(reduced);
         }
-        catch { return null; }
-    }
-
-    private static string? BuildPolygonJson(List<List<(double Lon, double Lat)>> rings)
-    {
-        if (rings.Count == 0) return null;
-        return $"{{\"type\":\"Polygon\",\"coordinates\":{SerializeRings(rings)}}}";
-    }
-
-    private static string? BuildMultiPolygonJson(List<List<List<(double Lon, double Lat)>>> polygons)
-    {
-        if (polygons.Count == 0) return null;
-        var sb = new StringBuilder("{\"type\":\"MultiPolygon\",\"coordinates\":[");
-        for (int i = 0; i < polygons.Count; i++)
+        catch
         {
-            if (i > 0) sb.Append(',');
-            sb.Append(SerializeRings(polygons[i]));
+            // GeometryPrecisionReducer can throw (rather than return empty) on topologically
+            // awkward input at coarse tolerances — treat like any other simplification failure.
+            return null;
         }
-        sb.Append("]}");
-        return sb.ToString();
-    }
-
-    private static List<List<(double Lon, double Lat)>> SimplifyRings(JsonElement rings, int precision)
-    {
-        var result = new List<List<(double Lon, double Lat)>>();
-        foreach (var ring in rings.EnumerateArray())
-        {
-            var pts = new List<(double Lon, double Lat)>();
-            (double Lon, double Lat) prev = (double.NaN, double.NaN);
-            foreach (var pt in ring.EnumerateArray())
-            {
-                double lon = Math.Round(pt[0].GetDouble(), precision);
-                double lat = Math.Round(pt[1].GetDouble(), precision);
-                if (lon == prev.Lon && lat == prev.Lat) continue;
-                pts.Add((lon, lat));
-                prev = (lon, lat);
-            }
-            if (pts.Count >= 2 && (pts[0].Lon != pts[^1].Lon || pts[0].Lat != pts[^1].Lat))
-                pts.Add(pts[0]);
-            if (pts.Count >= 4)
-                result.Add(pts);
-        }
-        return result;
-    }
-
-    private static string SerializeRings(List<List<(double Lon, double Lat)>> rings)
-    {
-        var sb = new StringBuilder("[");
-        for (int i = 0; i < rings.Count; i++)
-        {
-            if (i > 0) sb.Append(',');
-            sb.Append('[');
-            var ring = rings[i];
-            for (int j = 0; j < ring.Count; j++)
-            {
-                if (j > 0) sb.Append(',');
-                sb.Append($"[{ring[j].Lon},{ring[j].Lat}]");
-            }
-            sb.Append(']');
-        }
-        sb.Append(']');
-        return sb.ToString();
     }
 }
