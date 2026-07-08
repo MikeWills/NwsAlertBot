@@ -60,6 +60,7 @@ var host = Host.CreateDefaultBuilder(args)
         var spcMcdSettings    = cfg.GetSection("SpcMcd").Get<SpcMcdSettings>()       ?? new SpcMcdSettings();
         var hwoSettings       = cfg.GetSection("Hwo").Get<HwoSettings>()             ?? new HwoSettings();
         var eroSettings       = cfg.GetSection("Ero").Get<EroSettings>()             ?? new EroSettings();
+        var updateSettings    = cfg.GetSection("Update").Get<UpdateSettings>()       ?? new UpdateSettings();
 
         // Register settings as singletons
         services.AddSingleton(locationSettings);
@@ -81,6 +82,7 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton(spcMcdSettings);
         services.AddSingleton(hwoSettings);
         services.AddSingleton(eroSettings);
+        services.AddSingleton(updateSettings);
 
         // HttpClients — each service gets its own typed client.
         // The read-only weather/mapping feeds (NWS, SPC, HWO, WPC ERO, IEM, Mapbox) get a
@@ -147,6 +149,10 @@ var host = Host.CreateDefaultBuilder(args)
         // back to if a retry also fails).
         services.AddHttpClient("WeatherImageryPrimary").AddStandardResilienceHandler();
         services.AddHttpClient("WeatherImageryFallback");
+
+        // GitHub Releases API check for UpdateCheckService — read-only, occasional, benefits
+        // from the same retry/circuit-breaker handling as the weather feeds above.
+        services.AddHttpClient<UpdateCheckService>().AddStandardResilienceHandler();
 
         // Core services
         services.AddSingleton<AlertTrackerService>();
@@ -293,6 +299,7 @@ public class AlertPollingService : BackgroundService
 {
     private readonly StartupConfirmationService  _confirmation;
     private readonly SocialMediaOrchestrator     _orchestrator;
+    private readonly UpdateCheckService          _updateCheck;
     private readonly NwsSettings                 _settings;
     private readonly LocationSettings            _location;
     private readonly PollingSettings             _polling;
@@ -304,6 +311,7 @@ public class AlertPollingService : BackgroundService
     public AlertPollingService(
         StartupConfirmationService  confirmation,
         SocialMediaOrchestrator     orchestrator,
+        UpdateCheckService          updateCheck,
         NwsSettings                 settings,
         LocationSettings            location,
         PollingSettings             polling,
@@ -311,6 +319,7 @@ public class AlertPollingService : BackgroundService
     {
         _confirmation = confirmation;
         _orchestrator = orchestrator;
+        _updateCheck  = updateCheck;
         _settings     = settings;
         _location     = location;
         _polling      = polling;
@@ -337,6 +346,9 @@ public class AlertPollingService : BackgroundService
         // Main polling loop
         while (!stoppingToken.IsCancellationRequested)
         {
+            // Self-throttles internally (UpdateSettings.CheckIntervalHours); a no-op when disabled.
+            await _updateCheck.CheckForUpdateAsync(stoppingToken);
+
             int newAlerts = await _orchestrator.RunAsync(stoppingToken);
 
             if (newAlerts > 0)

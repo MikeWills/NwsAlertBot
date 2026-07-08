@@ -15,13 +15,15 @@ internal class RateLimitTracker
     private readonly string _stateFilePath;
     private readonly int _limit;
     private readonly TimeSpan _window;
+    private readonly Func<DateTimeOffset> _clock;
     private readonly object _lock = new();
 
-    public RateLimitTracker(string stateFilePath, int limit, TimeSpan window)
+    public RateLimitTracker(string stateFilePath, int limit, TimeSpan window, Func<DateTimeOffset>? clock = null)
     {
         _stateFilePath = stateFilePath;
         _limit = limit;
         _window = window;
+        _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
     /// <summary>
@@ -37,7 +39,7 @@ internal class RateLimitTracker
         lock (_lock)
         {
             var (windowStart, count) = Load();
-            var now = DateTimeOffset.UtcNow;
+            var now = _clock();
 
             if (now - windowStart >= _window)
             {
@@ -63,7 +65,7 @@ internal class RateLimitTracker
         lock (_lock)
         {
             var (windowStart, count) = Load();
-            if (DateTimeOffset.UtcNow - windowStart >= _window) count = 0;
+            if (_clock() - windowStart >= _window) count = 0;
             return (count, _limit);
         }
     }
@@ -72,18 +74,18 @@ internal class RateLimitTracker
     {
         try
         {
-            if (!File.Exists(_stateFilePath)) return (DateTimeOffset.UtcNow, 0);
+            if (!File.Exists(_stateFilePath)) return (_clock(), 0);
 
             var parts = File.ReadAllText(_stateFilePath).Trim().Split('|');
-            if (parts.Length != 2) return (DateTimeOffset.UtcNow, 0);
-            if (!DateTimeOffset.TryParse(parts[0], out var windowStart)) return (DateTimeOffset.UtcNow, 0);
-            if (!int.TryParse(parts[1], out var count)) return (DateTimeOffset.UtcNow, 0);
+            if (parts.Length != 2) return (_clock(), 0);
+            if (!DateTimeOffset.TryParse(parts[0], out var windowStart)) return (_clock(), 0);
+            if (!int.TryParse(parts[1], out var count)) return (_clock(), 0);
 
             return (windowStart, count);
         }
         catch
         {
-            return (DateTimeOffset.UtcNow, 0);
+            return (_clock(), 0);
         }
     }
 

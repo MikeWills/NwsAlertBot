@@ -659,3 +659,33 @@ public class EroSettings
     public int CheckIntervalSeconds { get; set; } = 1800;
 }
 
+/// <summary>
+/// Self-update checking against GitHub Releases. Aimed at people running a standalone release
+/// binary (see scripts/update.ps1 and the release.yml pipeline that produces per-platform
+/// archives) rather than this repo owner's own continuously-deployed server (deploy.yml pushes
+/// straight from master on every commit and has no need for this).
+/// </summary>
+public class UpdateSettings
+{
+    /// <summary>
+    /// Single on/off switch for the whole feature. False: no GitHub API calls are made at all —
+    /// upgrade manually by running scripts/update.ps1 yourself whenever you want. True: checks
+    /// GitHub Releases on the configured interval and, when a newer version is found,
+    /// automatically launches scripts/update.ps1 (which downloads it, replaces the running
+    /// executable, and restarts) and shuts this process down so the script can replace it.
+    /// </summary>
+    public bool AutoApply { get; set; } = false;
+
+    /// <summary>
+    /// How often to check for a new release. Checks are cheap, but releases are infrequent —
+    /// once a day is plenty and avoids needless GitHub API calls.
+    /// </summary>
+    public int CheckIntervalHours { get; set; } = 24;
+
+    /// <summary>
+    /// GitHub "owner/repo" to check for releases. Defaults to the upstream project; change this
+    /// if you're running your own fork with its own release/tagging cadence.
+    /// </summary>
+    public string GitHubRepo { get; set; } = "MikeWills/NwsAlertBot";
+}
+

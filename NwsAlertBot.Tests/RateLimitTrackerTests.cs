@@ -35,12 +35,15 @@ public class RateLimitTrackerTests : IDisposable
     [Fact]
     public void TryAcquire_ResetsAfterWindowExpires()
     {
-        var tracker = new RateLimitTracker(_stateFilePath, limit: 1, window: TimeSpan.FromMilliseconds(50));
+        // A fake, manually-advanced clock instead of a real Thread.Sleep -- keeps this
+        // deterministic regardless of test-runner scheduling/parallelism jitter.
+        var now = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var tracker = new RateLimitTracker(_stateFilePath, limit: 1, window: TimeSpan.FromHours(1), clock: () => now);
 
         Assert.True(tracker.TryAcquire());
         Assert.False(tracker.TryAcquire()); // limit reached within the window
 
-        Thread.Sleep(100); // past the window
+        now = now.AddHours(2); // past the window
 
         Assert.True(tracker.TryAcquire()); // window rolled over, count reset
     }

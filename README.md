@@ -23,6 +23,7 @@ and DM), and Telegram — and sends real-time push notifications and SMS via Pus
 13. [Running the Bot](#running-the-bot)
 14. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
 15. [Cross-Platform Release Builds](#cross-platform-release-builds)
+16. [Auto-Update](#auto-update)
 
 ---
 
@@ -1048,6 +1049,9 @@ for Windows, Linux, and macOS (both Intel and Apple Silicon) whenever you push a
 - **Publishing:** all four archives are attached to a new GitHub Release named after the tag,
   created via the GitHub CLI (`gh release create`) using the built-in `GITHUB_TOKEN` — no
   third-party release-management action required.
+- **Versioning:** the tag (minus its leading `v`) is passed to `dotnet publish` as
+  `-p:Version=X.Y.Z`, so the running executable knows its own version — this is what
+  [Auto-Update](#auto-update) compares against GitHub Releases.
 
 ### Cutting a release
 
@@ -1057,16 +1061,82 @@ git push origin v1.0.0
 ```
 
 Produces `NwsAlertBot-win-x64.zip`, `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`,
-and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release.
+and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release, each also containing
+`scripts/update.ps1` (see [Auto-Update](#auto-update)).
 
 ### Running a downloaded build
 
-Each archive contains the executable plus `appsettings.json`. Extract it, create
+Each archive contains the executable, `appsettings.json`, and `update.ps1`. Extract it, create
 `appsettings.Local.json` alongside it with your real credentials (see
 [Keeping Secrets Out of Git](#keeping-secrets-out-of-git)), and run the executable directly —
 `./NwsAlertBot` on Linux/macOS (`chmod +x` first if the executable bit didn't survive transfer)
 or `NwsAlertBot.exe` on Windows. No .NET runtime install is required — the self-contained build
 bundles it.
+
+---
+
+## Auto-Update
+
+If you're running a downloaded release build (rather than this repo owner's own
+continuously-deployed server — see [Cross-Platform Release Builds](#cross-platform-release-builds)),
+the bot can check GitHub Releases for a newer version and optionally install it automatically.
+
+**Requires PowerShell 7+ (`pwsh`)** on the machine running the bot — it's what `update.ps1` runs
+under, cross-platform. Install it from https://github.com/PowerShell/PowerShell if it isn't
+already present (Windows PowerShell 5.1, the version that ships built into Windows, is **not**
+enough — `pwsh` is a separate, newer install).
+
+### Configuration
+
+```json
+"Update": {
+  "AutoApply": false,
+  "CheckIntervalHours": 24,
+  "GitHubRepo": "MikeWills/NwsAlertBot"
+}
+```
+
+- **`AutoApply`** is the single on/off switch for the whole feature — there's no separate
+  "check but don't install" mode. `false` (default): the bot makes no GitHub API calls at all;
+  upgrade manually whenever you want by running `update.ps1` yourself (see below). `true`: the
+  bot checks GitHub Releases every `CheckIntervalHours` and, the moment it finds a newer tagged
+  version, downloads it, replaces its own executable, and restarts itself.
+- **`CheckIntervalHours`** (default `24`) — how often to check. Releases are infrequent; there's
+  no benefit checking more than once a day.
+- **`GitHubRepo`** (default `"MikeWills/NwsAlertBot"`) — change this if you're running your own
+  fork with its own tags/releases.
+
+### What gets touched (and what doesn't)
+
+The update only ever replaces the **executable** and **`update.ps1` itself** (so future updater
+fixes apply on the next run too). It never touches `appsettings.json`, `appsettings.Local.json`,
+or any runtime state file (`posted_alerts.txt`, `confirmed_platforms.txt`, `logs/`,
+`x_post_count.txt`, `twilio_sms_count.txt`) — your configuration and history survive every
+update. The old executable is backed up to `NwsAlertBot.bak` (or `NwsAlertBot.exe.bak` on
+Windows) before being replaced, in case something goes wrong.
+
+**Restart behavior:** if a systemd service (Linux) or Windows Service named `nwsalertbot` exists,
+it's restarted via `systemctl`/`Restart-Service`. Otherwise the new executable is just launched
+directly — this covers the common case of simply running the `.exe`/binary yourself with no
+service installed.
+
+### Running it manually
+
+With `AutoApply: false` (the default), nothing happens automatically — check
+[the releases page](https://github.com/MikeWills/NwsAlertBot/releases) yourself and run:
+
+```bash
+./update.ps1 -Tag v1.2.3
+```
+
+To safely verify the script works on your machine (downloads and extracts, but doesn't touch
+your install or restart anything) before trusting it with `AutoApply: true`:
+
+```bash
+./update.ps1 -Tag v1.2.3 -DryRun
+```
+
+See `Get-Help ./update.ps1 -Full` for all parameters (`-Repo`, `-ServiceName`, etc.).
 
 ---
 
@@ -1476,6 +1546,20 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
 
 ## Recent Changes
 
+- **Add: self-update for standalone release binaries.** New `UpdateCheckService` checks GitHub
+  Releases against the running executable's own version (injected at publish time via
+  `-p:Version=` from the git tag — see `release.yml`) once per `Update.CheckIntervalHours`
+  (default 24). Single on/off switch: `Update.AutoApply` (default `false`) — no separate
+  "check but don't apply" mode, since that added a second setting for no real benefit. When
+  `true`, a newer version triggers `scripts/update.ps1` (bundled in every release archive),
+  which downloads the release, replaces only the executable and itself (never
+  `appsettings.json`/`appsettings.Local.json`/any runtime state file), backs up the old
+  executable first, and restarts via systemd/Windows Service if one exists or just relaunches
+  the binary directly otherwise. Cross-platform PowerShell (`pwsh`) script with a `-DryRun` mode
+  for safely verifying it works on a given machine before trusting it with `AutoApply: true`.
+  9 new unit tests for the pure version-parsing/comparison and check-interval logic; the
+  download/extract/restart logic was verified by hand against the project's own real `v0.1.0`
+  release before landing (see [Auto-Update](#auto-update)).
 - **Add: persisted quota/cost guards for X and Twilio.** New `RateLimitTracker` (a small,
   file-persisted fixed-window counter, deliberately not `System.Threading.RateLimiting` — see
   CLAUDE.md Common Pitfalls for why) backs two new settings: `XSettings.MaxPostsPerMonth` (default
