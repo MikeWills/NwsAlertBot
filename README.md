@@ -303,6 +303,43 @@ your install or restart anything) before trusting it with `AutoApply: true`:
 
 See `Get-Help ./update.ps1 -Full` for all parameters (`-Repo`, `-ServiceName`, etc.).
 
+### Known Limitations
+
+This feature is aimed at unattended, "set and forget" use — which is also exactly where its
+weakest points matter most, since nobody's watching. Worth understanding before turning on
+`AutoApply` unattended:
+
+- **Linux auto-restart requires passwordless `sudo`.** After swapping the executable,
+  `update.ps1` runs `sudo systemctl restart $ServiceName` non-interactively. If the account
+  running the bot doesn't have a `NOPASSWD` sudoers rule for that command, this silently fails
+  (or hangs waiting for a password that will never come) — the binary gets updated, but the old
+  process keeps running until you restart it yourself.
+- **The Windows-Service self-stop-during-update path hasn't been verified against a real
+  service.** `AutoApply` calls `StopApplication()` so `update.ps1` can swap the binary, while
+  `setup-service.ps1` separately configures Windows failure-recovery to auto-restart the service
+  if it crashes. In theory a clean, self-initiated stop reports `SERVICE_STOPPED` to the SCM and
+  doesn't trigger recovery — but this hasn't been exercised against a live Windows Service, so
+  there's a theoretical race if that assumption is wrong (recovery restarting the old exe while
+  `update.ps1` is mid-copy).
+- **No automatic rollback if a bad release is applied.** The old executable is backed up to
+  `.bak`, but nothing checks that the new version actually starts successfully and restores it
+  automatically if not — a broken release could leave the bot down indefinitely with no
+  automatic recovery.
+- **No confirmation an update actually succeeded.** Nothing logs the running version at startup,
+  so there's no way to confirm from logs (let alone a notification) that an auto-update
+  completed. Combined with the point above, a failed update can go unnoticed.
+- **No integrity check on downloaded releases** beyond HTTPS transport security — no
+  checksum/signature verification against what `release.yml` actually built.
+- **`setup-service.ps1` doesn't check `appsettings.json` exists before creating the service** —
+  if it's missing, you get a service that's created, starts, and immediately crashes, rather than
+  a clear upfront error.
+- **A locally-built dev binary (`Version` `0.0.0`) with `AutoApply: true` will always see any
+  real release as newer** and immediately overwrite itself the first time it checks — harmless in
+  practice (it just becomes a real release build), but can be surprising if unexpected.
+
+If you want the peace of mind this feature is meant to provide, start with `AutoApply: false` and
+run `update.ps1` by hand for a while, or watch the logs closely the first few times you enable it.
+
 ---
 
 ## Configuration Reference
