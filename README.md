@@ -24,6 +24,7 @@ and DM), and Telegram — and sends real-time push notifications and SMS via Pus
 14. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
 15. [Cross-Platform Release Builds](#cross-platform-release-builds)
 16. [Auto-Update](#auto-update)
+17. [Running as a Service](#running-as-a-service)
 
 ---
 
@@ -1066,12 +1067,13 @@ and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release, each also c
 
 ### Running a downloaded build
 
-Each archive contains the executable, `appsettings.json`, and `update.ps1`. Extract it, create
-`appsettings.Local.json` alongside it with your real credentials (see
-[Keeping Secrets Out of Git](#keeping-secrets-out-of-git)), and run the executable directly —
-`./NwsAlertBot` on Linux/macOS (`chmod +x` first if the executable bit didn't survive transfer)
-or `NwsAlertBot.exe` on Windows. No .NET runtime install is required — the self-contained build
-bundles it.
+Each archive contains the executable, `appsettings.json`, `update.ps1`, and `setup-service.ps1`.
+Extract it, create `appsettings.Local.json` alongside it with your real credentials (see
+[Keeping Secrets Out of Git](#keeping-secrets-out-of-git)), and either run the executable
+directly — `./NwsAlertBot` on Linux/macOS (`chmod +x` first if the executable bit didn't survive
+transfer) or `NwsAlertBot.exe` on Windows — or install it as a background service (see
+[Running as a Service](#running-as-a-service)). No .NET runtime install is required — the
+self-contained build bundles it.
 
 ---
 
@@ -1115,10 +1117,12 @@ or any runtime state file (`posted_alerts.txt`, `confirmed_platforms.txt`, `logs
 update. The old executable is backed up to `NwsAlertBot.bak` (or `NwsAlertBot.exe.bak` on
 Windows) before being replaced, in case something goes wrong.
 
-**Restart behavior:** if a systemd service (Linux) or Windows Service named `nwsalertbot` exists,
-it's restarted via `systemctl`/`Restart-Service`. Otherwise the new executable is just launched
-directly — this covers the common case of simply running the `.exe`/binary yourself with no
-service installed.
+**Restart behavior:** if a systemd service (Linux) or Windows Service named `nwsalertbot` exists
+(see [Running as a Service](#running-as-a-service) — this is the default name `setup-service.ps1`
+uses), it's restarted via `systemctl`/`Restart-Service`. Otherwise the new executable is just
+launched directly — this covers the common case of simply running the `.exe`/binary yourself with
+no service installed. If you named your service something else (e.g. running two instances —
+see below), pass the matching `-ServiceName` to `update.ps1` too.
 
 ### Running it manually
 
@@ -1137,6 +1141,62 @@ your install or restart anything) before trusting it with `AutoApply: true`:
 ```
 
 See `Get-Help ./update.ps1 -Full` for all parameters (`-Repo`, `-ServiceName`, etc.).
+
+---
+
+## Running as a Service
+
+`scripts/setup-service.ps1` (bundled in every release archive alongside `update.ps1`) installs
+the bot as a background service — a systemd unit on Linux, a Windows Service on Windows — so it
+starts on boot and restarts automatically if it crashes, without needing a terminal window left
+open. Requires PowerShell 7+ (`pwsh`), same as `update.ps1`.
+
+Must be run elevated: as **Administrator** on Windows, with **`sudo`** on Linux.
+
+```bash
+# Linux
+sudo ./setup-service.ps1 -ServiceName nwsalertbot
+
+# Windows (run PowerShell as Administrator)
+./setup-service.ps1 -ServiceName nwsalertbot
+```
+
+### Running more than one instance on the same machine
+
+Each instance needs its own install directory (its own copy of the executable +
+`appsettings.json`/`appsettings.Local.json`) and its own **`-ServiceName`** — e.g. if you're
+running this bot for two different Discord servers on one machine:
+
+```bash
+sudo ./setup-service.ps1 -ServiceName nwsalertbot-serverone -InstallDir /opt/nwsalertbot-serverone
+sudo ./setup-service.ps1 -ServiceName nwsalertbot-servertwo -InstallDir /opt/nwsalertbot-servertwo
+```
+
+If you also use [Auto-Update](#auto-update) (`Update.AutoApply: true`), each instance's
+`appsettings.json` doesn't need to know its own service name — `update.ps1` auto-detects
+whichever systemd unit/Windows Service exists using its own `-ServiceName` default
+(`nwsalertbot`), so for any instance other than the first, `Update.AutoApply` alone isn't
+enough: pass the matching name when `update.ps1` runs, or just rely on manual updates
+(`AutoApply: false`) for secondary instances.
+
+### What it does (and doesn't) do
+
+- Creates the service pointed at the executable in `-InstallDir` (default: this script's own
+  directory), with the working directory pinned there too — so `appsettings.json` and runtime
+  state files are found/written in the right place regardless of how the service starts.
+- Sets it to start automatically on boot and restart automatically on failure/crash
+  (`Restart=always` on systemd; a 3-attempt restart policy on Windows).
+- Does **not** touch `appsettings.json`, `appsettings.Local.json`, or install any credentials —
+  set those up yourself first (see [Setup](#setup)).
+- `-Uninstall` stops and removes the service registration only — it doesn't delete the
+  executable, config, or any runtime state file.
+- `-DryRun` reports exactly what would be created/removed without touching anything — safe to
+  run without elevation.
+
+### macOS
+
+Not supported by this script yet — run the executable directly, or set up a `launchd` `.plist`
+manually.
 
 ---
 
@@ -1546,6 +1606,19 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
 
 ## Recent Changes
 
+- **Add: `scripts/setup-service.ps1` to install NwsAlertBot as a background service.** Creates a
+  systemd unit (Linux) or Windows Service (Windows), pointed at the executable with its working
+  directory pinned correctly, set to start on boot and restart on failure. `-ServiceName` lets
+  you run more than one instance on the same machine under different names (e.g. one bot per
+  Discord server) — `update.ps1`'s own `-ServiceName` must match for its auto-restart-after-update
+  logic to find the right service. Required two supporting fixes for Windows Service mode to
+  work at all: added `Microsoft.Extensions.Hosting.WindowsServices` + `.UseWindowsService()` (a
+  no-op everywhere else) since a bare console app doesn't respond to the Windows Service Control
+  Manager's start/stop handshake and gets killed almost immediately otherwise; and pinned the
+  process's working directory to the executable's own folder at startup, since Windows Services
+  otherwise default to `C:\Windows\System32` and every relative path in this app
+  (`appsettings.json`, state files, `logs/`) would resolve against the wrong directory. `-DryRun`
+  mode (works without elevation) reports what would happen without creating/removing anything.
 - **Add: self-update for standalone release binaries.** New `UpdateCheckService` checks GitHub
   Releases against the running executable's own version (injected at publish time via
   `-p:Version=` from the git tag — see `release.yml`) once per `Update.CheckIntervalHours`

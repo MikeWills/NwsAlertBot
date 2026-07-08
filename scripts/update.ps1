@@ -163,6 +163,12 @@ try {
         Write-Step "Updating update.ps1 itself for next time"
         Copy-Item -Path $newScriptPath -Destination (Join-Path $InstallDir "update.ps1") -Force
     }
+
+    $newSetupScriptPath = Join-Path $extractDir "setup-service.ps1"
+    if (Test-Path $newSetupScriptPath) {
+        Write-Step "Updating setup-service.ps1 for next time"
+        Copy-Item -Path $newSetupScriptPath -Destination (Join-Path $InstallDir "setup-service.ps1") -Force
+    }
 }
 finally {
     Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue

@@ -14,6 +14,13 @@ using NwsAlertBot.Services;
 // Built with .NET 8 Console App / Generic Host
 // ---------------------------------------------------------------
 
+// A Windows Service's working directory defaults to C:\Windows\System32, not the executable's
+// own folder -- and there's no service-creation parameter that can override that. Every relative
+// path in this app (appsettings.json, posted_alerts.txt, logs/, etc.) is resolved against the
+// process's current directory, so this must run before anything else touches the filesystem.
+// Harmless when run interactively or under systemd (WorkingDirectory= already points here).
+Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+
 LocalConfigSync.Run();
 
 // Write a startup separator to both the console and the daily log file so it's
@@ -31,6 +38,11 @@ LocalConfigSync.Run();
 }
 
 var host = Host.CreateDefaultBuilder(args)
+    // No-op unless actually running under the Windows Service Control Manager (interactive runs,
+    // and systemd on Linux, are unaffected) -- required for the process to respond to the SCM's
+    // start/stop handshake at all. Without it, Windows kills a service-wrapped console app almost
+    // immediately (error 1053). See scripts/setup-service.ps1 for creating the actual service.
+    .UseWindowsService()
     .ConfigureAppConfiguration(config =>
     {
         config.AddJsonFile("appsettings.json",       optional: false, reloadOnChange: false);
