@@ -97,7 +97,10 @@ Every new platform must:
    - Structured logging via `ILogger`; try/catch returning `false` on failure
 3. Be registered in `Program.cs` with `services.AddHttpClient<{Platform}Service>()`.
 4. Be injected into both `SocialMediaOrchestrator` and `StartupConfirmationService` and added to their respective task lists.
-5. Have a settings block in `appsettings.json` (alphabetical within category: social media first, then notifications).
+5. Have a settings block in `appsettings.json` (alphabetical within category: "social media" — Bluesky,
+   Discord, DiscordDm, Facebook, Instagram, Mastodon, Telegram, X — first, then "notifications" —
+   Pushover, Twilio, VoipMs. Chat/bot-posted platforms like Discord and Telegram count as social
+   media, not notifications, even though they're not traditional public broadcast platforms.).
 6. Have a setup section in `README.md`.
 
 ### 6. NWS API filtering is server-side
