@@ -43,9 +43,9 @@ public class DiscordService
 
         var embed = new Dictionary<string, object?>
         {
-            ["title"]       = Truncate($"{alert.Event} — {alert.AreaDesc}", 256),
+            ["title"]       = PlatformHelpers.TruncateWithEllipsis($"{alert.Event} — {alert.AreaDesc}", 256),
             ["description"] = alert.FormatPost(EmbedDescriptionLimit),
-            ["color"]       = GetColor(alert.Severity),
+            ["color"]       = PlatformHelpers.DiscordSeverityColor(alert.Severity),
         };
         if (!string.IsNullOrWhiteSpace(alert.SenderName))
             embed["footer"] = new { text = alert.SenderName };
@@ -127,15 +127,4 @@ public class DiscordService
         }
     }
 
-    private static int GetColor(string? severity) => severity?.ToLower() switch
-    {
-        "extreme"  => 0xE53935, // red
-        "severe"   => 0xFB8C00, // orange
-        "moderate" => 0xFDD835, // yellow
-        "minor"    => 0x43A047, // green
-        _          => 0x757575  // grey
-    };
-
-    private static string Truncate(string value, int maxLength) =>
-        value.Length <= maxLength ? value : value[..(maxLength - 3)] + "...";
 }

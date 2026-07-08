@@ -41,7 +41,7 @@ public class BlueskyService
     public bool IncludeEro        => _settings.IncludeEro;
 
     public Task<bool> SendConfirmationAsync(string message) =>
-        PostTextAsync(message.Length > CharLimit ? message[..(CharLimit - 3)] + "..." : message, "confirmation");
+        PostTextAsync(PlatformHelpers.TruncateWithEllipsis(message, CharLimit), "confirmation");
 
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {

@@ -37,7 +37,7 @@ public class MastodonService
     public bool IncludeEro        => _settings.IncludeEro;
 
     public Task<bool> SendConfirmationAsync(string message) =>
-        PostStatusAsync(message.Length > CharLimit ? message[..(CharLimit - 3)] + "..." : message, "confirmation");
+        PostStatusAsync(PlatformHelpers.TruncateWithEllipsis(message, CharLimit), "confirmation");
 
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {

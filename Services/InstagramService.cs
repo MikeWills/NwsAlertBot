@@ -43,15 +43,8 @@ public class InstagramService
         if (!_settings.Enabled) return false;
         // Cache-bust the dynamic map URL so Instagram's servers don't serve a stale cached image.
         // Fall back to the static ImageUrl (no cache-bust needed — it doesn't change).
-        var imageUrl = CacheBust(alert.MapImageUrl, alert.Id) ?? _settings.ImageUrl;
+        var imageUrl = PlatformHelpers.CacheBust(alert.MapImageUrl, alert.Id) ?? _settings.ImageUrl;
         return await PostCaptionAsync(alert.FormatPost(maxLength: 2200), alert.Event, imageUrl);
-    }
-
-    private static string? CacheBust(string? url, string alertId)
-    {
-        if (string.IsNullOrEmpty(url)) return null;
-        string sep = url.Contains('?') ? "&" : "?";
-        return url + $"{sep}_cb={Uri.EscapeDataString(alertId)}";
     }
 
     private async Task<bool> PostCaptionAsync(string caption, string label, string? imageUrl = null)

@@ -49,7 +49,7 @@ public class VoipMsService
     public async Task<bool> SendAlertAsync(NwsAlert alert)
     {
         if (!_settings.Enabled) return false;
-        return await SendToAllAsync(BuildSmsText(alert, MaxSmsLength), alert.Event);
+        return await SendToAllAsync(PlatformHelpers.BuildSmsText(alert, MaxSmsLength), alert.Event);
     }
 
     private async Task<bool> SendToAllAsync(string message, string label)
@@ -76,7 +76,7 @@ public class VoipMsService
         message = SanitizeForSms(message);
         // Safety net only -- BuildSmsText already fits alert messages within MaxSmsLength field
         // by field. This plain truncation only applies to confirmation messages (plain strings).
-        if (message.Length > MaxSmsLength) message = message[..(MaxSmsLength - 3)] + "...";
+        message = PlatformHelpers.TruncateWithEllipsis(message, MaxSmsLength);
 
         var tasks = _settings.ToNumbers.Select(to => SendSmsAsync(to, message, label));
         var results = await Task.WhenAll(tasks);
@@ -149,48 +149,5 @@ public class VoipMsService
             if (c < 128) sb.Append(c);
 
         return sb.ToString().Trim();
-    }
-
-    /// <summary>
-    /// Builds the SMS body, fitting it within maxLength one field at a time: the header always
-    /// appears, and each of area/until/instruction is included only if it fits whole -- never
-    /// truncated mid-field (which would otherwise show a useless fragment like "Until: ...").
-    /// The details link is reserved for last and always kept if it fits at all.
-    /// </summary>
-    private static string BuildSmsText(NwsAlert alert, int maxLength)
-    {
-        string header = $"NWS ALERT: {alert.Event}";
-
-        // SPC MCD/Outlook embed the details link at the end of Instruction so platforms that
-        // only render Instruction (no separate DetailsUrl line) still show it. SMS appends the
-        // link separately below, so strip a trailing duplicate here rather than showing it twice.
-        string instruction = alert.Instruction;
-        if (!string.IsNullOrWhiteSpace(alert.DetailsUrl) && !string.IsNullOrWhiteSpace(instruction))
-        {
-            string suffix = "\n" + alert.DetailsUrl;
-            if (instruction.EndsWith(suffix, StringComparison.Ordinal))
-                instruction = instruction[..^suffix.Length];
-        }
-
-        var expiresAt = alert.Ends ?? alert.Expires;
-        string detailsLine = !string.IsNullOrWhiteSpace(alert.DetailsUrl) ? $"\nDetails: {alert.DetailsUrl}" : "";
-
-        string[] optionalLines =
-        {
-            !string.IsNullOrWhiteSpace(alert.AreaDesc) ? $"\n{alert.AreaDesc}" : "",
-            expiresAt.HasValue ? $"\nUntil: {expiresAt.Value.ToLocalTime():ddd h:mm tt zzz}" : "",
-            !string.IsNullOrWhiteSpace(instruction) ? $"\n{instruction}" : "",
-        };
-
-        string body = header;
-        int budget = maxLength - detailsLine.Length;
-        foreach (var line in optionalLines)
-        {
-            if (line.Length > 0 && body.Length + line.Length <= budget)
-                body += line;
-        }
-
-        string result = body + detailsLine;
-        return result.Length <= maxLength ? result : result[..(maxLength - 3)] + "...";
     }
 }

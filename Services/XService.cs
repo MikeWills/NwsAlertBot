@@ -38,7 +38,7 @@ public class XService
     public bool IncludeEro        => _settings.IncludeEro;
 
     public Task<bool> SendConfirmationAsync(string message) =>
-        PostTextAsync(message.Length > 280 ? message[..277] + "..." : message, "confirmation");
+        PostTextAsync(PlatformHelpers.TruncateWithEllipsis(message, 280), "confirmation");
 
     public async Task<bool> PostAlertAsync(NwsAlert alert)
     {
