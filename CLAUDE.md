@@ -78,7 +78,7 @@ The project uses only:
 - `Microsoft.Extensions.Configuration.Json`
 - Built-in `System.Text.Json` (no Newtonsoft)
 
-Do **not** add third-party packages without explicit instruction.
+You can find and suggest third-party packages, but do **not** add third-party packages without asking.
 
 ### 5. All new platforms follow the established pattern
 
