@@ -1439,6 +1439,17 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Recent Changes
 
+- **Refactor: extracted duplicated per-platform text/URL helpers into `Services/PlatformHelpers.cs`.**
+  `BuildSmsText` was byte-for-byte identical between `TwilioService` and `VoipMsService`; `CacheBust`
+  was identical between `InstagramService` and `TwilioService`; `Truncate`/`GetColor` (renamed
+  `DiscordSeverityColor`) were identical between `DiscordService` and `DiscordDmService`; and the
+  ad-hoc `value.Length > N ? value[..(N-3)] + "..." : value` truncation pattern was repeated
+  independently in X, Bluesky, Mastodon, Pushover, Twilio, and VoIP.ms. All consolidated into one
+  shared `PlatformHelpers` static class (`TruncateWithEllipsis`, `CacheBust`, `BuildSmsText`,
+  `DiscordSeverityColor`). Net -57 lines across 9 files.
+  **Fix included**: Pushover's alert title truncation (`PushoverService.SendAlertAsync`) previously
+  hard-cut at 250 chars with no ellipsis, unlike every other truncation in the codebase — now uses
+  the shared helper and gets the same "..." marker as everywhere else.
 - **Refactor: replaced hand-rolled computational geometry with NetTopologySuite.** `PolygonGeometry.cs`
   and `MapService.cs` previously hand-rolled ~500 lines of GIS logic: a Graham-scan convex hull, a
   custom edge-counting polygon dissolve (for merging adjacent county/zone shapes into an outer

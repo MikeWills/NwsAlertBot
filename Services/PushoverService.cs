@@ -44,8 +44,7 @@ public class PushoverService
             ? _settings.ExtremePriority
             : _settings.DefaultPriority;
 
-        string title = $"⚠️ {alert.Event}";
-        if (title.Length > 250) title = title[..250];
+        string title = PlatformHelpers.TruncateWithEllipsis($"⚠️ {alert.Event}", 250);
 
         return await SendAsync(title, BuildBody(alert), priority, alert.Event);
     }
@@ -57,7 +56,7 @@ public class PushoverService
         try
         {
             // Pushover 1024-char body limit
-            if (message.Length > 1024) message = message[..1021] + "...";
+            message = PlatformHelpers.TruncateWithEllipsis(message, 1024);
 
             var formData = new List<KeyValuePair<string, string>>
             {
