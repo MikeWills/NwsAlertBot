@@ -347,7 +347,8 @@ public class AlertPollingService : BackgroundService
                 : string.IsNullOrWhiteSpace(_settings.State) ? "Nationwide" : $"State: {_settings.State}";
 
         _logger.LogInformation(
-            "NWS Alert Bot started. Idle poll: {Idle}s | Active poll: {Active}s (window: {Hours}h) | {GeoFilter} | Min severity: {Severity} | Active mode trigger: {ActiveMinSeverity}",
+            "NWS Alert Bot v{Version} started. Idle poll: {Idle}s | Active poll: {Active}s (window: {Hours}h) | {GeoFilter} | Min severity: {Severity} | Active mode trigger: {ActiveMinSeverity}",
+            UpdateCheckService.GetCurrentVersion()?.ToString() ?? "unknown",
             _polling.PollIntervalSeconds, _polling.ActiveAlertPollIntervalSeconds,
             _polling.ActiveAlertWindowHours, geoFilter, _settings.FilterSeverity,
             string.IsNullOrWhiteSpace(_polling.ActiveAlertMinSeverity) ? "any" : _polling.ActiveAlertMinSeverity);

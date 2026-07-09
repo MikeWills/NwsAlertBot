@@ -39,6 +39,16 @@
 .PARAMETER DryRun
     Reports what would be done without actually creating, modifying, or removing anything.
 
+.PARAMETER ConfigurePasswordlessSudo
+    Linux only. If you plan to use Update.AutoApply, update.ps1's restart step runs
+    "sudo systemctl restart <ServiceName>" non-interactively -- without passwordless sudo for
+    that exact command, it silently fails or hangs waiting for a password that will never come.
+    This switch writes a narrowly-scoped drop-in to /etc/sudoers.d/ granting the current user
+    NOPASSWD for *only* "systemctl restart <ServiceName>" (validated with `visudo -c` before
+    being installed, so a malformed rule is never actually applied). Off by default -- modifying
+    sudoers is a real security-relevant change and shouldn't happen as a silent side effect of
+    installing a service.
+
 .EXAMPLE
     sudo ./setup-service.ps1 -ServiceName nwsalertbot-mainserver
 
@@ -49,13 +59,18 @@
 
 .EXAMPLE
     sudo ./setup-service.ps1 -ServiceName nwsalertbot-mainserver -Uninstall
+
+.EXAMPLE
+    # Also grants passwordless "systemctl restart nwsalertbot-mainserver", needed for AutoApply
+    sudo ./setup-service.ps1 -ServiceName nwsalertbot-mainserver -ConfigurePasswordlessSudo
 #>
 param(
     [string]$ServiceName,
     [string]$InstallDir = $PSScriptRoot,
     [string]$Description,
     [switch]$Uninstall,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$ConfigurePasswordlessSudo
 )
 
 $ErrorActionPreference = "Stop"
@@ -108,6 +123,11 @@ $exePath = Join-Path $InstallDir $exeName
 
 if (-not $Uninstall -and -not (Test-Path $exePath)) {
     Write-Error "Executable not found at $exePath. Run this script from the same directory as $exeName (or pass -InstallDir)."
+    exit 1
+}
+
+if (-not $Uninstall -and -not (Test-Path (Join-Path $InstallDir "appsettings.json"))) {
+    Write-Error "appsettings.json not found in $InstallDir. The bot requires it to start (it's not optional) -- without this check, the service would be created, start, and immediately crash-loop instead of failing with a clear error here. Extract the full release archive, or copy appsettings.json alongside the executable, before running this script."
     exit 1
 }
 
@@ -171,6 +191,7 @@ if ($IsWindows) {
 # --- Linux -----------------------------------------------------------------------------------
 elseif ($IsLinux) {
     $unitPath = "/etc/systemd/system/$ServiceName.service"
+    $sudoersPath = "/etc/sudoers.d/$ServiceName-update"
 
     if ($Uninstall) {
         if (-not (Test-Path $unitPath)) {
@@ -178,7 +199,7 @@ elseif ($IsLinux) {
             exit 0
         }
         if ($DryRun) {
-            Write-Step "-DryRun: would stop, disable, and remove $unitPath."
+            Write-Step "-DryRun: would stop, disable, and remove $unitPath (and $sudoersPath if present)."
             exit 0
         }
         Write-Step "Stopping and removing systemd unit '$ServiceName'..."
@@ -186,6 +207,10 @@ elseif ($IsLinux) {
         sudo systemctl disable $ServiceName 2>$null
         sudo rm -f $unitPath
         sudo systemctl daemon-reload
+        if (Test-Path $sudoersPath) {
+            sudo rm -f $sudoersPath
+            Write-Step "Removed passwordless-sudo rule $sudoersPath."
+        }
         Write-Step "Removed."
         exit 0
     }
@@ -216,6 +241,9 @@ WantedBy=multi-user.target
     if ($DryRun) {
         Write-Step "-DryRun: would write the following unit to $unitPath, then enable and start it:"
         Write-Host $unitContent
+        if ($ConfigurePasswordlessSudo) {
+            Write-Step "-DryRun: would also write a passwordless-sudo rule for 'systemctl restart $ServiceName' to $sudoersPath."
+        }
         exit 0
     }
 
@@ -230,6 +258,28 @@ WantedBy=multi-user.target
 
     Write-Step "Service '$ServiceName' installed and started."
     Write-Step "Manage it with: systemctl {status|stop|start|restart} $ServiceName"
+
+    if ($ConfigurePasswordlessSudo) {
+        # Scoped to exactly the one command update.ps1 actually invokes non-interactively --
+        # least privilege, rather than a blanket NOPASSWD for all of systemctl.
+        $currentUserForSudo = (whoami).Trim()
+        $sudoersLine = "$currentUserForSudo ALL=(ALL) NOPASSWD: /bin/systemctl restart $ServiceName`n"
+        $tempSudoers = [System.IO.Path]::GetTempFileName()
+        try {
+            Set-Content -Path $tempSudoers -Value $sudoersLine -NoNewline
+            sudo visudo -c -f $tempSudoers | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                sudo install -m 0440 -o root -g root $tempSudoers $sudoersPath
+                Write-Step "Granted passwordless 'systemctl restart $ServiceName' via $sudoersPath (required for Update.AutoApply's restart-after-update step)."
+            }
+            else {
+                Write-Step "WARNING: sudoers syntax validation failed -- skipped passwordless-sudo setup. Update.AutoApply's restart step will hang/fail without it; see README 'Known Limitations'."
+            }
+        }
+        finally {
+            Remove-Item -Path $tempSudoers -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 # --- macOS -------------------------------------------------------------------------------------
 elseif ($IsMacOS) {

@@ -15,6 +15,10 @@ namespace NwsAlertBot.Services;
 /// </summary>
 public class UpdateCheckService
 {
+    // NwsAlertBot.csproj's default <Version>0.0.0</Version> — only ever seen on local/dev builds,
+    // since release.yml always injects a real -p:Version=X.Y.Z from the git tag.
+    internal static readonly Version UnversionedDevBuild = new(0, 0, 0, 0);
+
     private readonly HttpClient _http;
     private readonly UpdateSettings _settings;
     private readonly IHostApplicationLifetime _appLifetime;
@@ -51,6 +55,16 @@ public class UpdateCheckService
             if (currentVersion == null)
             {
                 _logger.LogWarning("Update check: could not determine the running version; skipping.");
+                return;
+            }
+
+            if (currentVersion == UnversionedDevBuild)
+            {
+                _logger.LogWarning(
+                    "Update check: running version 0.0.0 (a local/dev build, not a tagged release) — skipping. " +
+                    "AutoApply would otherwise treat every GitHub release as newer and immediately overwrite this " +
+                    "build. If this is meant to be a real release, publish it via release.yml (git tag + push, " +
+                    "which injects -p:Version=X.Y.Z) rather than a plain dotnet publish.");
                 return;
             }
 
