@@ -306,6 +306,16 @@ exists (see [Running as a Service](#running-as-a-service)), it's restarted via
 `systemctl`/`Restart-Service`. Otherwise the new executable is just launched directly — this
 covers the common case of simply running the `.exe`/binary yourself with no service installed.
 
+**Automatic rollback:** after starting the new version, `update.ps1` waits 15 seconds (configurable
+via `-RollbackCheckDelaySeconds`) and checks whether it's still running/active. If not — it
+crashed, or failed to start at all — the previous executable is automatically restored from its
+`.bak` backup and restarted, so a bad release doesn't leave the bot down indefinitely with no
+recovery. This is a lightweight check (just "did it not immediately crash," not real application
+health — there's no health endpoint to call), but it catches the most common failure mode: a
+release that doesn't start at all. If the rollback itself also fails to start, that's logged as an
+error requiring manual intervention (this would mean something else is wrong — e.g. a corrupted
+`.bak`, or the previous version had already stopped working for an unrelated reason).
+
 ### Running it manually
 
 With `AutoApply: false` (the default), nothing happens automatically — check
@@ -346,10 +356,6 @@ weakest points matter most, since nobody's watching. Worth understanding before 
   doesn't trigger recovery — but this hasn't been exercised against a live Windows Service, so
   there's a theoretical race if that assumption is wrong (recovery restarting the old exe while
   `update.ps1` is mid-copy).
-- **No automatic rollback if a bad release is applied.** The old executable is backed up to
-  `.bak`, but nothing checks that the new version actually starts successfully and restores it
-  automatically if not — a broken release could leave the bot down indefinitely with no
-  automatic recovery.
 - **No integrity check on downloaded releases** beyond HTTPS transport security — no
   checksum/signature verification against what `release.yml` actually built.
 
@@ -1680,6 +1686,18 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
 
 ## Recent Changes
 
+- **Fix: `update.ps1` now automatically rolls back a bad release.** After restarting, it waits
+  `-RollbackCheckDelaySeconds` (default 15s) and checks whether the new version is still
+  running/active (`Start-BotService` reports how it was started — systemd, Windows Service, or a
+  direct process; `Test-BotIsRunning` checks accordingly). If not, the previous executable is
+  automatically restored from its `.bak` backup and restarted, instead of leaving the bot down
+  indefinitely with no recovery. Lightweight by design — process/service-alive only, not a real
+  app health check, since there's no health endpoint to call — but it catches the most common
+  failure mode (a release that doesn't start at all). Verified end-to-end against real PE
+  executables standing in for a healthy vs. crashing release (a tiny purpose-built
+  `Thread.Sleep`-only console app for "stays running," `hostname.exe` for "exits immediately"),
+  since neither an interactive shell nor a GUI app reliably stays running in a sandboxed/headless
+  test environment. Closes one of the three remaining Auto-Update "Known Limitations."
 - **Fix: four of the Auto-Update / Running as a Service "Known Limitations" from the previous
   entry.** `AlertPollingService` now logs the running version at startup, closing "no confirmation
   an update succeeded" — after `AutoApply` restarts the bot, the new version shows up in logs.
