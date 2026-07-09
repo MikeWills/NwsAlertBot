@@ -316,6 +316,16 @@ release that doesn't start at all. If the rollback itself also fails to start, t
 error requiring manual intervention (this would mean something else is wrong — e.g. a corrupted
 `.bak`, or the previous version had already stopped working for an unrelated reason).
 
+**Checksum verification:** `release.yml` publishes a `checksums.txt` (SHA256, one line per asset)
+alongside every release's archives. Before extracting anything, `update.ps1` downloads
+`checksums.txt` and verifies the downloaded archive's hash matches — aborting with no changes made
+if the entry is missing or doesn't match. This protects against a corrupted upload or transport-level
+tampering. It does **not** protect against a genuinely compromised `release.yml`/repo/`GITHUB_TOKEN`
+— an attacker who can push a malicious release can just as easily update `checksums.txt` to match.
+Real supply-chain protection against that threat would need cryptographic signing, which is a much
+bigger lift (key generation, secure storage, rotation) than this project's threat model currently
+justifies.
+
 ### Running it manually
 
 With `AutoApply: false` (the default), nothing happens automatically — check
@@ -325,8 +335,8 @@ With `AutoApply: false` (the default), nothing happens automatically — check
 ./update.ps1 -Tag v1.2.3
 ```
 
-To safely verify the script works on your machine (downloads and extracts, but doesn't touch
-your install or restart anything) before trusting it with `AutoApply: true`:
+To safely verify the script works on your machine (downloads, checksum-verifies, and extracts, but
+doesn't touch your install or restart anything) before trusting it with `AutoApply: true`:
 
 ```bash
 ./update.ps1 -Tag v1.2.3 -DryRun
@@ -356,12 +366,8 @@ weakest points matter most, since nobody's watching. Worth understanding before 
   doesn't trigger recovery — but this hasn't been exercised against a live Windows Service, so
   there's a theoretical race if that assumption is wrong (recovery restarting the old exe while
   `update.ps1` is mid-copy).
-- **No integrity check on downloaded releases** beyond HTTPS transport security — no
-  checksum/signature verification against what `release.yml` actually built.
-
-See `docs/plans/auto-update-remaining-limitations.md` for a concrete write-up of both of these —
-how to actually verify the Windows-Service race live, and an implementation sketch (plus the
-honest scope of what it would and wouldn't protect against) for checksum verification.
+See `docs/plans/auto-update-remaining-limitations.md` for a concrete write-up of the
+Windows-Service race above, including how to actually verify it live.
 
 If you want the peace of mind this feature is meant to provide, start with `AutoApply: false` and
 run `update.ps1` by hand for a while, or watch the logs closely the first few times you enable it.

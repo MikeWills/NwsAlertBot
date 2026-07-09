@@ -1,12 +1,12 @@
 # Auto-Update: Remaining Known Limitations
 
-> **Status: documented, not yet implemented.** Two items remain from the original 7-item
-> "Known Limitations" list (README, under Auto-Update). Four were fixed outright (startup
-> version logging, `setup-service.ps1`'s `appsettings.json` pre-check, the dev-build/`0.0.0`
-> guard, opt-in passwordless-sudo) and one (no automatic rollback) was fixed with
-> `update.ps1`'s `Start-BotService`/`Test-BotIsRunning` health check. These two are left because
-> one needs live infrastructure this session doesn't have, and the other is real feature work
-> with a design tradeoff worth writing down before building.
+> **Status: item 1 still open, item 2 implemented (see below).** Of the original 7-item
+> "Known Limitations" list (README, under Auto-Update), five were previously fixed outright
+> (startup version logging, `setup-service.ps1`'s `appsettings.json` pre-check, the
+> dev-build/`0.0.0` guard, opt-in passwordless-sudo, and automatic rollback via
+> `update.ps1`'s `Start-BotService`/`Test-BotIsRunning` health check). Item 2 (checksum
+> verification) is now also fixed — see below. Item 1 remains open because it needs live
+> infrastructure this session doesn't have.
 
 ## 1. Windows-Service self-stop-during-update race (needs live verification, not code)
 
@@ -60,6 +60,15 @@ Microsoft-documented supported pattern), the fix here is just to update the READ
 "Known Limitations" language to reflect that it's now verified — no code change needed.
 
 ## 2. Checksum/signature verification on downloaded releases
+
+> **Status: implemented.** `release.yml`'s `release` job now runs `sha256sum * > checksums.txt`
+> over the downloaded artifacts before `gh release create`, so `checksums.txt` rides along with
+> every release automatically. `update.ps1` downloads it right after downloading the release
+> archive (unconditionally — including under `-DryRun`) and aborts before extracting anything if
+> the entry for the current asset is missing or the hash doesn't match. README "Known
+> Limitations" and Auto-Update sections, and `CLAUDE.md`'s Common Pitfalls entry, updated to
+> reflect this and its honest scope (see below — this doesn't protect against a compromised
+> `release.yml`/repo/token).
 
 **What's missing**: `update.ps1` downloads a release archive over HTTPS with no verification that
 the bytes it receives match what `release.yml` actually built — HTTPS protects against

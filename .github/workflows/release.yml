@@ -90,6 +90,12 @@ jobs:
           path: ./artifacts
           merge-multiple: true
 
+      - name: Compute checksums
+        # update.ps1 downloads this alongside the release asset to verify the bytes it received
+        # match what this workflow actually built, before trusting them enough to extract/install.
+        working-directory: ./artifacts
+        run: sha256sum * > checksums.txt
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
