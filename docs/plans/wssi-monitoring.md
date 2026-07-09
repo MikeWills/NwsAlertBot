@@ -2,7 +2,7 @@
 
 > **Status: proposed, not yet implemented.** This is a design doc for review — see CLAUDE.md's
 > "Non-Negotiable Rules" for what a real implementation must also update (README.md,
-> appsettings.json) once this is approved.
+> docs/TECHNICAL.md, appsettings.json, CHANGELOG.md) once this is approved.
 
 ## Context
 
@@ -145,11 +145,16 @@ of this is repeating a known-good shape rather than inventing a new one.
   next to `"Ero"`, plus `"IncludeWssi": true` added to all 11 platform blocks. Update the shared
   header comments (Location/Polling/SPC-feeds sections) to mention `Wssi` alongside `Ero`, same as
   was done for the ERO feature.
-- **`README.md`**: new "WPC Winter Storm Severity Index (WSSI)" section (How it works / severity
-  table / Setup), TOC entry, Configuration Reference entries (`Wssi` block + `IncludeWssi` row),
-  Recent Changes entry. Explicitly note in the doc that the shapefile-only snowfall/ice probability
-  products from the same Winter Weather Desk page were evaluated and intentionally left out (so a
-  future session doesn't re-litigate that research).
+- **`README.md`**: new row in the "Additional Alert Feeds" table (feed name, one-line description,
+  `Enabled`/`CheckIntervalSeconds` snippet, link to its docs/TECHNICAL.md section) — same pattern
+  as the existing SPC Outlook/MCD/HWO/ERO rows.
+- **`docs/TECHNICAL.md`**: new "WPC Winter Storm Severity Index (WSSI) — How It Works" section
+  (How it works / severity table / per-platform filtering), plus Configuration Reference entries
+  (`Wssi` block + `IncludeWssi` row) alongside the existing `Ero` ones. Explicitly note in the doc
+  that the shapefile-only snowfall/ice probability products from the same Winter Weather Desk page
+  were evaluated and intentionally left out (so a future session doesn't re-litigate that
+  research).
+- **`CHANGELOG.md`**: new entry at the top describing the feature.
 
 ### Not in scope for this plan
 - The shapefile-only snowfall/ice accumulation probability products (no GeoJSON/REST feed exists).

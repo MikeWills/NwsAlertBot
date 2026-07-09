@@ -273,7 +273,7 @@ WantedBy=multi-user.target
                 Write-Step "Granted passwordless 'systemctl restart $ServiceName' via $sudoersPath (required for Update.AutoApply's restart-after-update step)."
             }
             else {
-                Write-Step "WARNING: sudoers syntax validation failed -- skipped passwordless-sudo setup. Update.AutoApply's restart step will hang/fail without it; see README 'Known Limitations'."
+                Write-Step "WARNING: sudoers syntax validation failed -- skipped passwordless-sudo setup. Update.AutoApply's restart step will hang/fail without it; see docs/TECHNICAL.md 'Known Limitations'."
             }
         }
         finally {

@@ -1,7 +1,7 @@
 # Auto-Update: Remaining Known Limitations
 
 > **Status: item 1 still open, item 2 implemented (see below).** Of the original 7-item
-> "Known Limitations" list (README, under Auto-Update), five were previously fixed outright
+> "Known Limitations" list (docs/TECHNICAL.md, under Auto-Update), five were previously fixed outright
 > (startup version logging, `setup-service.ps1`'s `appsettings.json` pre-check, the
 > dev-build/`0.0.0` guard, opt-in passwordless-sudo, and automatic rollback via
 > `update.ps1`'s `Start-BotService`/`Test-BotIsRunning` health check). Item 2 (checksum
@@ -51,12 +51,12 @@ none of this is achievable through code review or a sandboxed test):
   duration of the update, and have `update.ps1` restore them (or just leave them cleared —
   `setup-service.ps1` could re-apply them on next run, or `update.ps1` could re-run the same
   `sc.exe failure` command after the swap completes).
-- **Already partially mitigated**: the rollback health check added for item 3 (see README) will
+- **Already partially mitigated**: the rollback health check added for item 3 (see docs/TECHNICAL.md, under Auto-Update) will
   still catch a genuinely broken end state even if this race occurs — it's not a fix for the race
   itself, but it limits the blast radius of one going wrong.
 
 If live testing confirms the assumption holds (most likely outcome, since this is a
-Microsoft-documented supported pattern), the fix here is just to update the README/CLAUDE.md
+Microsoft-documented supported pattern), the fix here is just to update the docs/TECHNICAL.md/CLAUDE.md
 "Known Limitations" language to reflect that it's now verified — no code change needed.
 
 ## 2. Checksum/signature verification on downloaded releases
@@ -64,7 +64,7 @@ Microsoft-documented supported pattern), the fix here is just to update the READ
 > **Status: implemented.** `release.yml`'s `release` job publishes a `checksums.txt` (SHA256 per
 > asset); `update.ps1` downloads it right after downloading the release archive and verifies the
 > hash before extracting anything, aborting on a missing/mismatched entry (unconditionally,
-> including under `-DryRun`). See README "Auto-Update" → "Checksum verification" for the
+> including under `-DryRun`). See docs/TECHNICAL.md "Auto-Update" → "Checksum verification" for the
 > user-facing writeup and honest scope (protects against corrupted uploads/transport tampering,
 > not a compromised `release.yml`/repo/`GITHUB_TOKEN` — that would need cryptographic signing,
 > a meaningfully bigger lift not currently justified for this project's threat model). No

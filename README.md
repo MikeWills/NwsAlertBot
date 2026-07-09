@@ -4,50 +4,70 @@ A .NET 10 C# console application that polls the National Weather Service API for
 alerts and posts them to Facebook, Instagram, X (Twitter), Bluesky, Mastodon, Discord (webhook
 and DM), and Telegram — and sends real-time push notifications and SMS via Pushover, Twilio, and VoIP.ms.
 
+This document covers setup, running, and configuration. For architecture, internals, and the
+complete configuration field reference, see [docs/TECHNICAL.md](docs/TECHNICAL.md). To build the
+project, run tests, or cut a release, see [CONTRIBUTING.md](CONTRIBUTING.md). For a running
+history of changes, see [CHANGELOG.md](CHANGELOG.md).
+
 ---
 
 ## Table of Contents
 
 1. [Setup](#setup)
 2. [Running the Bot](#running-the-bot)
-3. [Cross-Platform Release Builds](#cross-platform-release-builds)
-4. [Running as a Service](#running-as-a-service)
-5. [Auto-Update](#auto-update)
-6. [Configuration Reference](#configuration-reference)
-7. [Geographic Filtering: Zones and Counties](#geographic-filtering-zones-and-counties)
-8. [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)
-9. [SPC Mesoscale Discussion Monitoring](#spc-mesoscale-discussion-monitoring)
-10. [Hazardous Weather Outlook (HWO)](#hazardous-weather-outlook-hwo)
-11. [WPC Excessive Rainfall Outlook (ERO)](#wpc-excessive-rainfall-outlook-ero)
-12. [Alert Filtering: Severity, Urgency, Certainty, Event Types](#alert-filtering)
-13. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
-14. [API Credentials — Social Media](#api-credentials)
-15. [Push / SMS Notifications](#push--sms-notifications)
-16. [Map Images (Mapbox)](#map-images-mapbox)
-17. [Deploying to Ubuntu (GitHub Actions)](#deploying-to-ubuntu-github-actions)
+3. [Running as a Service](#running-as-a-service)
+4. [Auto-Update](#auto-update)
+5. [Basic Configuration](#basic-configuration)
+6. [Geographic Filtering: Zones and Counties](#geographic-filtering-zones-and-counties)
+7. [Alert Filtering](#alert-filtering)
+8. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
+9. [Recommended Filter Configurations](#recommended-filter-configurations)
+10. [Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO](#additional-alert-feeds-spc-outlooks-spc-mcds-hwo-wpc-ero)
+11. [API Credentials — Social Media](#api-credentials)
+12. [Push / SMS Notifications](#push--sms-notifications)
+13. [Startup Confirmation](#startup-confirmation)
+14. [Image Smoke Test](#image-smoke-test)
+15. [Map Images (Mapbox)](#map-images-mapbox)
 
 ---
 
-## Setup 
+## Setup
 
-### Requirements
-- .NET 10 SDK  
-- Visual Studio 2022 (recommended) or VS Code
+There are two ways to get the bot: download a prebuilt release, or build it from source. Most
+users want the first option — no .NET SDK or Visual Studio required.
 
-### Steps
-1. Unzip and open `NwsAlertBot.csproj` in Visual Studio
+### Option 1: Download a release (recommended)
+
+1. Download the archive for your OS from the
+   [Releases page](https://github.com/MikeWills/NwsAlertBot/releases) — `NwsAlertBot-win-x64.zip`,
+   `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`, or `NwsAlertBot-osx-arm64.tar.gz`
+2. Extract it — it contains the executable, `appsettings.json`, `update.ps1`, and
+   `setup-service.ps1`
+3. Make a copy of `appsettings.json` and name the new file `appsettings.Local.json` alongside it (see [Local AppSettings file](#local-appsettings-file)) with your real credentials
+4. Set `"Enabled": true` for each platform you want active see [API Credentials](#api-credentials) to set up.
+5. Run it directly (`./NwsAlertBot` on Linux/macOS — `chmod +x` first if needed — or
+   `NwsAlertBot.exe` on Windows), or install it as a background service — see
+   [Running the Bot](#running-the-bot) below
+
+The executable is self-contained — no separate .NET runtime install is required.
+
+### Option 2: Build from source
+
+Requires the **.NET 10 SDK** and Visual Studio 2022 (recommended) or VS Code.
+
+1. Clone the repo and open `NwsAlertBot.csproj` in Visual Studio
 2. NuGet packages restore automatically on first build
 3. Create `appsettings.Local.json` (see below) with your real credentials
 4. Set `"Enabled": true` for each platform you want active
-5. Run with F5, or publish as a Windows Service / Task Scheduler job
+5. Run with F5, or publish as a self-contained executable (see
+   [CONTRIBUTING.md](CONTRIBUTING.md) for cutting your own release build)
 
-### Keeping Secrets Out of Git
+### Local AppSettings file
 
-`appsettings.json` is committed to source control as a template — all sensitive values are
+`appsettings.json` is as a template — all sensitive values are
 placeholders like `"YOUR_API_KEY"`. **Never put real credentials in `appsettings.json`.**
 
-Instead, create `appsettings.Local.json` in the project root (it is listed in `.gitignore`
-and will never be committed). Override only the fields you need:
+Instead, create `appsettings.Local.json` in the project root. Override only the fields you need:
 
 ```json
 {
@@ -64,14 +84,6 @@ and will never be committed). Override only the fields you need:
 
 `appsettings.Local.json` is loaded after `appsettings.json` and its values win.
 You only need to include the sections/fields you are actually changing.
-
-### NuGet Packages (auto-restored)
-- `Microsoft.Extensions.Hosting`
-- `Microsoft.Extensions.Http`
-- `Microsoft.Extensions.Configuration.Json`
-- `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`, `Serilog.Sinks.File` — structured logging
-- `NetTopologySuite`, `NetTopologySuite.IO.GeoJSON4STJ` — GeoJSON geometry (union/dissolve, point-in-polygon, convex hull, simplification)
-- `Microsoft.Extensions.Http.Resilience` — retry/circuit-breaker for read-only weather/mapping HTTP clients
 
 ---
 
@@ -118,56 +130,6 @@ automatically when it exceeds 10,000 entries.
 
 ---
 
-## Cross-Platform Release Builds
-
-Separate from `deploy.yml` (which continuously deploys `linux-x64` to your own server on every
-push to `master`), `.github/workflows/release.yml` builds downloadable, self-contained binaries
-for Windows, Linux, and macOS (both Intel and Apple Silicon) whenever you push a version tag.
-
-### How it works
-
-- **Trigger:** push a tag matching `v*` (e.g. `v1.0.0`). No manual dispatch — cutting a release
-  is always tied to a version tag.
-- **Build:** all four platforms are cross-compiled from a single `ubuntu-latest` runner —
-  `dotnet publish` fetches the target runtime pack via NuGet regardless of host OS, so no
-  matrix of OS runners is needed. Explicitly targets `NwsAlertBot.csproj` (not the `.sln`),
-  since `-o` isn't fully supported at solution scope.
-- **Output:** each platform is published self-contained + single-file
-  (`-p:PublishSingleFile=true`), so the result is one executable with no separate .NET runtime
-  install required on the target machine.
-- **Packaging:** Windows ships as `.zip`; Linux and macOS ship as `.tar.gz` (zip doesn't
-  reliably preserve the Unix executable bit, which would otherwise require the user to manually
-  `chmod +x` after extracting).
-- **Publishing:** all four archives are attached to a new GitHub Release named after the tag,
-  created via the GitHub CLI (`gh release create`) using the built-in `GITHUB_TOKEN` — no
-  third-party release-management action required.
-- **Versioning:** the tag (minus its leading `v`) is passed to `dotnet publish` as
-  `-p:Version=X.Y.Z`, so the running executable knows its own version — this is what
-  [Auto-Update](#auto-update) compares against GitHub Releases.
-
-### Cutting a release
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Produces `NwsAlertBot-win-x64.zip`, `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`,
-and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release, each also containing
-`scripts/update.ps1` (see [Auto-Update](#auto-update)).
-
-### Running a downloaded build
-
-Each archive contains the executable, `appsettings.json`, `update.ps1`, and `setup-service.ps1`.
-Extract it, create `appsettings.Local.json` alongside it with your real credentials (see
-[Keeping Secrets Out of Git](#keeping-secrets-out-of-git)), and either run the executable
-directly — `./NwsAlertBot` on Linux/macOS (`chmod +x` first if the executable bit didn't survive
-transfer) or `NwsAlertBot.exe` on Windows — or install it as a background service (see
-[Running as a Service](#running-as-a-service)). No .NET runtime install is required — the
-self-contained build bundles it.
-
----
-
 ## Running as a Service
 
 `scripts/setup-service.ps1` (bundled in every release archive alongside `update.ps1`) installs
@@ -185,79 +147,17 @@ sudo ./setup-service.ps1 -ServiceName nwsalertbot
 ./setup-service.ps1 -ServiceName nwsalertbot
 ```
 
-### Running more than one instance on the same machine
-
-Each instance needs its own install directory (its own copy of the executable,
-`appsettings.json`, and `appsettings.Local.json`) and its own service name. Set the name **once**,
-in `Update.ServiceName` in that instance's `appsettings.json` — both `setup-service.ps1` and
-`update.ps1` read it from there automatically if you don't pass `-ServiceName` explicitly, so
-there's a single place to get it right instead of typing the same string into two separate
-commands and risking a mismatch:
-
-```json
-// /opt/nwsalertbot-serverone/appsettings.json
-"Update": { "ServiceName": "nwsalertbot-serverone", ... }
-```
-```json
-// /opt/nwsalertbot-servertwo/appsettings.json
-"Update": { "ServiceName": "nwsalertbot-servertwo", ... }
-```
-
-```bash
-sudo ./setup-service.ps1 -InstallDir /opt/nwsalertbot-serverone
-sudo ./setup-service.ps1 -InstallDir /opt/nwsalertbot-servertwo
-```
-
-If you'd rather not touch `appsettings.json`, `-ServiceName` still works as an explicit override
-on either script — just remember it needs to match on both.
-
-### What it does (and doesn't) do
-
-- Creates the service pointed at the executable in `-InstallDir` (default: this script's own
-  directory), with the working directory pinned there too — so `appsettings.json` and runtime
-  state files are found/written in the right place regardless of how the service starts.
-- Sets it to start automatically on boot and restart automatically on failure/crash
-  (`Restart=always` on systemd; a 3-attempt restart policy on Windows).
-- Does **not** touch `appsettings.json`, `appsettings.Local.json`, or install any credentials —
-  set those up yourself first (see [Setup](#setup)).
-- `-Uninstall` stops and removes the service registration only — it doesn't delete the
-  executable, config, or any runtime state file. Also removes the passwordless-sudo rule below,
-  if one was created.
-- `-DryRun` reports exactly what would be created/removed without touching anything — safe to
-  run without elevation.
-- Errors out upfront (before creating anything) if `appsettings.json` is missing from
-  `-InstallDir` — without this check you'd get a service that's created, starts, and immediately
-  crash-loops instead of a clear message telling you what to fix.
-
-### Passwordless sudo for `Update.AutoApply` (Linux)
-
-If you plan to use [Auto-Update](#auto-update)'s `AutoApply`, its restart step runs
-`sudo systemctl restart <ServiceName>` non-interactively — without a `NOPASSWD` sudoers rule for
-that exact command, it silently fails or hangs. Pass `-ConfigurePasswordlessSudo` to set this up
-automatically:
-
-```bash
-sudo ./setup-service.ps1 -ServiceName nwsalertbot -ConfigurePasswordlessSudo
-```
-
-This writes a narrowly-scoped rule to `/etc/sudoers.d/<ServiceName>-update` granting only
-`systemctl restart <ServiceName>` — not a blanket `systemctl` grant — and validates it with
-`visudo -c` before installing it, so a malformed rule never actually reaches `/etc/sudoers.d/`.
-Off by default: modifying sudoers is a real security-relevant change and shouldn't happen as a
-silent side effect of installing a service.
-
-### macOS
-
-Not supported by this script yet — run the executable directly, or set up a `launchd` `.plist`
-manually.
+Running more than one instance on the same machine (e.g. one bot per Discord server), using
+`-Uninstall`/`-DryRun`, granting passwordless sudo for `Update.AutoApply`, and macOS status are
+all covered in [docs/TECHNICAL.md — Running as a Service](docs/TECHNICAL.md#running-as-a-service--full-reference).
 
 ---
 
 ## Auto-Update
 
 If you're running a downloaded release build (rather than this repo owner's own
-continuously-deployed server — see [Cross-Platform Release Builds](#cross-platform-release-builds)),
-the bot can check GitHub Releases for a newer version and optionally install it automatically.
+continuously-deployed server — see [CONTRIBUTING.md](CONTRIBUTING.md)), the bot can check GitHub
+Releases for a newer version and optionally install it automatically.
 
 **Requires PowerShell 7+ (`pwsh`)** on the machine running the bot — it's what `update.ps1` runs
 under, cross-platform. Install it from https://github.com/PowerShell/PowerShell if it isn't
@@ -291,41 +191,6 @@ enough — `pwsh` is a separate, newer install).
   you're [running more than one instance](#running-as-a-service) on the same machine — set each
   instance's own `appsettings.json` to a distinct name before running `setup-service.ps1`.
 
-### What gets touched (and what doesn't)
-
-The update only ever replaces the **executable** and **`update.ps1`/`setup-service.ps1`
-themselves** (so future updater fixes apply on the next run too). It never touches
-`appsettings.json`, `appsettings.Local.json`, or any runtime state file (`posted_alerts.txt`,
-`confirmed_platforms.txt`, `logs/`, `x_post_count.txt`, `twilio_sms_count.txt`) — your
-configuration and history survive every update. The old executable is backed up to
-`NwsAlertBot.bak` (or `NwsAlertBot.exe.bak` on Windows) before being replaced, in case something
-goes wrong.
-
-**Restart behavior:** if a systemd service (Linux) or Windows Service matching `Update.ServiceName`
-exists (see [Running as a Service](#running-as-a-service)), it's restarted via
-`systemctl`/`Restart-Service`. Otherwise the new executable is just launched directly — this
-covers the common case of simply running the `.exe`/binary yourself with no service installed.
-
-**Automatic rollback:** after starting the new version, `update.ps1` waits 15 seconds (configurable
-via `-RollbackCheckDelaySeconds`) and checks whether it's still running/active. If not — it
-crashed, or failed to start at all — the previous executable is automatically restored from its
-`.bak` backup and restarted, so a bad release doesn't leave the bot down indefinitely with no
-recovery. This is a lightweight check (just "did it not immediately crash," not real application
-health — there's no health endpoint to call), but it catches the most common failure mode: a
-release that doesn't start at all. If the rollback itself also fails to start, that's logged as an
-error requiring manual intervention (this would mean something else is wrong — e.g. a corrupted
-`.bak`, or the previous version had already stopped working for an unrelated reason).
-
-**Checksum verification:** `release.yml` publishes a `checksums.txt` (SHA256, one line per asset)
-alongside every release's archives. Before extracting anything, `update.ps1` downloads
-`checksums.txt` and verifies the downloaded archive's hash matches — aborting with no changes made
-if the entry is missing or doesn't match. This protects against a corrupted upload or transport-level
-tampering. It does **not** protect against a genuinely compromised `release.yml`/repo/`GITHUB_TOKEN`
-— an attacker who can push a malicious release can just as easily update `checksums.txt` to match.
-Real supply-chain protection against that threat would need cryptographic signing, which is a much
-bigger lift (key generation, secure storage, rotation) than this project's threat model currently
-justifies.
-
 ### Running it manually
 
 With `AutoApply: false` (the default), nothing happens automatically — check
@@ -344,47 +209,19 @@ doesn't touch your install or restart anything) before trusting it with `AutoApp
 
 See `Get-Help ./update.ps1 -Full` for all parameters (`-Repo`, `-ServiceName`, etc.).
 
-### Known Limitations
-
-This feature is aimed at unattended, "set and forget" use — which is also exactly where its
-weakest points matter most, since nobody's watching. Worth understanding before turning on
-`AutoApply` unattended:
-
-- **Linux auto-restart requires passwordless `sudo`.** After swapping the executable,
-  `update.ps1` runs `sudo systemctl restart $ServiceName` non-interactively. If the account
-  running the bot doesn't have a `NOPASSWD` sudoers rule for that command, this silently fails
-  (or hangs waiting for a password that will never come) — the binary gets updated, but the old
-  process keeps running until you restart it yourself. `setup-service.ps1 -ConfigurePasswordlessSudo`
-  sets this up automatically (a narrowly-scoped `/etc/sudoers.d/` rule for exactly
-  `systemctl restart <ServiceName>`, validated with `visudo -c` before being installed) — off by
-  default, since modifying sudoers is a real security-relevant change that shouldn't happen as a
-  silent side effect of installing a service.
-- **The Windows-Service self-stop-during-update path hasn't been verified against a real
-  service.** `AutoApply` calls `StopApplication()` so `update.ps1` can swap the binary, while
-  `setup-service.ps1` separately configures Windows failure-recovery to auto-restart the service
-  if it crashes. In theory a clean, self-initiated stop reports `SERVICE_STOPPED` to the SCM and
-  doesn't trigger recovery — but this hasn't been exercised against a live Windows Service, so
-  there's a theoretical race if that assumption is wrong (recovery restarting the old exe while
-  `update.ps1` is mid-copy).
-See `docs/plans/auto-update-remaining-limitations.md` for a concrete write-up of the
-Windows-Service race above, including how to actually verify it live.
-
-If you want the peace of mind this feature is meant to provide, start with `AutoApply: false` and
-run `update.ps1` by hand for a while, or watch the logs closely the first few times you enable it.
+What gets replaced (and what never is), automatic rollback behavior, checksum verification, and
+the honest list of known gaps in unattended operation are covered in
+[docs/TECHNICAL.md — Auto-Update](docs/TECHNICAL.md#auto-update--full-reference) — worth reading
+before you turn on `AutoApply` unattended. Short version: start with `AutoApply: false` and run
+`update.ps1` by hand for a while, or watch the logs closely the first few times you enable it.
 
 ---
 
-## Configuration Reference
+## Basic Configuration
 
-All configuration lives in `appsettings.json`. Settings are grouped by what they govern:
-`Location` and `Polling` are shared across every alert feed; `Nws`, `Spc`, `SpcMcd`, `Hwo`, and
-`Ero` are each one specific feed's own settings; everything else is a delivery platform.
-
-### Location — shared by every feed
-
-`Zones`/`Counties`/`TimeZone` are resolved once and used identically by the NWS alerts feed,
-SPC Outlook, SPC MCD, HWO, WPC ERO, and the Mapbox bounding-box fallback. None of those feeds
-carry their own copy of this — if you add a new feed in the future, it should read from here too.
+All configuration lives in `appsettings.json`, overridden by `appsettings.Local.json` for your
+real values (see [Keeping Secrets Out of Git](#keeping-secrets-out-of-git)). The two settings
+blocks every feed shares:
 
 ```json
 "Location": {
@@ -394,34 +231,10 @@ carry their own copy of this — if you add a new feed in the future, it should 
 }
 ```
 
-| Field | Description | Default |
-|---|---|---|
-| `Zones` | NWS forecast zone codes (see below) | `[]` |
-| `Counties` | NWS county codes (see below) | `[]` |
-| `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS, SPC, HWO, and ERO). Works on Windows and Linux. | `"America/Chicago"` |
-
-**Geographic filter:** `Zones` and `Counties` are combined into a single query — both sets of
-UGC codes are always sent together, for every feed. `Nws.State` (below) is a fallback used
-**only** by the main NWS alerts feed when both are empty — SPC Outlook, SPC MCD, HWO, and WPC
-ERO always require explicit `Zones`/`Counties` and do not fall back to a whole state.
-
-**US IANA timezone IDs:**
-
-| Region | ID |
-|---|---|
-| Eastern | `America/New_York` |
-| Central | `America/Chicago` |
-| Mountain | `America/Denver` |
-| Mountain (no DST — Arizona) | `America/Phoenix` |
-| Pacific | `America/Los_Angeles` |
-| Alaska | `America/Anchorage` |
-| Hawaii | `Pacific/Honolulu` |
-
-### Polling — master loop cadence
-
-Drives how often the orchestrator checks all feeds. Each feed still self-gates on its own
-`CheckIntervalSeconds` below; this only controls the overall tick. Only NWS alerts and SPC MCDs
-ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook, HWO, and WPC ERO never do.
+`Zones`/`Counties` control which geographic area every feed (NWS alerts, SPC Outlook/MCD, HWO,
+WPC ERO) monitors — see [Geographic Filtering](#geographic-filtering-zones-and-counties) below for
+how to find your codes. `TimeZone` is an IANA ID (e.g. `America/Chicago`, `America/New_York`,
+`America/Denver`, `America/Los_Angeles`) used to format Issued/Valid/Expires times on every post.
 
 ```json
 "Polling": {
@@ -432,120 +245,16 @@ ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook, HWO, and W
 }
 ```
 
-| Field | Description | Default |
-|---|---|---|
-| `PollIntervalSeconds` | Idle poll interval in seconds — used when no active storm window is open | `300` |
-| `ActiveAlertPollIntervalSeconds` | Accelerated poll interval in seconds while an active storm window is open | `60` |
-| `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new NWS alert; resets on each new NWS alert. SPC outlooks/HWO do not affect the storm window. | `4` |
-| `ActiveAlertMinSeverity` | Minimum severity for a new alert to trigger or extend accelerated polling mode. Alerts below this threshold are still posted but do not engage the faster poll interval. Leave empty to have any new alert trigger active mode. | `"Severe,Extreme"` |
+`PollIntervalSeconds` (default 300 = 5 min) is the normal check interval. When a new Severe/Extreme
+NWS alert (or SPC MCD) comes in, the bot switches to the faster `ActiveAlertPollIntervalSeconds`
+(default 60s) for `ActiveAlertWindowHours` (default 4), so you get near-real-time updates during
+active weather without hammering the API the rest of the time.
 
-### Nws — the main alerts feed's own query filters
-
-```json
-"Nws": {
-  "State":                "MO",
-  "FilterSeverity":       "Severe,Extreme",
-  "FilterUrgency":        "",
-  "FilterCertainty":      "",
-  "FilterEventTypes":     "",
-  "AdditionalEventTypes": ""
-}
-```
-
-| Field | Description | Default |
-|---|---|---|
-| `State` | Two-letter state code fallback — only used if `Location.Zones`/`Location.Counties` are both empty, and only affects this feed | `""` |
-| `FilterSeverity` | Comma-separated severity levels to include | `"Severe,Extreme"` |
-| `FilterUrgency` | Comma-separated urgency levels to include | `""` (all) |
-| `FilterCertainty` | Comma-separated certainty levels to include | `""` (all) |
-| `FilterEventTypes` | Comma-separated event names to include | `""` (all) |
-| `AdditionalEventTypes` | Comma-separated event types to always fetch regardless of `FilterSeverity`. Use to include specific lower-severity events (e.g. advisories) alongside a severity filter. Makes a separate API call and merges results. | `""` (none) |
-
-The `Filter*` naming is deliberate: these four all narrow the feed at the server level, sent
-directly to `api.weather.gov` as query parameters, so anything excluded here is never even
-returned to the bot. Nothing downstream (per-platform `MinSeverity`/`EventTypes`) can un-filter
-it. `AdditionalEventTypes` is the one exception — it's additive, not restrictive, which is why
-it doesn't get the `Filter` prefix. This only governs the main NWS alerts feed (regular
-warnings/watches/advisories + SPS) — SPC Outlook, SPC MCD, HWO, and WPC ERO below are separate
-feeds with their own severity values, gated only by each platform's own `MinSeverity`.
-
-Each platform block also accepts:
-
-| Field | Description | Default |
-|---|---|---|
-| `MinSeverity` | Comma-separated severity levels for this platform only. Blank means "accept everything that already passed the feed's own filter above." | `""` (inherit) |
-| `EventTypes` | Comma-separated NWS event names for this platform only. Leave empty to receive all event types. | `""` (all) |
-| `IncludeSpcOutlooks` | Whether SPC Convective Outlook alerts are posted to this platform. Requires `Spc.Enabled = true`. | `true` |
-| `IncludeSpcMcd` | Whether SPC Mesoscale Discussion alerts are posted to this platform. Requires `SpcMcd.Enabled = true`. | `true` |
-| `IncludeHwo` | Whether Hazardous Weather Outlook text posts are sent to this platform. Requires `Hwo.Enabled = true`. Defaults to `false` — HWO is long-form text intended for personal use, enable it selectively (e.g. a Discord DM or Telegram chat). | `false` |
-| `IncludeEro` | Whether WPC Excessive Rainfall Outlook alerts are posted to this platform. Requires `Ero.Enabled = true`. | `true` |
-
-`Spc` (see [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring)):
-
-```json
-"Spc": {
-  "Enabled": false,
-  "CheckIntervalSeconds": 1800
-}
-```
-
-| Field | Description | Default |
-|---|---|---|
-| `Enabled` | Whether to monitor SPC Day 1/Day 2 Convective Outlooks | `false` |
-| `CheckIntervalSeconds` | Minimum seconds between SPC outlook checks | `1800` |
-
-`SpcMcd` (see [SPC Mesoscale Discussion Monitoring](#spc-mesoscale-discussion-monitoring)):
-
-```json
-"SpcMcd": {
-  "Enabled": false,
-  "CheckIntervalSeconds": 300
-}
-```
-
-| Field | Description | Default |
-|---|---|---|
-| `Enabled` | Whether to monitor SPC Mesoscale Discussions for the monitored area | `false` |
-| `CheckIntervalSeconds` | Minimum seconds between MCD checks (MCDs expire in 1–3 h) | `300` |
-
-Per-platform, MCDs are controlled by the separate `IncludeSpcMcd` flag (independent of
-`IncludeSpcOutlooks`), so you can enable or suppress each product type per platform.
-Each new MCD also triggers expedited polling (same as a severe/extreme NWS alert).
-
-`Hwo` (see [Hazardous Weather Outlook (HWO)](#hazardous-weather-outlook-hwo)):
-
-```json
-"Hwo": {
-  "Enabled": false,
-  "CheckIntervalSeconds": 300
-}
-```
-
-| Field | Description | Default |
-|---|---|---|
-| `Enabled` | Whether to monitor the Hazardous Weather Outlook text product | `false` |
-| `CheckIntervalSeconds` | Minimum seconds between HWO checks | `300` |
-
-Per-platform delivery is controlled by the separate `IncludeHwo` flag, which defaults to
-`false` (opt-in) since HWO is long-form text intended primarily for personal use.
-
-`Ero` (see [WPC Excessive Rainfall Outlook (ERO)](#wpc-excessive-rainfall-outlook-ero)):
-
-```json
-"Ero": {
-  "Enabled": false,
-  "CheckIntervalSeconds": 1800
-}
-```
-
-| Field | Description | Default |
-|---|---|---|
-| `Enabled` | Whether to monitor the WPC Excessive Rainfall Outlook Day 1/2/3 categorical risk | `false` |
-| `CheckIntervalSeconds` | Minimum seconds between ERO checks | `1800` |
-
-Per-platform delivery is controlled by the separate `IncludeEro` flag (default `true`).
-Note: despite sitting alongside `Spc`/`SpcMcd` in this list, ERO is a WPC (Weather Prediction
-Center) product, not SPC.
+The main NWS alert feed's own severity/urgency/certainty/event-type filters are covered next, in
+[Alert Filtering](#alert-filtering). For the complete field-by-field reference (every setting,
+every default, including the per-platform `MinSeverity`/`EventTypes`/`Include*` fields and the
+`Spc`/`SpcMcd`/`Hwo`/`Ero` blocks), see
+[docs/TECHNICAL.md — Configuration Reference](docs/TECHNICAL.md#configuration-reference).
 
 ---
 
@@ -622,253 +331,6 @@ You can monitor as many zones and counties as you want:
 
 There is no API limit on how many codes you pass. The bot makes a single API call with all codes
 comma-separated.
-
----
-
-## SPC Convective Outlook Monitoring
-
-In addition to NWS warnings/watches/advisories, the bot can separately monitor the
-[SPC (Storm Prediction Center)](https://www.spc.noaa.gov/) Day 1 and Day 2 Convective Outlooks
-and alert when a monitored location is in any non-"None" categorical risk — a general
-thunderstorm risk (`TSTM`) or higher. The same notification bundles that location's tornado,
-wind, and hail probability for the day.
-
-### How it works
-
-- **Locations monitored** are derived from the same `Location.Zones` (or `Location.Counties` if
-  `Zones` is empty) already configured for warning geo-filtering above — there is no separate
-  location list to maintain. Each zone/county's polygon is fetched once from the NWS zone API
-  and reduced to its area centroid (geometric center); that point is what gets checked against
-  the SPC outlook polygons. Resolution happens once at startup and is cached for the life of the
-  process — restart the bot after changing `Zones`/`Counties` for SPC monitoring to pick up
-  the change.
-- **Categorical risk** (`TSTM` / `MRGL` / `SLGT` / `ENH` / `MDT` / `HIGH`) is checked
-  independently for Day 1 and Day 2. A location with no categorical match ("None") never
-  triggers an alert, on either day.
-- **Tornado / Wind / Hail probabilities** for that same location are looked up the same way and
-  always included in the post body, e.g.:
-  ```
-  Tornado: 5%
-  Wind: 15%
-  Hail: None
-  ```
-- **Checked every `Spc.CheckIntervalSeconds`** (default 1800s = 30 min) — independent of
-  `Polling.PollIntervalSeconds`, since SPC re-issues the Day 1 outlook ~5x/day and Day 2 ~2x/day;
-  checking more often has no benefit.
-- **Re-alerts on every new SPC issuance**, not only on a category change — if a location stays
-  `SLGT` across three consecutive Day 1 re-issuances, you will get three separate notifications
-  that day. Deduplication keys off the SPC product's own issuance timestamp, reusing the same
-  `posted_alerts.txt` tracking file as NWS alerts.
-- **Delivery** goes through the exact same platform pipeline as NWS alerts — every enabled
-  platform receives outlook posts, subject to that platform's existing `MinSeverity`/
-  `EventTypes` filters (see [Filtering SPC outlook posts per platform](#filtering-spc-outlook-posts-per-platform)
-  below).
-- **Outlook map image** — each outlook post includes a categorical risk map image generated by
-  [Iowa State's IEM Mesonet plotting service](https://mesonet.agron.iastate.edu/plotting/auto/?q=220)
-  (free, no API key), cropped to the location's forecast office (WFO) and state. It flows through
-  the same `MapImageUrl` field as Mapbox alert maps, so it reaches every platform that supports
-  images — see [Map Images](#map-images-mapbox) for the per-platform behavior table. The WFO and
-  state come from the same NWS zone lookup used for centroid resolution, so there's no extra
-  config or API call. Image generation is skipped (post still goes out, text-only) if the WFO or
-  state can't be resolved for a location — this can happen for some Alaska/Pacific/Caribbean
-  offices, whose IEM-side codes use an ICAO prefix (e.g. `PAFC`) that doesn't match the plain CWA
-  id the NWS API returns (e.g. `AFC`).
-
-> **Caveat:** Because each location is reduced to a single centroid point, a location very near
-> the edge of an outlook risk area may not perfectly reflect that polygon's true boundary —
-> especially for large, oddly-shaped, or multi-part (e.g. coastal) zones/counties.
-
-### Filtering SPC outlook posts per platform
-
-SPC outlook alerts flow through each platform's existing `MinSeverity`/`EventTypes` dials —
-no new filter fields were added:
-
-- **Event names** — `SPC Day 1 Convective Outlook` and `SPC Day 2 Convective Outlook`. Use
-  these in a platform's `EventTypes` if you want that platform to opt in or out of outlook
-  posts specifically (e.g. push notifications only, not social media).
-- **Severity mapping** — the categorical risk is mapped onto the same severity scale used by
-  NWS alerts, so `MinSeverity` and the Pushover emergency-priority escalation work
-  automatically:
-
-  | Categorical Risk | Mapped Severity |
-  |---|---|
-  | `HIGH` | Extreme |
-  | `MDT` | Severe |
-  | `ENH` | Severe |
-  | `SLGT` | Moderate |
-  | `MRGL` | Minor |
-  | `TSTM` | Minor |
-
-  For example, a platform configured with `"MinSeverity": "Severe,Extreme"` will receive
-  `ENH`/`MDT`/`HIGH` outlook posts but not `TSTM`/`MRGL`/`SLGT` ones.
-
----
-
-## SPC Mesoscale Discussion Monitoring
-
-In addition to NWS alerts and SPC Convective Outlooks, the bot can monitor
-[SPC Mesoscale Discussions (MCDs)](https://www.spc.noaa.gov/products/md/) — short-fuse
-products issued by the Storm Prediction Center that highlight areas of developing or
-ongoing severe weather potential, often ahead of or alongside active tornado/severe
-thunderstorm watches.
-
-### How it works
-
-- **Area matching** uses the same zone/county centroids already resolved for SPC Outlook
-  monitoring. When an active MCD's polygon (from its LAT…LON block) contains at least one
-  centroid, the MCD is posted.
-- **Active detection** is based on the "Valid DDHHMM Z – DDHHMM Z" line in the product
-  text. Only MCDs currently within their valid window are posted.
-- **Data source** — MCDs arrive via the NWS products API (`/products?type=SWO` from KWNS).
-  Each new product is fetched individually to check for "SWOMCD" in the header.
-- **Image** — each post includes the SPC's own MCD graphic
-  (`https://www.spc.noaa.gov/products/md/{year}/mcd{NNNN}.png`), pre-generated by SPC.
-- **Deduplication** uses the same `posted_alerts.txt` as NWS alerts, keyed on
-  `SPC-MCD-{year}-{num}`.
-- **Per-platform opt-in** — MCDs are controlled by the separate `IncludeSpcMcd` flag on
-  each platform, independent of `IncludeSpcOutlooks`. You can enable MCDs on a platform
-  while suppressing Convective Outlooks, or vice versa.
-- **Expedited polling** — posting a new MCD triggers the same accelerated poll interval
-  as a severe/extreme NWS alert, keeping the bot in fast-poll mode while active weather is ongoing.
-
-### Setup
-
-```json
-"SpcMcd": {
-  "Enabled": true,
-  "CheckIntervalSeconds": 300
-}
-```
-
-No additional credentials or API keys required. `CheckIntervalSeconds` (default 300 = 5 min)
-controls how often the bot queries the NWS products API for new MCDs. MCDs are valid for
-1–3 hours, so sub-5-minute intervals have diminishing returns.
-
-The event name for `EventTypes` filtering is `SPC Mesoscale Discussion` (severity `Severe`).
-Per-platform delivery is controlled by `IncludeSpcMcd` (default `true`) — independent of
-`IncludeSpcOutlooks`, so you can enable or suppress each product type per platform.
-
----
-
-## Hazardous Weather Outlook (HWO)
-
-The bot can also monitor the [Hazardous Weather Outlook](https://www.weather.gov/media/directives/010_docs/pd01005017curr.pdf)
-(HWO), a plain-text product each local NWS office issues 1-2x/day summarizing hazards expected
-over the next 7 days. Unlike every other alert type in this bot, HWO carries no polygon and no
-map image — it's pure text, and delivery is opt-in per platform since it's intended primarily
-for personal use rather than broad social media distribution.
-
-### How it works
-
-- **WFO resolution** — the bot resolves the responsible forecast office(s) (WFO) from the same
-  `Location.Zones`/`Location.Counties` used everywhere else, via the NWS zones API. If your
-  monitored area spans multiple WFOs, each office's latest HWO is fetched and posted independently.
-- **Data source** — HWO arrives via the NWS text products API
-  (`/products/types/HWO/locations/{wfo}`), the same family of endpoints used for SPC MCDs.
-  The bot fetches the most recent issuance per WFO each check cycle.
-- **Text cleanup** — the raw teletype product text is stripped of the WMO/AFOS header codes,
-  the UGC zone/county code list block, and the trailing `$$` terminator, then mid-sentence line
-  wraps within each paragraph are collapsed into single lines while section breaks (e.g.
-  `.DAY ONE...`) are preserved. The full cleaned text is posted — there is no separate
-  "instruction" field to summarize, so nothing is dropped for length except by each platform's
-  own character limit.
-- **Deduplication** uses the same `posted_alerts.txt` as everything else, keyed on the NWS
-  product's UUID (`HWO-{wfo}-{uuid}`), so each new issuance posts exactly once.
-- **No map image** — `DownloadMapImageAsync`/Mapbox fallback are skipped entirely for HWO
-  since there's no geometry to plot.
-- **Per-platform opt-in** — controlled by `IncludeHwo` on each platform's settings, defaulting
-  to `false`. Enable it only where you want the full text delivered (e.g. a personal Discord DM
-  or Telegram chat) — platforms with small character limits (X, Bluesky, Twilio) will receive a
-  truncated version since the full text commonly runs 800-2000+ characters.
-- **Severity** — HWO alerts are posted with `Severity: Unknown` (NWS has no severity concept for
-  this product). If a platform's `MinSeverity` filter excludes `Unknown` (e.g. it's set to
-  `"Severe,Extreme"`), that platform will not receive HWO posts even with `IncludeHwo: true`.
-
-### Setup
-
-```json
-"Hwo": {
-  "Enabled": true,
-  "CheckIntervalSeconds": 300
-}
-```
-
-No additional credentials or API keys required. Then enable `IncludeHwo: true` on whichever
-platform(s) you want it delivered to — for example, a personal Discord DM:
-
-```json
-"DiscordDm": {
-  "Enabled": true,
-  "IncludeHwo": true
-}
-```
-
-The event name for `EventTypes` filtering is `Hazardous Weather Outlook`.
-
----
-
-## WPC Excessive Rainfall Outlook (ERO)
-
-The bot can also monitor the [WPC (Weather Prediction Center) Excessive Rainfall Outlook](https://www.wpc.ncep.noaa.gov/qpf/excessive_rainfall_outlook_ero.php)
-(ERO) — Day 1, 2, and 3 forecasts of the probability that rainfall will exceed flash flood
-guidance near a point, categorized into four risk levels: Marginal (≥5%), Slight (≥15%),
-Moderate (≥40%), and High (≥70%). Note: despite living alongside the SPC-issued feeds in this
-bot, ERO is a **WPC** product, not SPC.
-
-### How it works
-
-- **Locations monitored** reuse the same `Location.Zones`/`Location.Counties` centroids as
-  SPC Outlook/MCD — resolved once at startup and cached for the life of the process.
-- **Categorical risk** (`Marginal` / `Slight` / `Moderate` / `High`) is checked independently
-  for Day 1, 2, and 3 against WPC's GeoJSON feeds
-  (`https://www.wpc.ncep.noaa.gov/exper/eromap/geojson/Day{1,2,3}_Latest.geojson`). A location
-  with no categorical match ("None"/sub-5%) never triggers an alert, on any day.
-- **Checked every `Ero.CheckIntervalSeconds`** (default 1800s = 30 min) — independent of
-  `Polling.PollIntervalSeconds`.
-- **Re-alerts on every new WPC issuance**, not only on a category change, the same as SPC
-  Outlook. Deduplication keys off WPC's own issuance timestamp, reusing the same
-  `posted_alerts.txt` tracking file as everything else.
-- **Outlook map image** — each post includes a categorical risk map image generated by
-  [Iowa State's IEM Mesonet plotting service](https://mesonet.agron.iastate.edu/plotting/auto/?q=220)
-  (free, no API key), the same service used for SPC Outlook maps, cropped to the location's
-  forecast office (WFO) and state.
-- **Details link** — each post links to WPC's own interactive ERO page
-  (`https://www.wpc.ncep.noaa.gov/qpf/ero.php?opt=curr&day={day}`).
-
-> **Caveat:** Same as SPC Outlook — each location is reduced to a single centroid point, so a
-> location very near the edge of a risk area may not perfectly reflect that polygon's true
-> boundary.
-
-### Filtering ERO posts per platform
-
-ERO alerts flow through each platform's existing `MinSeverity`/`EventTypes` dials — no new
-filter fields were added beyond `IncludeEro` (see [Configuration Reference](#configuration-reference)):
-
-- **Event names** — `WPC Day 1 Excessive Rainfall Outlook`, `WPC Day 2 Excessive Rainfall Outlook`,
-  and `WPC Day 3 Excessive Rainfall Outlook`.
-- **Severity mapping** — WPC's own category names don't line up 1:1 in name with this bot's
-  Severity scale, only in rank order:
-
-  | WPC Category | Mapped Severity |
-  |---|---|
-  | High | Extreme |
-  | Moderate | Severe |
-  | Slight | Moderate |
-  | Marginal | Minor |
-
-  For example, a platform configured with `"MinSeverity": "Severe,Extreme"` will receive
-  `Moderate`/`High` ERO posts but not `Marginal`/`Slight` ones.
-
-### Setup
-
-```json
-"Ero": {
-  "Enabled": true,
-  "CheckIntervalSeconds": 1800
-}
-```
-
-No additional credentials or API keys required.
 
 ---
 
@@ -1021,7 +483,6 @@ for each event type — the same values used in `FilterSeverity` and `MinSeverit
 Where two values are listed (e.g. `Severe, Extreme`), the NWS assigns severity at issuance time —
 to reliably catch that event type, include **both** values in your filter.
 
-
 ---
 
 ## Recommended Filter Configurations
@@ -1061,6 +522,35 @@ Posts: Tornado Warnings, Flash Flood Emergencies, Storm Surge Warnings, Tsunami 
 "FilterUrgency":    "",
 "FilterCertainty":  "",
 "FilterEventTypes": ""
+```
+
+---
+
+## Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO
+
+Beyond regular NWS warnings/watches/advisories, the bot can monitor four more NOAA products for
+your configured `Location.Zones`/`Counties`. Each is independently `Enabled`, self-throttled by
+its own `CheckIntervalSeconds`, and delivered through the same per-platform pipeline as everything
+else — gated by a per-platform `Include*` flag (see
+[Configuration Reference](docs/TECHNICAL.md#configuration-reference)). Full "how it works" detail
+and per-platform severity-mapping tables for each are in docs/TECHNICAL.md, linked below.
+
+| Feed | What it is | Enable it | Details |
+|---|---|---|---|
+| **SPC Convective Outlook** | Day 1/2 severe thunderstorm risk (tornado/wind/hail %) for your area | `"Spc": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#spc-convective-outlook-monitoring--how-it-works) |
+| **SPC Mesoscale Discussion (MCD)** | Short-fuse (1–3h) severe weather potential, ahead of/alongside active watches | `"SpcMcd": { "Enabled": true, "CheckIntervalSeconds": 300 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#spc-mesoscale-discussion-monitoring--how-it-works) |
+| **Hazardous Weather Outlook (HWO)** | Plain-text 7-day hazard summary from your local NWS office | `"Hwo": { "Enabled": true, "CheckIntervalSeconds": 300 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#hazardous-weather-outlook-hwo--how-it-works) |
+| **WPC Excessive Rainfall Outlook (ERO)** | Day 1/2/3 flash-flood-guidance-exceedance risk | `"Ero": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#wpc-excessive-rainfall-outlook-ero--how-it-works) |
+
+HWO is long-form text (no map image) intended primarily for personal use — its per-platform flag,
+`IncludeHwo`, defaults to `false` (opt-in) rather than `true` like the other three. A common setup
+is enabling it only on a personal Discord DM or Telegram chat:
+
+```json
+"DiscordDm": {
+  "Enabled": true,
+  "IncludeHwo": true
+}
 ```
 
 ---
@@ -1210,229 +700,6 @@ Uses the same Meta Developer app as Facebook.
 - Set `BotToken` and `ChatId` in `appsettings.json`
 - Free, no rate limit concerns for typical alert volumes
 - API docs: https://core.telegram.org/bots/api
-
----
-
-## Deploying to Ubuntu (GitHub Actions)
-
-This section covers continuous deployment straight from this repo's own CI (`deploy.yml`) — for
-your own fork with its own GitHub Actions secrets. If you just want to run a downloaded release
-build as a background service without setting up CI, see
-[Running as a Service](#running-as-a-service) instead — `scripts/setup-service.ps1` automates
-the systemd unit shown below.
-
-Every push to `master` builds a self-contained `linux-x64` binary and deploys it to your server
-via SSH over Tailscale, then restarts the systemd service automatically.
- 
-### One-time server setup
-
-Run these commands on your Ubuntu server (replace `YOUR_SSH_USER` with the username you will
-use for SSH deployments):
-
-```bash
-# Create a dedicated service user (no login shell, no home directory)
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin nwsalertbot
-
-# Create the deploy directory
-sudo mkdir -p /opt/nwsalertbot
-
-# Give the service user ownership, and add your SSH user to the group
-# so GitHub Actions can write files to the directory
-sudo chown nwsalertbot:nwsalertbot /opt/nwsalertbot
-sudo chmod 775 /opt/nwsalertbot
-sudo usermod -aG nwsalertbot YOUR_SSH_USER
-
-# Place your credentials file — this is never deployed by GitHub Actions
-sudo nano /opt/nwsalertbot/appsettings.Local.json
-sudo chown nwsalertbot:nwsalertbot /opt/nwsalertbot/appsettings.Local.json
-sudo chmod 600 /opt/nwsalertbot/appsettings.Local.json
-
-# Install the systemd service (copy-paste this file content)
-sudo tee /etc/systemd/system/nwsalertbot.service > /dev/null <<'EOF'
-[Unit]
-Description=NWS Alert Bot
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=nwsalertbot
-WorkingDirectory=/opt/nwsalertbot
-ExecStart=/opt/nwsalertbot/NwsAlertBot
-Restart=always
-RestartSec=10
-KillSignal=SIGINT
-
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=nwsalertbot
-
-[Install]
-WantedBy=multi-user.target
-EOF
-sudo systemctl daemon-reload
-sudo systemctl enable nwsalertbot
-```
-
-Allow your SSH user to start/stop the service without a password prompt:
-
-```bash
-sudo visudo
-# Add this line (replace YOUR_SSH_USER):
-YOUR_SSH_USER ALL=(ALL) NOPASSWD: /bin/systemctl start nwsalertbot, /bin/systemctl stop nwsalertbot, /bin/systemctl status nwsalertbot
-```
-
-### Tailscale setup
-
-The deploy workflow connects to your server via Tailscale, so no public SSH exposure is needed.
-
-1. **Create a tag** — in the [Tailscale ACL editor](https://login.tailscale.com/admin/acls), add:
-   ```jsonc
-   "tagOwners": {
-     "tag:ci": ["autogroup:admin"]
-   }
-   ```
-   Then add an ACL rule allowing `tag:ci` to reach your server on port 22:
-   ```jsonc
-   {
-     "action": "accept",
-     "src":    ["tag:ci"],
-     "dst":    ["your-server:22"]
-   }
-   ```
-
-2. **Create an OAuth credential** — go to [Trust credentials](https://login.tailscale.com/admin/settings/trust-credentials), click **Credential → OAuth**. On the Settings step, assign the `tag:ci` tag. On the Scopes step, check **Write** on both **Devices → Core** and **Keys → Auth Keys**. Click **Generate credential** and copy the Client ID and Client Secret.
-
-### GitHub secrets
-
-Add these in your repo under **Settings → Secrets and variables → Actions**:
-
-| Secret | Description |
-|---|---|
-| `SSH_HOST` | Server's Tailscale IP (`tailscale ip -4`) or MagicDNS name |
-| `SSH_USER` | SSH username |
-| `SSH_KEY` | Private SSH key (contents of `~/.ssh/id_rsa`) |
-| `SSH_PORT` | SSH port — omit to default to `22` |
-| `DEPLOY_PATH` | Deploy directory on server, e.g. `/opt/nwsalertbot` |
-| `TS_OAUTH_CLIENT_ID` | Tailscale OAuth Client ID |
-| `TS_OAUTH_SECRET` | Tailscale OAuth Client Secret |
-
-### Viewing logs on the server
-
-```bash
-# Follow live log output
-journalctl -u nwsalertbot -f
-
-# Last 100 lines
-journalctl -u nwsalertbot -n 100
-
-# Check service status
-sudo systemctl status nwsalertbot
-```
-
----
-
-## Map Images (Mapbox)
-
-When enabled, the bot generates a **Mapbox Static Images** URL for each NWS alert (warnings,
-watches, advisories) and attaches it via the alert's `MapImageUrl` field to every platform that
-supports images. SPC Convective Outlook posts get their own image independently of this setting
-— see [Outlook map image](#how-it-works) above — through the same `MapImageUrl` field, so the
-platform behavior table below applies to both.
-
-Map images are generated from two sources depending on the alert type:
-
-**IEM (primary — most NWS alerts):** The bot parses the VTEC code from each NWS alert
-(`parameters.VTEC`) and requests a pre-rendered PNG from Iowa State University's IEM Autoplot
-service (plot #208). The image shows the exact NWS warning polygon, county boundary lines, and
-a NEXRAD radar overlay — no geometry math, no URL size limit. Requires no API key. Used for
-any alert with a VTEC code where the action is not CAN or EXP.
-
-Before requesting the PNG, the bot calls IEM's VTEC JSON API (`/json/vtec_event.py`) to verify
-the event exists in IEM's database. IEM returns HTTP 200 with a fixed default demo image for
-any unknown event — it does not return a 404 — so the pre-flight check is required to avoid
-posting the wrong map. If the event is not found, the bot falls back to Mapbox.
-
-Some NWS phenomena codes differ from IEM's internal codes. Known aliases are tried automatically:
-`HT.W` (Heat Warning) and `EH.W` (Excessive Heat Warning) both map to `XH.W` in IEM (Extreme
-Heat Warning — IEM's code for this product since March 2025).
-
-**IEM autoplot #217 (Special Weather Statements):** SPS alerts carry no VTEC code, so the bot
-uses a different IEM endpoint. It parses `parameters.AWIPSidentifier` (AFOS PIL, e.g. `SPSMPX`)
-and `parameters.WMOidentifier` (e.g. `WWUS83 KMPX 011045`) from the NWS alert to construct the
-IEM product ID: `YYYYMMDDHHmm-K{WFO}-{WMO6}-SPS{WFO}`. The timestamp uses the DDHHMM from the
-WMO header (not the alert `sent` field, which may lag by 1-2 minutes due to NWS processing).
-
-The same demo-image trap applies: IEM returns HTTP 200 with a placeholder image for unknown
-products. Before returning the URL, the bot verifies the SPS is indexed by querying IEM's
-active SPS GeoJSON feed (`/geojson/sps.geojson?wfo={WFO}`) and matching the issue time within
-a 5-minute window. If not yet indexed, the bot falls back to Mapbox.
-
-**Mapbox (fallback — non-VTEC events and cancelled/expired alerts):** Used when no VTEC code
-is present. The map area and overlay are determined by:
-1. The **alert's own GeoJSON geometry polygon** (most NWS alerts include one).
-2. **Dissolved county perimeter** — when no polygon is in the alert, the bot fetches geometry
-   for each UGC zone/county code from the NWS zone API and dissolves shared borders so only the
-   outer perimeter of the combined area is drawn.
-3. **Bounding box only** — if no geometry is available at all.
-
-### Setup
-
-1. Create a free account at [account.mapbox.com](https://account.mapbox.com/)
-2. Copy your **default public token** (starts with `pk.`) from the Tokens page
-3. In `appsettings.Local.json`:
-
-```json
-{
-  "Map": {
-    "Enabled": true,
-    "AccessToken": "pk.YOUR_MAPBOX_TOKEN"
-  }
-}
-```
-
-### Configuration
-
-| Field | Description | Default |
-|---|---|---|
-| `Enabled` | Whether to generate map images | `false` |
-| `AccessToken` | Mapbox public token (starts with `pk.`) | `""` |
-| `Style` | Mapbox style ID, format `{username}/{style_id}` | `"mapbox/outdoors-v12"` |
-| `Width` | Image width in pixels (max 1280) | `600` |
-| `Height` | Image height in pixels (max 1280) | `400` |
-
-**Available built-in styles:** `mapbox/outdoors-v12`, `mapbox/streets-v12`, `mapbox/light-v11`,
-`mapbox/dark-v11`, `mapbox/satellite-streets-v12`
-
-**Free tier:** 50,000 static map images per month — more than sufficient for a weather bot.
-
-### Platform behavior
-
-| Platform | Map behavior |
-|---|---|
-| Facebook | Image is downloaded and uploaded as multipart `source` to `/photos`. If download fails, the post still goes to `/feed` as text-only. |
-| Instagram | Uses the map URL instead of the static `ImageUrl`. Falls back to `ImageUrl` if no map is available. Instagram Graph API requires a public URL — direct upload is not supported. |
-| X (Twitter) | Image is downloaded and uploaded via the v1.1 media endpoint, then attached to the tweet by `media_id`. If upload fails, the tweet still posts as text-only. |
-| Bluesky | Image is downloaded and uploaded via `uploadBlob`, then attached as an `app.bsky.embed.images` embed. If upload fails, the post still goes out as text-only. |
-| Mastodon | Image is downloaded and uploaded via the media endpoint, then attached by `media_ids[]`. If upload fails, the status still posts as text-only. |
-| Discord | Image is downloaded and uploaded as a file attachment (`files[0]`), then referenced in the embed via `attachment://map.png`. If download fails, the embed posts without the image. |
-| Discord DM | Same as Discord webhook — image is downloaded and sent as a file attachment. If download fails, the embed posts without the image. |
-| Telegram | Image is downloaded and uploaded via multipart `sendPhoto`. If download fails, falls back to `sendMessage` using the full 4,096-character limit instead of the 1,024-character caption limit. |
-| Twilio | Sent as MMS via the `MediaUrl` field — Twilio fetches the URL itself. Direct upload is not supported by the Twilio REST API. |
-| Pushover, VoIP.ms | No change — text-only. |
-
----
-
-## References
-
-- NWS REST API documentation: https://www.weather.gov/documentation/services-web-api
-- NWS VTEC explanation (complete phenomena list): https://www.weather.gov/media/vtec/VTEC_explanation_ver9.pdf
-- Zone and county code lookup: https://www.weather.gov/gis/ZoneCounty
-- Active alerts by zone (test URL): https://api.weather.gov/alerts/active?zone=MOZ066
-- Meta Graph API (Facebook/Instagram): https://developers.facebook.com/docs/graph-api
-- X (Twitter) API v2: https://developer.twitter.com/en/docs/twitter-api
-- Bluesky AT Protocol: https://docs.bsky.app/docs/get-started
-- Mastodon API: https://docs.joinmastodon.org/methods/statuses/
 
 ---
 
@@ -1656,12 +923,12 @@ dotnet run -- --smoke-test-image
 ```
 
 This posts one synthetic test alert — with a real, publicly-hosted test image attached (an SPC
-outlook plot from IEM Mesonet, the same source used for [SPC outlook map images](#how-it-works);
-no Mapbox token required) — to every **enabled** platform that supports images: Facebook,
-Instagram, X, Bluesky, Mastodon, Discord, Telegram, and Twilio (MMS). It logs a per-platform
-OK/FAILED result and **exits immediately** without starting the live polling loop — it does not
-touch `confirmed_platforms.txt` or `posted_alerts.txt`, so it's safe to re-run as many times as
-you want while debugging a platform.
+outlook plot from IEM Mesonet, the same source used for SPC outlook map images; no Mapbox token
+required) — to every **enabled** platform that supports images: Facebook, Instagram, X, Bluesky,
+Mastodon, Discord, Telegram, and Twilio (MMS). It logs a per-platform OK/FAILED result and
+**exits immediately** without starting the live polling loop — it does not touch
+`confirmed_platforms.txt` or `posted_alerts.txt`, so it's safe to re-run as many times as you want
+while debugging a platform.
 
 **This is a live action** — it posts to your real accounts/channels and (for Twilio) sends a
 real billed MMS. Delete the test posts once you've confirmed the image rendered correctly.
@@ -1671,350 +938,56 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ---
 
-## Running Tests
+## Map Images (Mapbox)
 
-```bash
-dotnet test NwsAlertBot.Tests/NwsAlertBot.Tests.csproj
+When enabled, the bot generates a map image for each alert (NWS warnings/watches/advisories, plus
+SPC Outlook and WPC ERO posts) and attaches it to every platform that supports images. Most maps
+come from a free IEM service requiring no setup on your part; Mapbox is used as a fallback for
+alerts with no VTEC code. See
+[docs/TECHNICAL.md — Map Images](docs/TECHNICAL.md#map-images--internals) for how the bot decides
+which source to use.
+
+### Setup
+
+1. Create a free account at [account.mapbox.com](https://account.mapbox.com/)
+2. Copy your **default public token** (starts with `pk.`) from the Tokens page
+3. In `appsettings.Local.json`:
+
+```json
+{
+  "Map": {
+    "Enabled": true,
+    "AccessToken": "pk.YOUR_MAPBOX_TOKEN"
+  }
+}
 ```
 
-The `NwsAlertBot.Tests` project (xunit) covers pure logic only — no live HTTP calls, no
-credentials needed:
+### Configuration
 
-- **Parsing** — SPC MCD's `LAT...LON` polygon parsing (including the lon-wrap-at-100°W encoding),
-  MCD number extraction, and valid-window parsing (including the midnight-crossover fix)
-- **Formatting** — `NwsAlert.FormatPost`'s per-platform truncation, and the shared
-  `PlatformHelpers` (SMS body building, cache-busting, Discord embed colors)
-- **Geometry** — `PolygonGeometry`'s centroid and point-in-polygon logic (the NetTopologySuite-backed
-  replacement for the old hand-rolled GIS code)
-- **URL validation** — `MapService.BuildIemSpsUrl`'s AFOS/WMO identifier handling
+| Field | Description | Default |
+|---|---|---|
+| `Enabled` | Whether to generate map images | `false` |
+| `AccessToken` | Mapbox public token (starts with `pk.`) | `""` |
+| `Style` | Mapbox style ID, format `{username}/{style_id}` | `"mapbox/outdoors-v12"` |
+| `Width` | Image width in pixels (max 1280) | `600` |
+| `Height` | Image height in pixels (max 1280) | `400` |
 
-Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.ParseLatLon`,
-`NwsAlertService.NormalizeNwsText`) — the test project sees them via `InternalsVisibleTo`
-(`InternalsVisibleTo.cs` at the repo root), not by widening the public API surface.
+**Available built-in styles:** `mapbox/outdoors-v12`, `mapbox/streets-v12`, `mapbox/light-v11`,
+`mapbox/dark-v11`, `mapbox/satellite-streets-v12`
 
----
+**Free tier:** 50,000 static map images per month — more than sufficient for a weather bot.
 
-## Recent Changes
+### Platform behavior
 
-- **Fix: `update.ps1` now automatically rolls back a bad release.** After restarting, it waits
-  `-RollbackCheckDelaySeconds` (default 15s) and checks whether the new version is still
-  running/active (`Start-BotService` reports how it was started — systemd, Windows Service, or a
-  direct process; `Test-BotIsRunning` checks accordingly). If not, the previous executable is
-  automatically restored from its `.bak` backup and restarted, instead of leaving the bot down
-  indefinitely with no recovery. Lightweight by design — process/service-alive only, not a real
-  app health check, since there's no health endpoint to call — but it catches the most common
-  failure mode (a release that doesn't start at all). Verified end-to-end against real PE
-  executables standing in for a healthy vs. crashing release (a tiny purpose-built
-  `Thread.Sleep`-only console app for "stays running," `hostname.exe` for "exits immediately"),
-  since neither an interactive shell nor a GUI app reliably stays running in a sandboxed/headless
-  test environment. Closes one of the three remaining Auto-Update "Known Limitations."
-- **Fix: four of the Auto-Update / Running as a Service "Known Limitations" from the previous
-  entry.** `AlertPollingService` now logs the running version at startup, closing "no confirmation
-  an update succeeded" — after `AutoApply` restarts the bot, the new version shows up in logs.
-  `setup-service.ps1` now errors out upfront if `appsettings.json` is missing from `-InstallDir`,
-  instead of creating a service that immediately crash-loops. `UpdateCheckService` now skips the
-  update check entirely on an unversioned (`0.0.0`) dev build, rather than treating every GitHub
-  release as newer and silently overwriting the dev build on first check. New
-  `setup-service.ps1 -ConfigurePasswordlessSudo` (Linux, opt-in, off by default) writes a
-  narrowly-scoped `/etc/sudoers.d/` rule granting only `systemctl restart <ServiceName>` —
-  validated with `visudo -c` before being installed — so `AutoApply`'s restart step doesn't
-  silently fail/hang without a password. Remaining known limitations (untested Windows-Service
-  self-stop race, no rollback on a bad release, no release integrity check) are unchanged.
-- **Add: `.github/workflows/ci.yml` to run the test suite on every pull request.** Previously
-  tests only ran in `deploy.yml`, on push to master — meaning a broken PR could merge with no
-  automated signal until it had already landed and `deploy.yml` failed afterward, discovered only
-  by whoever noticed the deploy failure. This new workflow runs independently on `pull_request`
-  (and `push` to master, for a clean "tests pass" signal separate from `deploy.yml`'s deployment
-  concerns) so every PR gets a dedicated, fast check before merge. Pairs with a GitHub branch
-  protection rule requiring it, to actually block a bad merge rather than just flag one.
-- **Add: `scripts/setup-service.ps1` to install NwsAlertBot as a background service.** Creates a
-  systemd unit (Linux) or Windows Service (Windows), pointed at the executable with its working
-  directory pinned correctly, set to start on boot and restart on failure. Running more than one
-  instance on the same machine (e.g. one bot per Discord server) needs a distinct service name
-  per instance — set once via `Update.ServiceName` (default `"nwsalertbot"`) in that instance's
-  `appsettings.json`; both `setup-service.ps1` and `update.ps1` read it from there automatically
-  (a `-ServiceName` argument on either still overrides it), so there's a single place to set the
-  name instead of two independently-typed values that merely have to happen to match. Required
-  two supporting fixes for Windows Service mode to
-  work at all: added `Microsoft.Extensions.Hosting.WindowsServices` + `.UseWindowsService()` (a
-  no-op everywhere else) since a bare console app doesn't respond to the Windows Service Control
-  Manager's start/stop handshake and gets killed almost immediately otherwise; and pinned the
-  process's working directory to the executable's own folder at startup, since Windows Services
-  otherwise default to `C:\Windows\System32` and every relative path in this app
-  (`appsettings.json`, state files, `logs/`) would resolve against the wrong directory. `-DryRun`
-  mode (works without elevation) reports what would happen without creating/removing anything.
-- **Add: self-update for standalone release binaries.** New `UpdateCheckService` checks GitHub
-  Releases against the running executable's own version (injected at publish time via
-  `-p:Version=` from the git tag — see `release.yml`) once per `Update.CheckIntervalHours`
-  (default 24). Single on/off switch: `Update.AutoApply` (default `false`) — no separate
-  "check but don't apply" mode, since that added a second setting for no real benefit. When
-  `true`, a newer version triggers `scripts/update.ps1` (bundled in every release archive),
-  which downloads the release, replaces only the executable and itself (never
-  `appsettings.json`/`appsettings.Local.json`/any runtime state file), backs up the old
-  executable first, and restarts via systemd/Windows Service if one exists or just relaunches
-  the binary directly otherwise. Cross-platform PowerShell (`pwsh`) script with a `-DryRun` mode
-  for safely verifying it works on a given machine before trusting it with `AutoApply: true`.
-  9 new unit tests for the pure version-parsing/comparison and check-interval logic; the
-  download/extract/restart logic was verified by hand against the project's own real `v0.1.0`
-  release before landing (see [Auto-Update](#auto-update)).
-- **Add: persisted quota/cost guards for X and Twilio.** New `RateLimitTracker` (a small,
-  file-persisted fixed-window counter, deliberately not `System.Threading.RateLimiting` — see
-  CLAUDE.md Common Pitfalls for why) backs two new settings: `XSettings.MaxPostsPerMonth` (default
-  500, matching the free tier — rolling 30-day window, `x_post_count.txt`) and
-  `TwilioSettings.MaxSmsPerDay` (default 100 — rolling 24-hour window, counted per recipient,
-  `twilio_sms_count.txt`). Once a limit is reached, further posts/sends are skipped and logged
-  rather than burning requests X would reject anyway or racking up SMS costs during a busy
-  outbreak. Both persist across restarts (this bot redeploys on every push to master) and default
-  to enabled; set either to `0` to disable. 6 new unit tests covering the tracker's window
-  rollover, persistence-across-instances, and zero-means-unlimited behavior.
-- **Add: HTTP resilience for read-only weather/mapping clients + first automated test suite.**
-  Added `Microsoft.Extensions.Http.Resilience` (`.AddStandardResilienceHandler()`, retry + circuit
-  breaker + timeouts) to `NwsAlertService`, `NwsZoneService`, `SpcOutlookService`, `SpcMcdService`,
-  `HwoService`, `WpcEroService`, and the named `"WeatherImagery"`/`"WeatherImageryPrimary"` clients
-  used by `MapService`'s IEM pre-flight checks and `SocialMediaOrchestrator`'s map image download
-  (replacing a hand-rolled retry loop there with the same handler used everywhere else). Deliberately
-  **not** applied to `XService` (its OAuth1.0a signature includes a per-request timestamp/nonce — an
-  automatic retry resending an identical signed request looks like a replay) or `BlueskyService`
-  (already has its own 401-reauth retry). Also added `NwsAlertBot.Tests` (xunit), the project's first
-  automated test suite — 64 tests covering pure logic only (SPC MCD parsing including the
-  lon-wrap-at-100°W case, `NwsAlert.FormatPost` truncation, `PlatformHelpers`, `PolygonGeometry`,
-  `MapService.BuildIemSpsUrl`). Several tested methods were changed from `private` to `internal`
-  (visible to the test project via `InternalsVisibleTo`) rather than made `public`. `deploy.yml`
-  now runs `dotnet test` before publishing — a failing test blocks the live deploy to production
-  rather than shipping anyway (previously nothing gated `deploy.yml`, which runs on every push to
-  master).
-- **Refactor: extracted duplicated per-platform text/URL helpers into `Services/PlatformHelpers.cs`.**
-  `BuildSmsText` was byte-for-byte identical between `TwilioService` and `VoipMsService`; `CacheBust`
-  was identical between `InstagramService` and `TwilioService`; `Truncate`/`GetColor` (renamed
-  `DiscordSeverityColor`) were identical between `DiscordService` and `DiscordDmService`; and the
-  ad-hoc `value.Length > N ? value[..(N-3)] + "..." : value` truncation pattern was repeated
-  independently in X, Bluesky, Mastodon, Pushover, Twilio, and VoIP.ms. All consolidated into one
-  shared `PlatformHelpers` static class (`TruncateWithEllipsis`, `CacheBust`, `BuildSmsText`,
-  `DiscordSeverityColor`). Net -57 lines across 9 files.
-  **Fix included**: Pushover's alert title truncation (`PushoverService.SendAlertAsync`) previously
-  hard-cut at 250 chars with no ellipsis, unlike every other truncation in the codebase — now uses
-  the shared helper and gets the same "..." marker as everywhere else.
-- **Fix: validate AfosId/WmoIdentifier character classes before building IEM SPS URLs.**
-  `MapService.BuildIemSpsUrl`/`VerifyIemSpsAsync` previously only length-checked `alert.AfosId` and
-  `alert.WmoIdentifier` before embedding substrings of them into a colon-delimited IEM autoplot #217
-  URL — unlike the VTEC fields used by `BuildIemUrl`/`ResolveIemPhenomenaAsync`, which are already
-  constrained to safe character classes by `NwsAlertService.VtecPattern`'s regex before they ever
-  reach `MapService`. Added the same style of character-class validation (`^SPS[A-Z]{3}$` for
-  AfosId, `^[A-Z0-9]{6}$` for the WMO6 substring) so a malformed value can't inject unexpected
-  segments into the URL; falls back to Mapbox exactly like every other IEM-unavailable case, same
-  as before. Verified against real example values and injection-shaped strings before landing.
-- **Refactor: replaced hand-rolled computational geometry with NetTopologySuite.** `PolygonGeometry.cs`
-  and `MapService.cs` previously hand-rolled ~500 lines of GIS logic: a Graham-scan convex hull, a
-  custom edge-counting polygon dissolve (for merging adjacent county/zone shapes into an outer
-  perimeter), ray-casting point-in-polygon, ring centroid/area (shoelace formula), a naive
-  "simplification" that just rounded/deduped coordinates instead of real simplification, and manual
-  `StringBuilder` GeoJSON construction with no escaping. Replaced all of it with
-  `NetTopologySuite` + `NetTopologySuite.IO.GeoJSON4STJ` (the `System.Text.Json`-based GeoJSON I/O
-  variant — no Newtonsoft dependency): `Geometry.Union()` for dissolve (more robust than the old
-  edge-matching, which could dead-end on floating-point mismatches between adjacent county
-  boundaries), `Geometry.Covers()` for point-in-polygon (holes handled natively), `Geometry.Centroid`
-  for centroid, `Geometry.ConvexHull()` for the hull fallback, and
-  `TopologyPreservingSimplifier` + `GeometryPrecisionReducer` for URL-length simplification
-  (guaranteed-valid output, unlike naive coordinate rounding). Behavior is intended to be equivalent;
-  verified with a standalone script exercising union/dissolve, disjoint-geometry MultiPolygon output,
-  convex hull, point-in-polygon with holes, multi-polygon centroid selection, and simplification —
-  see commit history for details. Both `PolygonGeometry.ComputeCentroid`/`PointInGeometry` and
-  `MapService`'s NTS calls are wrapped in try/catch (matching the old code's fully defensive
-  posture), since some NTS operations (e.g. `GeometryPrecisionReducer.Reduce`) can throw on
-  topologically awkward input rather than returning null/empty.
-- **Fix: Discord/DiscordDm reported success on partial multi-recipient failure.** Both
-  `DiscordService.SendAsync` and `DiscordDmService.SendToAllUsersAsync` aggregated per-recipient
-  send results with `Any()`, so if only one of several webhook URLs or DM user IDs succeeded, the
-  whole post/DM was reported as an overall success and the orchestrator's failure warning never
-  logged. Changed both to `All()` to match the existing multi-recipient pattern used by
-  `TwilioService`/`VoipMsService`.
-- **Add: WPC Excessive Rainfall Outlook (ERO) monitoring.** New `WpcEroService` polls WPC's
-  Day 1/2/3 categorical GeoJSON feeds (`Marginal`/`Slight`/`Moderate`/`High`, ≥5%/15%/40%/70%
-  probability of exceeding flash flood guidance) and checks them against the same monitored
-  zone/county centroids used by SPC Outlook/MCD. Follows the exact same pattern as SPC Outlook:
-  one alert per day per non-"None" risk, an IEM Mesonet categorical map image
-  (`which:{day}E` on the same autoplot #220 used for SPC outlooks), and a details link to WPC's
-  own interactive ERO page. New `Ero` settings block (`Enabled`, `CheckIntervalSeconds`, default
-  1800s) and a new per-platform `IncludeEro` flag (default `true`) on all 11 delivery platforms.
-  Despite living next to `Spc`/`SpcMcd` in config, ERO is issued by WPC, not SPC — confirmed
-  against WPC's live GeoJSON feed before implementing (see [WPC Excessive Rainfall Outlook (ERO)](#wpc-excessive-rainfall-outlook-ero)).
-  Extracted the GeoJSON point-in-polygon test (previously private to `SpcOutlookService`) into
-  the shared `PolygonGeometry.PointInGeometry()` so ERO didn't need a third copy.
-- **Fix: SMS alerts (Twilio, VoIP.ms) could truncate the details link entirely.** Both services
-  build a single message string (headline + area + expiry + instruction) and hard-truncate it to
-  fit the segment budget (320 chars for Twilio, 160 for VoIP.ms). Any link that happened to be part
-  of `Instruction` (e.g. the SPC MCD/Outlook detail page URL) lived at the very end of that string,
-  so it was always the first thing cut once the message ran long — VoIP.ms's 160-char budget in
-  particular is regularly blown by just the headline + area + expiry, dropping the link every time.
-  Added `NwsAlert.DetailsUrl` (populated for all four alert sources: NWS VTEC alerts point to the
-  `api.weather.gov` alert record, SPC MCD/Outlook point to their SPC HTML page, HWO points to the
-  `api.weather.gov` product record) and a `TruncateKeepingDetailsLink()` helper in both SMS services
-  that truncates the *rest* of the message first and always preserves the trailing `Details: {url}`
-  line intact.
-- **Fix: SPC MCD polygon parsing decoded far-west longitudes incorrectly, causing false-positive
-  alerts for monitored areas hundreds of miles outside the actual MCD.** `SpcMcdService.ParseLatLon`
-  assumed 8-digit `LAT...LON` tokens always meant lon &lt; 100°W and that lon &gt;= 100°W used a
-  9-digit token. In practice SPC always encodes 8-digit tokens and drops the leading "1" digit for
-  longitudes &gt;= 100.00°W (e.g. 101.73°W is encoded as `0173`, not `10173`) instead of widening the
-  field. This made western polygon vertices decode as ~0-2°W (off the coast of Europe), ballooning
-  the effective polygon shape and causing it to spuriously contain zone centroids far to the east
-  (e.g. an MCD over north-central Nebraska/northeast South Dakota was flagged as covering
-  south-central Minnesota zones). Fixed by unwrapping any decoded lon &lt; 5000 (i.e. &lt; 50.00) by
-  adding 100° — CONUS longitudes run ~67-125°W, so the wrapped range (0-25) never overlaps the
-  unwrapped range (67-99), making the unwrap unambiguous. See `Services/SpcMcdService.cs`.
-- **Fix: VoIP.ms `sendSMS` requests must be GET, not POST.** Every SMS attempt failed with a
-  generic HTTP 500 SOAP fault ("Bad Request") regardless of credentials, message content, or
-  source IP allowlist status. Root cause: VoIP.ms's own documented sample code sends `sendSMS`
-  as a `GET` request with query-string parameters — the bot was POSTing a form-encoded body
-  instead, which their API silently rejects with that same generic fault. Confirmed by
-  reproducing the exact fault via `curl POST` with real, verified-correct credentials, then
-  confirming an identical `curl GET` request succeeded. `VoipMsService` now sends `GET` with a
-  URL-encoded query string; since credentials are now in the URL (required by the API),
-  `System.Net.Http.HttpClient.VoipMsService` request-URL logging is suppressed in `Program.cs`,
-  matching the existing pattern for Telegram/Bluesky/X/Mastodon.
-  Also fixed/documented two secondary issues found while diagnosing this:
-  - Non-ASCII message content (emoji, em-dashes, smart quotes) is now normalized to ASCII before
-    sending — not the root cause of the "Bad Request" fault, but a real independent gotcha, since
-    Unicode content forces UCS-2 SMS encoding at a much shorter per-segment limit than the
-    160-char GSM-7-oriented truncation accounted for.
-  - An un-allow-listed source IP causes the API to silently hang the connection for ~100s
-    (`HttpClient`'s default timeout) rather than a clean auth error, which looks identical to a
-    network/firewall problem in the logs.
-- **Fix: cancellation alerts silently dropped by severity/urgency/certainty filters** — NWS
-  downgrades every `Cancel` message to `severity: Minor`, `urgency: Past`, `certainty: Observed`
-  regardless of the original event's actual severity (confirmed live for cancelled Tornado
-  Warnings and Flash Flood Warnings, not just lower-severity products). Any `FilterSeverity` that
-  excludes `Minor` — the default, and every recommended config in this README except "everything"
-  — meant cancellations for every alert type were filtered out server-side and never reached the
-  bot. `NwsAlertService` now fetches cancellations via a separate, always-on query that bypasses
-  those three filters (mirroring how `AdditionalEventTypes` already bypassed `FilterSeverity`).
-- **BREAKING: `Nws.Severity`/`Urgency`/`Certainty`/`EventTypes` renamed to `FilterSeverity`/
-  `FilterUrgency`/`FilterCertainty`/`FilterEventTypes`.** All four are server-side, restrictive
-  filters sent to `api.weather.gov` — the `Filter` prefix makes that explicit and distinguishes
-  them from `AdditionalEventTypes` (deliberately unprefixed, since it's additive rather than
-  restrictive) and from each platform's own client-side `MinSeverity`/`EventTypes` fields
-  (unchanged, not renamed). If you have an existing `appsettings.Local.json`, rename these four
-  keys under `Nws` manually — `LocalConfigSync` does not auto-migrate renamed keys.
-- **BREAKING: `Zones`/`Counties`/`TimeZone` moved out of `Nws` into a new `Location` block;
-  `PollIntervalSeconds`/`ActiveAlertPollIntervalSeconds`/`ActiveAlertWindowHours`/
-  `ActiveAlertMinSeverity` moved into a new `Polling` block.** These settings were always shared
-  by every feed (SPC Outlook, SPC MCD, and HWO all resolve locations from the same
-  Zones/Counties/TimeZone, not just the NWS alerts feed), so nesting them under `Nws` was
-  misleading — and in at least one deployment led to a dead `TimeZone` key mistakenly added
-  under `Spc` (which has no such property; it silently used `Nws.TimeZone` instead). If you have
-  an existing `appsettings.Local.json`, manually move `Zones`, `Counties`, and `TimeZone` from
-  `Nws` into a new top-level `Location` section, and move `PollIntervalSeconds`,
-  `ActiveAlertPollIntervalSeconds`, `ActiveAlertWindowHours`, and `ActiveAlertMinSeverity` into a
-  new top-level `Polling` section — see the Configuration Reference below for the exact shape.
-  `LocalConfigSync` does not auto-migrate this rename (it only adds missing keys within sections
-  that already match by name), so old-style configs will silently fall back to defaults for
-  these fields until moved manually.
-- **Hazardous Weather Outlook (HWO) monitoring** — new `HwoService`/`Hwo` settings block.
-  Text-only product (no map image), opt-in per platform via `IncludeHwo` (defaults `false`).
-  Cleans up raw teletype formatting (header codes, UGC zone list, line wraps) before posting
-  the full product text.
-- **Map: IEM autoplot #217 for Special Weather Statements** — SPS alerts (non-VTEC) now use
-  IEM's SPS-specific map endpoint. The bot parses `AWIPSidentifier` and `WMOidentifier` from the
-  NWS alert parameters to build the IEM product ID. A pre-flight check against IEM's active SPS
-  GeoJSON feed prevents posting the demo image when IEM hasn't yet indexed the product.
-- **SPC Convective Outlook significant-severe levels** — when the monitored area falls within a
-  CIG1/CIG2 hatching polygon on the SPC outlook GeoJSON, the label is appended to the
-  tornado/wind/hail probability lines in the post (e.g. `Wind: 30% — CIG1`).
-- **SPC Mesoscale Discussion (MCD) monitoring** — new `SpcMcd` settings block. When enabled,
-  the bot detects active MCDs from the NWS products API, checks the MCD polygon against
-  monitored zone/county centroids, and posts matching MCDs with the SPC-hosted image. MCDs
-  use per-platform `IncludeSpcMcd` (independent of `IncludeSpcOutlooks`) and trigger expedited polling.
-- **Map: IEM pre-flight verification + phenomena aliasing** — IEM silently returns a fixed
-  default demo image (HTTP 200) for any unknown event instead of a 404. The bot now calls IEM's
-  VTEC JSON API before requesting the PNG to confirm the event exists (`event_exists: true`);
-  unverified events fall back to Mapbox. Additionally, NWS `HT.W` and `EH.W` are automatically
-  tried as IEM's `XH.W` (Extreme Heat Warning) when the NWS code is not found in IEM's database.
-
-- **Map: IEM autoplot as primary map source** — the bot now parses the VTEC code from each NWS
-  alert and requests a pre-rendered PNG from IEM Autoplot #208. The image shows the exact NWS
-  warning polygon, county boundary lines, and NEXRAD radar. No Mapbox token or geometry math
-  required for VTEC events. Mapbox is retained as fallback for non-VTEC events.
-
-- **Map: dissolved county perimeter overlay (Mapbox fallback)** — when falling back to Mapbox
-  for events without a VTEC code, shared county borders are dissolved so only the outer perimeter
-  of the combined area is drawn, fitting within Mapbox's URL limit.
-
-- **NWS text: teletype line-wrap normalization** — NWS alert text (headline, description,
-  instruction) uses hard line breaks at ~70 characters inherited from legacy teletype formatting.
-  These mid-sentence wraps are now collapsed into spaces at parse time while intentional paragraph
-  breaks (blank lines) are preserved. "stay out of\nthe sun" now reads "stay out of the sun"
-  on every platform.
-
-- **NWS geographic filter: zones + counties now combined** — previously only `Zones` were sent to
-  the NWS API (with `Counties` silently ignored when both were configured). Both lists are now
-  combined into a single `zone=` query parameter, since the NWS API accepts mixed UGC codes
-  (`MNZxxx` and `MNCxxx`) in the same list. Configure both for complete coverage — some alert
-  types are issued by zone, others by county. Same fix applied to the map fallback bounding box.
-
-- **NWS API: resilient secondary query** — if the primary alert URL fails (e.g. bad config value,
-  transient NWS outage), the `AdditionalEventTypes` secondary query now still runs and can return
-  results. Previously, a primary failure silently aborted the secondary query too. The failed
-  request URL is now logged at Error level so config typos are immediately visible in the log.
-
-- **SPC outlook: fix tornado/wind/hail display for areas below explicit probability thresholds** — SPC only draws tornado probability polygons starting at 2% and wind/hail polygons starting at 5%. For any area in a categorical risk but below those thresholds, the bot previously displayed "None". It now displays "< 2%" for tornado and "< 5%" for wind/hail, matching SPC's actual convention. (The tornado layer also includes a background feature with `LABEL = "Less Than 2% All Areas"` that the parser skipped; the fix handles this implicitly via the corrected null default.)
-
-- **Image handling: single download + direct upload for all platforms that support it** — previously each platform service that needed the map image fetched it independently (up to 7 simultaneous downloads of the same URL per alert). Now the orchestrator downloads the image once before dispatching and stores the bytes on `NwsAlert.MapImageBytes`; each service uses those bytes directly. Combined with the earlier switch from URL-embedding to direct upload for Discord, Discord DM, Telegram, and Facebook, all platforms that accept raw image bytes (X, Bluesky, Mastodon, Discord, Discord DM, Telegram, Facebook) now upload the bytes they already have. Instagram and Twilio remain URL-based — their APIs require a public URL and do not support direct byte upload.
-
-- **Security/correctness fixes (code review — second pass):**
-  - `AlertTrackerService`: replaced bare `HashSet<string>` with a `List` + `HashSet` pair so the
-    prune operation always evicts the oldest entries. The previous `TakeLast` on an unordered set was
-    non-deterministic and could discard recently-posted IDs, causing re-posts after a prune.
-  - `SpcOutlookService`: fixed three bugs — (1) a transient NWS zone API failure at startup no longer
-    permanently disables SPC monitoring for the process lifetime; (2) a malformed `DN` field in SPC
-    GeoJSON no longer aborts the entire day's outlook check; (3) the deduplication ID no longer falls
-    back to `UtcNow` when `ISSUE_ISO` is absent (it now uses `EXPIRE_ISO` instead, which is stable for
-    the outlook period — avoiding a re-post every 30 minutes).
-  - `BlueskyService`: added null check on `_accessJwt` after retry re-authentication so a failed
-    re-auth attempt doesn't cause a wasted API call with an empty bearer token.
-  - `NwsZoneService`: zone codes are now uppercased before use so lowercase entries in config
-    (e.g. `"moc217"`) are handled correctly. Added an in-memory result cache so each zone is fetched
-    at most once per session — eliminates redundant NWS API calls across `MapService` and
-    `SpcOutlookService`.
-  - `MapService`: zone fetches for alert bounding boxes are now parallelized with `Task.WhenAll`,
-    removing the serial per-county delay (previously 2–5 seconds for multi-county alerts).
-  - `InstagramService`: fixed missing `using` on `JsonDocument` in `CreateMediaContainerAsync`.
-  - `Program.cs`: added `HttpClient` request-URL log suppression for Bluesky, X, and Mastodon —
-    those services fetch the Mapbox map image via `GetByteArrayAsync`, which logged the full URL
-    including the Mapbox access token. (Telegram was fixed in the first pass; these three were missed.)
-- **Security/correctness fixes (code review — first pass):**
-  - VoIP.ms: switched from GET+querystring to POST+form-body so API credentials are no longer
-    included in request URLs (which were logged at `Information` level by the HttpClient pipeline).
-  - Telegram: suppressed `HttpClient` infrastructure logging for `TelegramService` — Telegram's Bot
-    API embeds the bot token in the URL path by design, so request URL logging was leaking the token.
-  - `StartupConfirmationService`: disabled platforms are now excluded from the pending list instead
-    of producing a misleading "delivery failed — check credentials" warning on every startup.
-  - `SocialMediaOrchestrator`: only NWS alerts engage active storm mode (accelerated polling). SPC
-    outlooks are posted but do not affect the polling interval — they update only a few times per day
-    and are independent of active NWS warnings.
-  - `BlueskyService`: re-authentication retry now only triggers on HTTP 401 Unauthorized, not on
-    rate-limit, content-policy, or transient errors.
-  - Removed unused `AppSettings` class (all settings were bound per-section directly) and the
-    unused `NwsAlert.SeverityRank` property.
-- Added an [Image Smoke Test](#image-smoke-test) dev tool (`ImageSmokeTestService`, run via
-  `dotnet run -- --smoke-test-image`) — posts one synthetic alert with a real test image to every
-  enabled image-capable platform and reports pass/fail, since startup confirmation never
-  exercises the image-attachment code path.
-- Added SPC outlook map images via [Iowa State's IEM Mesonet plotting service](https://mesonet.agron.iastate.edu/plotting/auto/?q=220)
-  (free, no API key) — every SPC Day 1/Day 2 outlook post now carries a categorical risk map
-  image cropped to the location's WFO/state, attached through the same `MapImageUrl` field as
-  Mapbox alert maps. `NwsZoneService` now also resolves a zone's WFO (`cwa`) and `state` from the
-  same NWS zone API call used for centroid resolution (added `GetZoneInfoAsync`/`ZoneInfo`).
-  Image attachment was also added to Facebook (`/photos`), X (v1.1 media upload), Bluesky
-  (`uploadBlob` + image embed), Mastodon (media upload), and Twilio (MMS via `MediaUrl`) — see
-  the updated [Map Images](#map-images-mapbox) platform behavior table.
-- Removed ntfy support (`NtfyService`, `Ntfy` settings block) — Telegram replaces it as the
-  free/self-hostable push notification option.
-- Added Telegram support (`TelegramService`, `Telegram` settings block) — posts alerts to a
-  Telegram chat or channel via the Bot API. Sends `sendPhoto` with a caption when a Mapbox map
-  image is available, otherwise a plain `sendMessage`. See [Telegram](#telegram) and the
-  confirmation/map-image behavior tables above.
-- Added [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring) — alerts on
-  Day 1/Day 2 categorical risk (Thunderstorm or higher) plus tornado/wind/hail probability for
-  monitored zones/counties, posted through the existing platform pipeline. New `Spc` settings
-  block. `MapService`'s zone/county geometry fetch was extracted into a shared `NwsZoneService`
-  (used by both the map bounding-box fallback and the new SPC location resolution).
+| Platform | Map behavior |
+|---|---|
+| Facebook | Image is downloaded and uploaded as multipart `source` to `/photos`. If download fails, the post still goes to `/feed` as text-only. |
+| Instagram | Uses the map URL instead of the static `ImageUrl`. Falls back to `ImageUrl` if no map is available. Instagram Graph API requires a public URL — direct upload is not supported. |
+| X (Twitter) | Image is downloaded and uploaded via the v1.1 media endpoint, then attached to the tweet by `media_id`. If upload fails, the tweet still posts as text-only. |
+| Bluesky | Image is downloaded and uploaded via `uploadBlob`, then attached as an `app.bsky.embed.images` embed. If upload fails, the post still goes out as text-only. |
+| Mastodon | Image is downloaded and uploaded via the media endpoint, then attached by `media_ids[]`. If upload fails, the status still posts as text-only. |
+| Discord | Image is downloaded and uploaded as a file attachment (`files[0]`), then referenced in the embed via `attachment://map.png`. If download fails, the embed posts without the image. |
+| Discord DM | Same as Discord webhook — image is downloaded and sent as a file attachment. If download fails, the embed posts without the image. |
+| Telegram | Image is downloaded and uploaded via multipart `sendPhoto`. If download fails, falls back to `sendMessage` using the full 4,096-character limit instead of the 1,024-character caption limit. |
+| Twilio | Sent as MMS via the `MediaUrl` field — Twilio fetches the URL itself. Direct upload is not supported by the Twilio REST API. |
+| Pushover, VoIP.ms | No change — text-only. |
