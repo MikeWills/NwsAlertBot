@@ -221,9 +221,30 @@ on either script — just remember it needs to match on both.
 - Does **not** touch `appsettings.json`, `appsettings.Local.json`, or install any credentials —
   set those up yourself first (see [Setup](#setup)).
 - `-Uninstall` stops and removes the service registration only — it doesn't delete the
-  executable, config, or any runtime state file.
+  executable, config, or any runtime state file. Also removes the passwordless-sudo rule below,
+  if one was created.
 - `-DryRun` reports exactly what would be created/removed without touching anything — safe to
   run without elevation.
+- Errors out upfront (before creating anything) if `appsettings.json` is missing from
+  `-InstallDir` — without this check you'd get a service that's created, starts, and immediately
+  crash-loops instead of a clear message telling you what to fix.
+
+### Passwordless sudo for `Update.AutoApply` (Linux)
+
+If you plan to use [Auto-Update](#auto-update)'s `AutoApply`, its restart step runs
+`sudo systemctl restart <ServiceName>` non-interactively — without a `NOPASSWD` sudoers rule for
+that exact command, it silently fails or hangs. Pass `-ConfigurePasswordlessSudo` to set this up
+automatically:
+
+```bash
+sudo ./setup-service.ps1 -ServiceName nwsalertbot -ConfigurePasswordlessSudo
+```
+
+This writes a narrowly-scoped rule to `/etc/sudoers.d/<ServiceName>-update` granting only
+`systemctl restart <ServiceName>` — not a blanket `systemctl` grant — and validates it with
+`visudo -c` before installing it, so a malformed rule never actually reaches `/etc/sudoers.d/`.
+Off by default: modifying sudoers is a real security-relevant change and shouldn't happen as a
+silent side effect of installing a service.
 
 ### macOS
 
@@ -313,7 +334,11 @@ weakest points matter most, since nobody's watching. Worth understanding before 
   `update.ps1` runs `sudo systemctl restart $ServiceName` non-interactively. If the account
   running the bot doesn't have a `NOPASSWD` sudoers rule for that command, this silently fails
   (or hangs waiting for a password that will never come) — the binary gets updated, but the old
-  process keeps running until you restart it yourself.
+  process keeps running until you restart it yourself. `setup-service.ps1 -ConfigurePasswordlessSudo`
+  sets this up automatically (a narrowly-scoped `/etc/sudoers.d/` rule for exactly
+  `systemctl restart <ServiceName>`, validated with `visudo -c` before being installed) — off by
+  default, since modifying sudoers is a real security-relevant change that shouldn't happen as a
+  silent side effect of installing a service.
 - **The Windows-Service self-stop-during-update path hasn't been verified against a real
   service.** `AutoApply` calls `StopApplication()` so `update.ps1` can swap the binary, while
   `setup-service.ps1` separately configures Windows failure-recovery to auto-restart the service
@@ -325,17 +350,8 @@ weakest points matter most, since nobody's watching. Worth understanding before 
   `.bak`, but nothing checks that the new version actually starts successfully and restores it
   automatically if not — a broken release could leave the bot down indefinitely with no
   automatic recovery.
-- **No confirmation an update actually succeeded.** Nothing logs the running version at startup,
-  so there's no way to confirm from logs (let alone a notification) that an auto-update
-  completed. Combined with the point above, a failed update can go unnoticed.
 - **No integrity check on downloaded releases** beyond HTTPS transport security — no
   checksum/signature verification against what `release.yml` actually built.
-- **`setup-service.ps1` doesn't check `appsettings.json` exists before creating the service** —
-  if it's missing, you get a service that's created, starts, and immediately crashes, rather than
-  a clear upfront error.
-- **A locally-built dev binary (`Version` `0.0.0`) with `AutoApply: true` will always see any
-  real release as newer** and immediately overwrite itself the first time it checks — harmless in
-  practice (it just becomes a real release build), but can be surprising if unexpected.
 
 If you want the peace of mind this feature is meant to provide, start with `AutoApply: false` and
 run `update.ps1` by hand for a while, or watch the logs closely the first few times you enable it.
@@ -1664,6 +1680,18 @@ Several tested methods are `internal` rather than `public` (e.g. `SpcMcdService.
 
 ## Recent Changes
 
+- **Fix: four of the Auto-Update / Running as a Service "Known Limitations" from the previous
+  entry.** `AlertPollingService` now logs the running version at startup, closing "no confirmation
+  an update succeeded" — after `AutoApply` restarts the bot, the new version shows up in logs.
+  `setup-service.ps1` now errors out upfront if `appsettings.json` is missing from `-InstallDir`,
+  instead of creating a service that immediately crash-loops. `UpdateCheckService` now skips the
+  update check entirely on an unversioned (`0.0.0`) dev build, rather than treating every GitHub
+  release as newer and silently overwriting the dev build on first check. New
+  `setup-service.ps1 -ConfigurePasswordlessSudo` (Linux, opt-in, off by default) writes a
+  narrowly-scoped `/etc/sudoers.d/` rule granting only `systemctl restart <ServiceName>` —
+  validated with `visudo -c` before being installed — so `AutoApply`'s restart step doesn't
+  silently fail/hang without a password. Remaining known limitations (untested Windows-Service
+  self-stop race, no rollback on a bad release, no release integrity check) are unchanged.
 - **Add: `.github/workflows/ci.yml` to run the test suite on every pull request.** Previously
   tests only ran in `deploy.yml`, on push to master — meaning a broken PR could merge with no
   automated signal until it had already landed and `deploy.yml` failed afterward, discovered only

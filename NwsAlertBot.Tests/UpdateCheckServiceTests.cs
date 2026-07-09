@@ -70,4 +70,13 @@ public class UpdateCheckServiceTests
         // executing assembly should always report *some* version.
         Assert.NotNull(UpdateCheckService.GetCurrentVersion());
     }
+
+    [Fact]
+    public void UnversionedDevBuild_MatchesTheAssemblyVersionALocalBuildActuallyProduces()
+    {
+        // NwsAlertBot.csproj's <Version>0.0.0</Version> (3 parts) compiles to assembly version
+        // 0.0.0.0 (4 parts) -- CheckForUpdateAsync's dev-build guard compares against this exact
+        // value, so it must match reality, not just "looks like zero".
+        Assert.Equal(new Version(0, 0, 0, 0), UpdateCheckService.UnversionedDevBuild);
+    }
 }
