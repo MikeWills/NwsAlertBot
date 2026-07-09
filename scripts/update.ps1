@@ -23,6 +23,11 @@
     found, it's restarted via systemctl/Restart-Service. Otherwise the new executable is simply
     launched directly -- covers the common "just run the .exe" case with no service installed.
 
+    After restarting, waits -RollbackCheckDelaySeconds and checks whether the new version is
+    still running. If not (crashed, won't start), automatically restores the previous executable
+    from its .bak backup and restarts with that instead, so a bad release doesn't leave the bot
+    down indefinitely with no recovery.
+
 .PARAMETER Repo
     GitHub "owner/repo" to download the release from.
 
@@ -47,6 +52,12 @@
     downloading, installing, or restarting anything. Use this to safely verify the script works
     on your machine before letting UpdateCheckService run it for real.
 
+.PARAMETER RollbackCheckDelaySeconds
+    After starting the new version, how long to wait before checking that it's still
+    running/active. If it isn't (crashed, failed to start), the previous executable is
+    automatically restored from its .bak backup and restarted. Default 15s -- long enough that a
+    startup crash has already happened, short enough not to noticeably delay a healthy update.
+
 .EXAMPLE
     ./update.ps1 -Repo MikeWills/NwsAlertBot -Tag v1.2.3 -DryRun
 #>
@@ -57,7 +68,8 @@ param(
     [string]$InstallDir = $PSScriptRoot,
     [int]$WaitForPid = 0,
     [string]$ServiceName,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [int]$RollbackCheckDelaySeconds = 15
 )
 
 $ErrorActionPreference = "Stop"
@@ -179,6 +191,8 @@ try {
     #        or any runtime state file (posted_alerts.txt, confirmed_platforms.txt, logs/,
     #        x_post_count.txt, twilio_sms_count.txt). Those belong to this install, not the release.
     $currentExePath = Join-Path $InstallDir $exeName
+    $backupPath = $null # stays $null if there was nothing to back up (first-ever install) --
+                         # checked later before attempting a rollback.
     if (Test-Path $currentExePath) {
         $backupPath = "$currentExePath.bak"
         Write-Step "Backing up current executable to $backupPath"
@@ -207,29 +221,86 @@ finally {
     Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# --- 5. Restart --------------------------------------------------------------------------------
-$restarted = $false
+# --- 5. Restart, then verify the new version actually stays running ----------------------------
 
-if ($IsLinux) {
-    $unitExists = (systemctl list-unit-files "$ServiceName.service" 2>$null | Select-String $ServiceName)
-    if ($unitExists) {
-        Write-Step "Restarting systemd service '$ServiceName'..."
-        sudo systemctl restart $ServiceName
-        $restarted = $true
+# Starts/restarts the bot via its systemd unit / Windows Service if one exists (matching
+# $ServiceName), otherwise launches the executable directly. Returns a hashtable describing how
+# it was started, so Test-BotIsRunning can check the right thing afterward. Called twice on a
+# failed update: once for the new version, once again for the rolled-back previous version.
+function Start-BotService {
+    if ($IsLinux) {
+        $unitExists = (systemctl list-unit-files "$ServiceName.service" 2>$null | Select-String $ServiceName)
+        if ($unitExists) {
+            Write-Step "Restarting systemd service '$ServiceName'..."
+            sudo systemctl restart $ServiceName
+            return @{ Mode = "systemd" }
+        }
     }
-}
-elseif ($IsWindows) {
-    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($svc) {
-        Write-Step "Restarting Windows Service '$ServiceName'..."
-        Restart-Service -Name $ServiceName -Force
-        $restarted = $true
+    elseif ($IsWindows) {
+        $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        if ($svc) {
+            Write-Step "Restarting Windows Service '$ServiceName'..."
+            Restart-Service -Name $ServiceName -Force
+            return @{ Mode = "windows-service" }
+        }
     }
-}
 
-if (-not $restarted) {
     Write-Step "No matching service found -- launching the executable directly."
-    Start-Process -FilePath $currentExePath -WorkingDirectory $InstallDir
+    $proc = Start-Process -FilePath $currentExePath -WorkingDirectory $InstallDir -PassThru
+    return @{ Mode = "direct"; ProcessId = $proc.Id }
 }
 
-Write-Step "Update to $Tag complete."
+# Lightweight health check -- just "did it not immediately crash", not real application health
+# (there's no health endpoint to call). Good enough to catch a release that fails to start at all.
+function Test-BotIsRunning([hashtable]$startInfo) {
+    switch ($startInfo.Mode) {
+        "systemd" {
+            $status = (systemctl is-active $ServiceName 2>$null)
+            return $status.Trim() -eq "active"
+        }
+        "windows-service" {
+            $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            return $svc -and $svc.Status -eq "Running"
+        }
+        "direct" {
+            return $null -ne (Get-Process -Id $startInfo.ProcessId -ErrorAction SilentlyContinue)
+        }
+    }
+    return $false
+}
+
+$startInfo = Start-BotService
+
+Write-Step "Waiting ${RollbackCheckDelaySeconds}s to confirm the new version started successfully..."
+Start-Sleep -Seconds $RollbackCheckDelaySeconds
+
+if (Test-BotIsRunning $startInfo) {
+    Write-Step "Update to $Tag complete and running."
+    exit 0
+}
+
+# --- 6. Rollback -- the new version didn't stay running -----------------------------------------
+Write-Step "New version did not stay running after ${RollbackCheckDelaySeconds}s."
+
+if (-not $backupPath -or -not (Test-Path $backupPath)) {
+    Write-Error "Update to $Tag appears to have failed, and no backup exists to roll back to (this was the first install onto $currentExePath). Manual intervention needed -- check logs for why the new version won't start."
+    exit 1
+}
+
+Write-Step "Rolling back to the previous version from $backupPath..."
+Copy-Item -Path $backupPath -Destination $currentExePath -Force
+if (-not $IsWindows) {
+    chmod +x $currentExePath
+}
+
+$rollbackStartInfo = Start-BotService
+Start-Sleep -Seconds $RollbackCheckDelaySeconds
+
+if (Test-BotIsRunning $rollbackStartInfo) {
+    Write-Error "Update to $Tag failed to start and was automatically rolled back to the previous version, which is running again. Check logs for why $Tag didn't start before retrying."
+    exit 1
+}
+else {
+    Write-Error "Update to $Tag failed AND the rollback to the previous version also failed to start. Manual intervention required -- the bot may be down. Check $backupPath and $currentExePath directly."
+    exit 1
+}
