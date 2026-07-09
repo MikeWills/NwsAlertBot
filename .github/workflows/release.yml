@@ -49,12 +49,14 @@ jobs:
             -o ./publish/${{ matrix.rid }}
 
       - name: Bundle helper scripts
-        # scripts/update.ps1 (self-updater, launched by UpdateCheckService or run by hand) and
-        # scripts/setup-service.ps1 (installs the systemd unit / Windows Service) need to ship
-        # alongside the executable in every release archive.
+        # scripts/update.ps1 (self-updater, launched by UpdateCheckService or run by hand),
+        # scripts/setup-service.ps1 (installs the systemd unit / Windows Service), and
+        # scripts/uninstall-service.ps1 (thin wrapper around setup-service.ps1 -Uninstall) need
+        # to ship alongside the executable in every release archive.
         run: |
           cp scripts/update.ps1 ./publish/${{ matrix.rid }}/update.ps1
           cp scripts/setup-service.ps1 ./publish/${{ matrix.rid }}/setup-service.ps1
+          cp scripts/uninstall-service.ps1 ./publish/${{ matrix.rid }}/uninstall-service.ps1
 
       # zip loses the Unix executable bit, so Windows gets .zip and everything else gets
       # .tar.gz (which preserves permissions) to avoid a "permission denied" surprise on
@@ -70,6 +72,7 @@ jobs:
           chmod +x ./publish/${{ matrix.rid }}/NwsAlertBot
           chmod +x ./publish/${{ matrix.rid }}/update.ps1
           chmod +x ./publish/${{ matrix.rid }}/setup-service.ps1
+          chmod +x ./publish/${{ matrix.rid }}/uninstall-service.ps1
           tar -czf ./NwsAlertBot-${{ matrix.rid }}.tar.gz -C ./publish/${{ matrix.rid }} .
 
       - name: Upload artifact

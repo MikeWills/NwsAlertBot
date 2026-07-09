@@ -267,6 +267,12 @@ try {
         Write-Step "Updating setup-service.ps1 for next time"
         Copy-Item -Path $newSetupScriptPath -Destination (Join-Path $InstallDir "setup-service.ps1") -Force
     }
+
+    $newUninstallScriptPath = Join-Path $extractDir "uninstall-service.ps1"
+    if (Test-Path $newUninstallScriptPath) {
+        Write-Step "Updating uninstall-service.ps1 for next time"
+        Copy-Item -Path $newUninstallScriptPath -Destination (Join-Path $InstallDir "uninstall-service.ps1") -Force
+    }
 }
 finally {
     Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue

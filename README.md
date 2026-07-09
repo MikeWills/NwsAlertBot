@@ -41,8 +41,8 @@ users want the first option — no .NET SDK or Visual Studio required.
 1. Download the archive for your OS from the
    [Releases page](https://github.com/MikeWills/NwsAlertBot/releases) — `NwsAlertBot-win-x64.zip`,
    `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`, or `NwsAlertBot-osx-arm64.tar.gz`
-2. Extract it — it contains the executable, `appsettings.json`, `update.ps1`, and
-   `setup-service.ps1`
+2. Extract it — it contains the executable, `appsettings.json`, `update.ps1`,
+   `setup-service.ps1`, and `uninstall-service.ps1`
 3. Make a copy of `appsettings.json` and name the new file `appsettings.Local.json` alongside it (see [Local AppSettings file](#local-appsettings-file)) with your real credentials
 4. Set `"Enabled": true` for each platform you want active — see [API Credentials](#api-credentials) for how to set each one up.
 5. Run it directly (`./NwsAlertBot` on Linux/macOS — `chmod +x` first if needed — or
@@ -145,9 +145,21 @@ sudo ./setup-service.ps1 -ServiceName nwsalertbot
 ./setup-service.ps1 -ServiceName nwsalertbot
 ```
 
-Running more than one instance on the same machine (e.g. one bot per Discord server), using
-`-Uninstall`/`-DryRun`, granting passwordless sudo for `Update.AutoApply`, and macOS status are
-all covered in [docs/TECHNICAL.md — Running as a Service](docs/TECHNICAL.md#running-as-a-service--full-reference).
+To remove the service later (e.g. you've decided you don't want the bot anymore), run
+`uninstall-service.ps1` from the same directory — it stops and removes the service registration
+only, leaving `appsettings.json`, your credentials, and any runtime state files untouched:
+
+```bash
+# Linux
+sudo ./uninstall-service.ps1 -ServiceName nwsalertbot
+
+# Windows (run PowerShell as Administrator)
+./uninstall-service.ps1 -ServiceName nwsalertbot
+```
+
+Running more than one instance on the same machine (e.g. one bot per Discord server), `-DryRun`,
+granting passwordless sudo for `Update.AutoApply`, and macOS status are all covered in
+[docs/TECHNICAL.md — Running as a Service](docs/TECHNICAL.md#running-as-a-service--full-reference).
 
 ---
 
