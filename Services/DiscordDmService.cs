@@ -69,9 +69,7 @@ public class DiscordDmService
             return false;
         }
 
-        var tasks = _settings.UserIds.Select(userId => SendToUserAsync(userId, content, embed, label, imageBytes));
-        var results = await Task.WhenAll(tasks);
-        return results.All(r => r);
+        return await PlatformHelpers.FanOutAsync(_settings.UserIds, userId => SendToUserAsync(userId, content, embed, label, imageBytes));
     }
 
     private async Task<bool> SendToUserAsync(string userId, string? content, Dictionary<string, object?>? embed, string label, byte[]? imageBytes)
