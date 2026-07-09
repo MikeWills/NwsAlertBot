@@ -104,9 +104,13 @@ Adding a well-justified third-party package is fine — flag it and explain the 
 
 Every new platform must:
 
-1. Have a `{Platform}Settings` class in `Config/AppSettings.cs` with `Enabled` bool first and XML doc comments on every property.
+1. Have a `{Platform}Settings` class in `Config/AppSettings.cs` with `Enabled` bool first, XML doc
+   comments on every property, and implementing `IPlatformFilterSettings` (its six members —
+   `MinSeverity`, `EventTypes`, `IncludeSpcOutlooks`, `IncludeSpcMcd`, `IncludeHwo`, `IncludeEro` —
+   already match every existing platform's property names, so this is a one-line `: IPlatformFilterSettings`).
 2. Have a `{Platform}Service.cs` in `Services/` with:
    - Constructor: `HttpClient`, `{Platform}Settings`, `ILogger<{Platform}Service>`
+   - `public bool IsEnabled => _settings.Enabled;` and `public IPlatformFilterSettings Filter => _settings;`
    - `public Task<bool> SendConfirmationAsync(string message)`
    - `public Task<bool> PostAlertAsync(NwsAlert alert)` or `SendAlertAsync`
    - Both public methods delegate to one shared private method — no duplicated logic

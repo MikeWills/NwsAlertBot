@@ -1,10 +1,9 @@
 # Deferred Duplication Cleanup
 
-> **Status: documented, not yet implemented.** Two items from a full-codebase duplication review
-> were deliberately deferred — lower value or higher risk than the items already fixed in
-> `Services/PlatformHelpers.cs` (`TruncateWithEllipsis`, `CacheBust`, `BuildSmsText`,
-> `DiscordSeverityColor`). This doc exists so the work isn't lost; pick either one up
-> independently whenever it's worth the churn.
+> **Status: item 1 still deferred, item 2 implemented (see below).** Two items from a
+> full-codebase duplication review were deliberately deferred — lower value or higher risk than
+> the items already fixed in `Services/PlatformHelpers.cs` (`TruncateWithEllipsis`, `CacheBust`,
+> `BuildSmsText`, `DiscordSeverityColor`). This doc exists so the remaining work isn't lost.
 
 ## 1. Multi-recipient fan-out + aggregate pattern
 
@@ -35,6 +34,13 @@ recipient-list validation. Four call sites, ~2 lines saved each — small win, l
 guard-clause question above is settled.
 
 ## 2. Per-platform settings pass-through properties
+
+> **Status: implemented.** `IPlatformFilterSettings` added to `Config/AppSettings.cs`; all 11
+> `{Platform}Settings` classes implement it; each service now exposes `IsEnabled` (kept, since
+> `ImageSmokeTestService`/`StartupConfirmationService`/the orchestrator's feed-level checks all
+> read it directly) plus a single `Filter => _settings` instead of the 6 other pass-through
+> properties. `SocialMediaOrchestrator`'s tuple array and both `Where` filter clauses read
+> through `.Filter.X`. `CLAUDE.md` Rule #5 updated to reference the interface.
 
 **Where**: every one of the 11 delivery-platform services (`FacebookService`,
 `InstagramService`, `XService`, `BlueskyService`, `MastodonService`, `PushoverService`,

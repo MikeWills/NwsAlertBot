@@ -133,7 +133,23 @@ public class NwsSettings
     public string AdditionalEventTypes { get; set; } = "";
 }
 
-public class FacebookSettings
+/// <summary>
+/// The six per-platform alert-filtering properties every delivery-platform settings class
+/// exposes (MinSeverity/EventTypes plus the four synthetic-feed opt-ins). Implemented by
+/// every {Platform}Settings class below so SocialMediaOrchestrator can read them through one
+/// `Filter` property per service instead of six separate pass-through properties.
+/// </summary>
+public interface IPlatformFilterSettings
+{
+    string MinSeverity { get; }
+    string EventTypes { get; }
+    bool IncludeSpcOutlooks { get; }
+    bool IncludeSpcMcd { get; }
+    bool IncludeHwo { get; }
+    bool IncludeEro { get; }
+}
+
+public class FacebookSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
     public string PageAccessToken { get; set; } = "";
@@ -173,7 +189,7 @@ public class FacebookSettings
     public bool IncludeEro { get; set; } = true;
 }
 
-public class InstagramSettings
+public class InstagramSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
     public string PageAccessToken { get; set; } = "";
@@ -203,7 +219,7 @@ public class InstagramSettings
     public bool IncludeEro { get; set; } = true;
 }
 
-public class XSettings
+public class XSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
     public string ApiKey { get; set; } = "";
@@ -239,7 +255,7 @@ public class XSettings
     public int MaxPostsPerMonth { get; set; } = 500;
 }
 
-public class BlueskySettings
+public class BlueskySettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
     public string Handle { get; set; } = "";
@@ -264,7 +280,7 @@ public class BlueskySettings
     public bool IncludeEro { get; set; } = true;
 }
 
-public class MastodonSettings
+public class MastodonSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
     public string InstanceUrl { get; set; } = "";
@@ -289,7 +305,7 @@ public class MastodonSettings
     public bool IncludeEro { get; set; } = true;
 }
 
-public class PushoverSettings
+public class PushoverSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
 
@@ -348,7 +364,7 @@ public class PushoverSettings
     public bool IncludeEro { get; set; } = true;
 }
 
-public class TwilioSettings
+public class TwilioSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
 
@@ -396,7 +412,7 @@ public class TwilioSettings
     public int MaxSmsPerDay { get; set; } = 100;
 }
 
-public class DiscordDmSettings
+public class DiscordDmSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
 
@@ -433,7 +449,7 @@ public class DiscordDmSettings
     public bool IncludeEro { get; set; } = true;
 }
 
-public class DiscordSettings
+public class DiscordSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
 
@@ -470,7 +486,7 @@ public class DiscordSettings
     public bool IncludeEro { get; set; } = true;
 }
 
-public class TelegramSettings
+public class TelegramSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
 
@@ -506,7 +522,7 @@ public class TelegramSettings
     public bool IncludeEro { get; set; } = true;
 }
 
-public class VoipMsSettings
+public class VoipMsSettings : IPlatformFilterSettings
 {
     public bool Enabled { get; set; } = false;
 
