@@ -1,12 +1,12 @@
 # Auto-Update: Remaining Known Limitations
 
-> **Status: documented, not yet implemented.** Two items remain from the original 7-item
-> "Known Limitations" list (README, under Auto-Update). Four were fixed outright (startup
-> version logging, `setup-service.ps1`'s `appsettings.json` pre-check, the dev-build/`0.0.0`
-> guard, opt-in passwordless-sudo) and one (no automatic rollback) was fixed with
-> `update.ps1`'s `Start-BotService`/`Test-BotIsRunning` health check. These two are left because
-> one needs live infrastructure this session doesn't have, and the other is real feature work
-> with a design tradeoff worth writing down before building.
+> **Status: item 1 still open, item 2 implemented (see below).** Of the original 7-item
+> "Known Limitations" list (README, under Auto-Update), five were previously fixed outright
+> (startup version logging, `setup-service.ps1`'s `appsettings.json` pre-check, the
+> dev-build/`0.0.0` guard, opt-in passwordless-sudo, and automatic rollback via
+> `update.ps1`'s `Start-BotService`/`Test-BotIsRunning` health check). Item 2 (checksum
+> verification) is now also fixed — see below. Item 1 remains open because it needs live
+> infrastructure this session doesn't have.
 
 ## 1. Windows-Service self-stop-during-update race (needs live verification, not code)
 
@@ -61,60 +61,11 @@ Microsoft-documented supported pattern), the fix here is just to update the READ
 
 ## 2. Checksum/signature verification on downloaded releases
 
-**What's missing**: `update.ps1` downloads a release archive over HTTPS with no verification that
-the bytes it receives match what `release.yml` actually built — HTTPS protects against
-network-level tampering in transit, but not against a corrupted upload, a compromised release
-asset, or (in the worst case) a compromised repo/token pushing a malicious release.
-
-**Implementation sketch**:
-
-`release.yml`, in the `release` job (after downloading all artifacts, before `gh release
-create`):
-```yaml
-- name: Compute checksums
-  working-directory: ./artifacts
-  run: sha256sum * > checksums.txt
-```
-`gh release create ./artifacts/*` already uploads everything in that directory, so
-`checksums.txt` rides along automatically — no separate upload step needed.
-
-`update.ps1`, after downloading `$archivePath` and before extracting it:
-```powershell
-$checksumUrl = "https://github.com/$Repo/releases/download/$Tag/checksums.txt"
-$checksumFile = Join-Path $tempDir "checksums.txt"
-Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumFile -UseBasicParsing
-
-$expectedLine = Get-Content $checksumFile | Where-Object { $_ -match [regex]::Escape($assetName) }
-if (-not $expectedLine) {
-    Write-Error "No checksum entry found for $assetName in checksums.txt -- aborting for safety."
-    exit 1
-}
-$expectedHash = ($expectedLine -split '\s+')[0]
-$actualHash = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash
-if ($actualHash -ne $expectedHash) {
-    Write-Error "Checksum mismatch for $assetName! Expected $expectedHash, got $actualHash. Aborting -- do not trust this download."
-    exit 1
-}
-Write-Step "Checksum verified for $assetName."
-```
-`-DryRun` should perform this same check (it already validates the download/extraction pipeline
-end-to-end; checksum verification is a natural extension of "confirm this release is good"
-before it's ever trusted for a real install).
-
-**Honest scope of what this does and doesn't protect against** — worth stating explicitly so a
-future reader doesn't assume more security than this actually provides:
-- **Protects against**: corrupted uploads, download/transfer corruption, simple tampering with
-  the archive after it was built.
-- **Does NOT protect against**: a genuinely compromised `release.yml`/repo/`GITHUB_TOKEN` — an
-  attacker who can push a malicious release can just as easily update `checksums.txt` to match
-  their malicious archive. Real supply-chain protection against *that* threat would need
-  cryptographic signing (e.g., sign `checksums.txt` with a private key held outside the CI
-  pipeline, verify against a public key baked into `update.ps1`) — a meaningfully bigger lift
-  (key generation, secure storage, rotation story) that isn't obviously worth it for this
-  project's actual threat model (a personal weather bot, not a high-value target). Plain
-  checksum verification is proportionate; don't over-build this into full code signing without a
-  concrete reason to.
-
-**How to apply**: this is a self-contained, independently buildable change (no dependency on
-item 1 above) — pick it up whenever the added download-time latency (one extra small HTTP
-request) and moderate implementation effort are worth it.
+> **Status: implemented.** `release.yml`'s `release` job publishes a `checksums.txt` (SHA256 per
+> asset); `update.ps1` downloads it right after downloading the release archive and verifies the
+> hash before extracting anything, aborting on a missing/mismatched entry (unconditionally,
+> including under `-DryRun`). See README "Auto-Update" → "Checksum verification" for the
+> user-facing writeup and honest scope (protects against corrupted uploads/transport tampering,
+> not a compromised `release.yml`/repo/`GITHUB_TOKEN` — that would need cryptographic signing,
+> a meaningfully bigger lift not currently justified for this project's threat model). No
+> further action needed here.

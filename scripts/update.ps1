@@ -5,7 +5,8 @@
 
 .DESCRIPTION
     Detects the current OS/architecture, downloads the matching release archive from GitHub,
-    and replaces the running executable with it -- WITHOUT touching appsettings.json,
+    verifies its SHA256 checksum against the release's checksums.txt (aborting if it's missing or
+    doesn't match), and replaces the running executable with it -- WITHOUT touching appsettings.json,
     appsettings.Local.json, or any runtime state files (posted_alerts.txt,
     confirmed_platforms.txt, logs/, x_post_count.txt, twilio_sms_count.txt) already in the
     install directory. Only the executable itself (and this script, so future updater fixes
@@ -48,9 +49,10 @@
     appsettings.json in -InstallDir, falling back to "nwsalertbot" if neither sets it.
 
 .PARAMETER DryRun
-    Detects the platform, resolves the download URL, and reports what would happen without
-    downloading, installing, or restarting anything. Use this to safely verify the script works
-    on your machine before letting UpdateCheckService run it for real.
+    Detects the platform, resolves the download URL, downloads and checksum-verifies the release,
+    and extracts it to confirm the archive is valid -- without installing to -InstallDir or
+    restarting anything. Use this to safely verify the script works on your machine before
+    letting UpdateCheckService run it for real.
 
 .PARAMETER RollbackCheckDelaySeconds
     After starting the new version, how long to wait before checking that it's still
@@ -161,6 +163,30 @@ $archivePath = Join-Path $tempDir $assetName
 try {
     Write-Step "Downloading..."
     Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
+
+    # --- 3b. Verify the download against release.yml's checksums.txt before trusting it --------
+    # Protects against corrupted uploads/transfers and simple after-the-fact tampering with the
+    # archive. Does NOT protect against a compromised release.yml/repo/GITHUB_TOKEN -- an attacker
+    # who can push a malicious release can just as easily update checksums.txt to match. Real
+    # supply-chain protection against that would need cryptographic signing, which is a much
+    # bigger lift than this project's threat model (a personal weather bot) currently justifies.
+    Write-Step "Verifying checksum..."
+    $checksumUrl = "https://github.com/$Repo/releases/download/$Tag/checksums.txt"
+    $checksumFile = Join-Path $tempDir "checksums.txt"
+    Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumFile -UseBasicParsing
+
+    $expectedLine = Get-Content $checksumFile | Where-Object { $_ -match [regex]::Escape($assetName) }
+    if (-not $expectedLine) {
+        Write-Error "No checksum entry found for $assetName in checksums.txt -- aborting for safety."
+        exit 1
+    }
+    $expectedHash = ($expectedLine -split '\s+')[0]
+    $actualHash = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash
+    if ($actualHash -ne $expectedHash) {
+        Write-Error "Checksum mismatch for $assetName! Expected $expectedHash, got $actualHash. Aborting -- do not trust this download."
+        exit 1
+    }
+    Write-Step "Checksum verified for $assetName."
 
     $extractDir = Join-Path $tempDir "extracted"
     New-Item -ItemType Directory -Path $extractDir | Out-Null
