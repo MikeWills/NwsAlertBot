@@ -14,11 +14,14 @@
 
     Normally launched automatically by UpdateCheckService when Update.AutoApply is true in
     appsettings.json, passing -WaitForPid (so it waits for the running bot to exit before
-    swapping the binary) and -ServiceName (read from Update.ServiceName, so this always matches
-    without relying on anyone keeping two separately-typed values in sync). Can also be run
-    manually (omit -WaitForPid) to upgrade by hand when Update.AutoApply is false -- pass -Tag
-    with the version you want, e.g. "v1.2.3"; -ServiceName can still be omitted, since it's
-    resolved from Update.ServiceName the same way if not passed explicitly.
+    swapping the binary), -Tag (the latest release tag, already resolved from GitHub's API on the
+    C# side), and -ServiceName (read from Update.ServiceName, so this always matches without
+    relying on anyone keeping two separately-typed values in sync). Can also be run manually (omit
+    -WaitForPid) to upgrade by hand when Update.AutoApply is false -- omit -Tag to install
+    whatever is currently the latest release (resolved the same way UpdateCheckService does, via
+    GitHub's releases/latest API), or pass -Tag with a specific version, e.g. "v1.2.3", to pin to
+    that release instead. -ServiceName can still be omitted, since it's resolved from
+    Update.ServiceName the same way if not passed explicitly.
 
     Restart behavior: if a systemd service (Linux) or Windows Service matching -ServiceName is
     found, it's restarted via systemctl/Restart-Service. Otherwise the new executable is simply
@@ -33,7 +36,8 @@
     GitHub "owner/repo" to download the release from.
 
 .PARAMETER Tag
-    Release tag to install, e.g. "v1.2.3".
+    Release tag to install, e.g. "v1.2.3". If omitted, resolves and installs the latest release
+    automatically via GitHub's releases/latest API -- pass this only to pin to a specific version.
 
 .PARAMETER InstallDir
     Directory containing the current executable (and appsettings.json). Defaults to this
@@ -61,11 +65,13 @@
     startup crash has already happened, short enough not to noticeably delay a healthy update.
 
 .EXAMPLE
+    ./update.ps1 -DryRun
+
+.EXAMPLE
     ./update.ps1 -Repo MikeWills/NwsAlertBot -Tag v1.2.3 -DryRun
 #>
 param(
     [string]$Repo = "MikeWills/NwsAlertBot",
-    [Parameter(Mandatory = $true)]
     [string]$Tag,
     [string]$InstallDir = $PSScriptRoot,
     [int]$WaitForPid = 0,
@@ -123,7 +129,26 @@ if ($WaitForPid -gt 0) {
     Write-Step "Process $WaitForPid has exited."
 }
 
-# --- 2. Detect platform and pick the matching release asset -----------------------------------
+# --- 2. Resolve -Tag to the latest release if not specified -----------------------------------
+if (-not $Tag) {
+    Write-Step "No -Tag specified -- resolving the latest release..."
+    try {
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" `
+            -Headers @{ "User-Agent" = "NwsAlertBot-update.ps1" }
+        $Tag = $release.tag_name
+    }
+    catch {
+        Write-Error "Could not resolve the latest release from https://api.github.com/repos/$Repo/releases/latest -- $($_.Exception.Message). Pass -Tag explicitly to install a specific version."
+        exit 1
+    }
+    if (-not $Tag) {
+        Write-Error "GitHub's releases/latest API did not return a tag_name. Pass -Tag explicitly to install a specific version."
+        exit 1
+    }
+    Write-Step "Latest release: $Tag"
+}
+
+# --- 3. Detect platform and pick the matching release asset -----------------------------------
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 if ($IsWindows) {
     $rid = "win-x64"
@@ -155,7 +180,7 @@ if ($DryRun) {
     Write-Step "-DryRun set -- will download and extract to verify the release/asset are valid, but will not touch $InstallDir or restart anything."
 }
 
-# --- 3. Download and extract to a temp directory ------------------------------------------------
+# --- 4. Download and extract to a temp directory ------------------------------------------------
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "nwsalertbot-update-$([Guid]::NewGuid())"
 New-Item -ItemType Directory -Path $tempDir | Out-Null
 $archivePath = Join-Path $tempDir $assetName
@@ -164,7 +189,7 @@ try {
     Write-Step "Downloading..."
     Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
 
-    # --- 3b. Verify the download against release.yml's checksums.txt before trusting it --------
+    # --- 4b. Verify the download against release.yml's checksums.txt before trusting it --------
     # Protects against corrupted uploads/transfers and simple after-the-fact tampering with the
     # archive. Does NOT protect against a compromised release.yml/repo/GITHUB_TOKEN -- an attacker
     # who can push a malicious release can just as easily update checksums.txt to match. Real
@@ -213,7 +238,7 @@ try {
         exit 0
     }
 
-    # --- 4. Replace ONLY the executable (and this script) -- never appsettings.json/appsettings.Local.json
+    # --- 5. Replace ONLY the executable (and this script) -- never appsettings.json/appsettings.Local.json
     #        or any runtime state file (posted_alerts.txt, confirmed_platforms.txt, logs/,
     #        x_post_count.txt, twilio_sms_count.txt). Those belong to this install, not the release.
     $currentExePath = Join-Path $InstallDir $exeName
@@ -247,7 +272,7 @@ finally {
     Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# --- 5. Restart, then verify the new version actually stays running ----------------------------
+# --- 6. Restart, then verify the new version actually stays running ----------------------------
 
 # Starts/restarts the bot via its systemd unit / Windows Service if one exists (matching
 # $ServiceName), otherwise launches the executable directly. Returns a hashtable describing how
@@ -305,7 +330,7 @@ if (Test-BotIsRunning $startInfo) {
     exit 0
 }
 
-# --- 6. Rollback -- the new version didn't stay running -----------------------------------------
+# --- 7. Rollback -- the new version didn't stay running -----------------------------------------
 Write-Step "New version did not stay running after ${RollbackCheckDelaySeconds}s."
 
 if (-not $backupPath -or -not (Test-Path $backupPath)) {

@@ -59,9 +59,7 @@ public class DiscordService
             return false;
         }
 
-        var tasks = urls.Select(url => PostToWebhookAsync(url, content, embed, label, imageBytes));
-        var results = await Task.WhenAll(tasks);
-        return results.All(r => r);
+        return await PlatformHelpers.FanOutAsync(urls, url => PostToWebhookAsync(url, content, embed, label, imageBytes));
     }
 
     private async Task<bool> PostToWebhookAsync(string webhookUrl, string? content, Dictionary<string, object?>? embed, string label, byte[]? imageBytes)

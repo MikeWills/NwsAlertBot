@@ -1,11 +1,19 @@
 # Deferred Duplication Cleanup
 
-> **Status: item 1 still deferred, item 2 implemented (see below).** Two items from a
-> full-codebase duplication review were deliberately deferred — lower value or higher risk than
-> the items already fixed in `Services/PlatformHelpers.cs` (`TruncateWithEllipsis`, `CacheBust`,
-> `BuildSmsText`, `DiscordSeverityColor`). This doc exists so the remaining work isn't lost.
+> **Status: both items implemented (see below).** Two items from a full-codebase duplication
+> review were deliberately deferred — lower value or higher risk than the items already fixed in
+> `Services/PlatformHelpers.cs` (`TruncateWithEllipsis`, `CacheBust`, `BuildSmsText`,
+> `DiscordSeverityColor`). This doc exists so the history isn't lost.
 
 ## 1. Multi-recipient fan-out + aggregate pattern
+
+> **Status: implemented (2026-07-09).** Added `PlatformHelpers.FanOutAsync<T>(IEnumerable<T>
+> recipients, Func<T, Task<bool>> sendOne)` exactly as sketched below. Each service's own
+> guard-clause validation was left untouched (that's what made this a real design decision rather
+> than copy-paste) — only the 2-line `Task.WhenAll`/`.All()` pattern after it was replaced with a
+> single `return await PlatformHelpers.FanOutAsync(...)` call, in `DiscordService.SendAsync`,
+> `DiscordDmService.SendToAllUsersAsync`, `TwilioService.SendToAllAsync`, and
+> `VoipMsService.SendToAllAsync`.
 
 **Where** (identical 2-line pattern, confirmed current as of this doc):
 - `Services/DiscordService.cs:68-69` — `SendAsync`, fans out to `WebhookUrls`

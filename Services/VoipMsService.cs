@@ -73,9 +73,7 @@ public class VoipMsService
         // by field. This plain truncation only applies to confirmation messages (plain strings).
         message = PlatformHelpers.TruncateWithEllipsis(message, MaxSmsLength);
 
-        var tasks = _settings.ToNumbers.Select(to => SendSmsAsync(to, message, label));
-        var results = await Task.WhenAll(tasks);
-        return results.All(r => r);
+        return await PlatformHelpers.FanOutAsync(_settings.ToNumbers, to => SendSmsAsync(to, message, label));
     }
 
     private async Task<bool> SendSmsAsync(string toNumber, string message, string label)

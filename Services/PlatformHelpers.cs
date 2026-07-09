@@ -68,4 +68,16 @@ internal static class PlatformHelpers
         "minor"    => 0x43A047, // green
         _          => 0x757575  // grey
     };
+
+    /// <summary>
+    /// Sends to every recipient concurrently and reports overall success only if all sends
+    /// succeeded. Callers validate the recipient list themselves first (empty/missing-config
+    /// guard clauses differ per platform).
+    /// </summary>
+    internal static async Task<bool> FanOutAsync<T>(IEnumerable<T> recipients, Func<T, Task<bool>> sendOne)
+    {
+        var tasks = recipients.Select(sendOne);
+        var results = await Task.WhenAll(tasks);
+        return results.All(r => r);
+    }
 }
