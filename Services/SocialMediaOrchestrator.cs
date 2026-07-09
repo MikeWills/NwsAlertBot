@@ -80,10 +80,18 @@ public class SocialMediaOrchestrator
 
     /// <summary>
     /// Runs one poll cycle. Returns the number of new alerts that qualify as active-storm
-    /// triggers (i.e. meet ActiveAlertMinSeverity). Lower-severity alerts are still posted
-    /// but do not count toward triggering accelerated polling.
+    /// triggers (i.e. meet ActiveAlertMinSeverity), plus the latest expiry time among any
+    /// storm-triggering *Watch* alerts seen this cycle (null if none). Lower-severity alerts
+    /// are still posted but do not count toward triggering accelerated polling.
+    ///
+    /// Watches get their own expiry-based signal rather than the default fixed-hours window
+    /// because they can run far longer than ActiveAlertWindowHours (e.g. an 8h Severe
+    /// Thunderstorm Watch vs. a 4h default) — without it, the bot drops back to idle polling
+    /// while the Watch is still in effect and can miss its cancellation, which NWS only keeps
+    /// in the active-alerts feed for a few minutes after issuance. Warnings and other event
+    /// types don't get this treatment; they rely on the default ActiveAlertWindowHours as before.
     /// </summary>
-    public async Task<int> RunAsync(CancellationToken ct = default)
+    public async Task<(int StormCount, DateTimeOffset? WatchExpiresUtc)> RunAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("Checking for new NWS alerts...");
 
@@ -91,6 +99,7 @@ public class SocialMediaOrchestrator
 
         int newCount = 0;
         int stormCount = 0;
+        DateTimeOffset? watchExpiresUtc = null;
         foreach (var alert in alerts)
         {
             if (ct.IsCancellationRequested) break;
@@ -107,7 +116,16 @@ public class SocialMediaOrchestrator
             newCount++;
 
             if (PassesFilter(alert.Severity, _polling.ActiveAlertMinSeverity))
+            {
                 stormCount++;
+
+                if (alert.Event.Contains("Watch", StringComparison.OrdinalIgnoreCase))
+                {
+                    var expiry = (alert.Ends ?? alert.Expires)?.ToUniversalTime();
+                    if (expiry.HasValue && (!watchExpiresUtc.HasValue || expiry.Value > watchExpiresUtc.Value))
+                        watchExpiresUtc = expiry;
+                }
+            }
 
             // Brief delay between alerts to avoid rate limit bursts
             if (newCount < alerts.Count)
@@ -131,7 +149,7 @@ public class SocialMediaOrchestrator
         if (_ero.IsEnabled)
             await CheckEroAsync(ct);
 
-        return stormCount;
+        return (stormCount, watchExpiresUtc);
     }
 
     private async Task CheckSpcOutlooksAsync(CancellationToken ct)

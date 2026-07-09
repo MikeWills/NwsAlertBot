@@ -320,6 +320,11 @@ public class AlertPollingService : BackgroundService
     // Tracks when the last new alert was posted; null means no alert seen yet this session.
     private DateTime? _lastNewAlertUtc;
 
+    // Tracks the latest expiry time among active Watches, so fast polling covers a Watch's full
+    // duration rather than dropping back to idle after ActiveAlertWindowHours — see
+    // SocialMediaOrchestrator.RunAsync's remarks for why Watches need this and Warnings don't.
+    private DateTimeOffset? _watchActiveUntilUtc;
+
     public AlertPollingService(
         StartupConfirmationService  confirmation,
         SocialMediaOrchestrator     orchestrator,
@@ -362,11 +367,11 @@ public class AlertPollingService : BackgroundService
             // Self-throttles internally (UpdateSettings.CheckIntervalHours); a no-op when disabled.
             await _updateCheck.CheckForUpdateAsync(stoppingToken);
 
-            int newAlerts = await _orchestrator.RunAsync(stoppingToken);
+            var (newAlerts, watchExpiresUtc) = await _orchestrator.RunAsync(stoppingToken);
 
             if (newAlerts > 0)
             {
-                if (_lastNewAlertUtc == null)
+                if (_lastNewAlertUtc == null && !_watchActiveUntilUtc.HasValue)
                     _logger.LogInformation("Active storm mode engaged — polling every {Interval}s for {Hours}h.",
                         _polling.ActiveAlertPollIntervalSeconds, _polling.ActiveAlertWindowHours);
                 else
@@ -375,19 +380,31 @@ public class AlertPollingService : BackgroundService
                 _lastNewAlertUtc = DateTime.UtcNow;
             }
 
+            if (watchExpiresUtc.HasValue &&
+                (!_watchActiveUntilUtc.HasValue || watchExpiresUtc.Value > _watchActiveUntilUtc.Value))
+            {
+                _logger.LogInformation("Active Watch in effect — polling every {Interval}s until it expires at {ExpiresUtc:u}.",
+                    _polling.ActiveAlertPollIntervalSeconds, watchExpiresUtc.Value);
+                _watchActiveUntilUtc = watchExpiresUtc.Value;
+            }
+
+            bool inFixedWindow = _lastNewAlertUtc.HasValue &&
+                (DateTime.UtcNow - _lastNewAlertUtc.Value).TotalHours < _polling.ActiveAlertWindowHours;
+            bool inWatchWindow = _watchActiveUntilUtc.HasValue && DateTimeOffset.UtcNow < _watchActiveUntilUtc.Value;
+
             int delaySeconds;
-            if (_lastNewAlertUtc.HasValue &&
-                (DateTime.UtcNow - _lastNewAlertUtc.Value).TotalHours < _polling.ActiveAlertWindowHours)
+            if (inFixedWindow || inWatchWindow)
             {
                 delaySeconds = _polling.ActiveAlertPollIntervalSeconds;
             }
             else
             {
-                if (_lastNewAlertUtc.HasValue)
+                if (_lastNewAlertUtc.HasValue || _watchActiveUntilUtc.HasValue)
                 {
                     _logger.LogInformation("Active storm window expired — returning to idle poll interval ({Interval}s).",
                         _polling.PollIntervalSeconds);
                     _lastNewAlertUtc = null;
+                    _watchActiveUntilUtc = null;
                 }
                 delaySeconds = _polling.PollIntervalSeconds;
             }
