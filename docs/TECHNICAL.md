@@ -51,6 +51,10 @@ drives the main loop:
 platform service receives its typed `{Platform}Settings` singleton via constructor injection. All
 platform `HttpClient`s are registered with `AddHttpClient<T>()`.
 
+**Logging**: Serilog writes daily rolling files to `logs/`, retained for 30 days by default. The
+retention window (`retainedFileCountLimit`) is set in the `UseSerilog` call in `Program.cs` — a
+compile-time value, not an `appsettings.json` field, so changing it requires building from source.
+
 **Adding a new platform** follows an established pattern — settings class, service class, DI
 registration, injection into both `SocialMediaOrchestrator` and `StartupConfirmationService`,
 config block, README setup section. See `CLAUDE.md`'s "Non-Negotiable Rules" section (repo root)
@@ -253,6 +257,20 @@ Drives how often the orchestrator checks all feeds. Each feed still self-gates o
 `CheckIntervalSeconds` below; this only controls the overall tick. Only NWS alerts and SPC MCDs
 ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook, HWO, and WPC ERO never do.
 
+**Watches get their own expiry-based extension, independent of `ActiveAlertWindowHours`.** A
+storm-triggering NWS alert whose `event` contains "Watch" (e.g. "Severe Thunderstorm Watch",
+"Tornado Watch") sets `AlertPollingService._watchActiveUntilUtc` to that alert's own `ends`/`expires`
+time (`SocialMediaOrchestrator.RunAsync` returns this alongside the storm count); accelerated
+polling continues until whichever is later — the fixed `ActiveAlertWindowHours` from the last new
+alert, or this Watch's own expiry. Warnings and every other event type only ever get the fixed
+window. This exists because a Watch commonly runs longer than a 4h default (Severe Thunderstorm
+Watches often run 6–8h) — without it, the bot drops back to idle polling while the Watch is still
+in effect, and NWS only keeps a cancellation message in the active-alerts feed for a few minutes
+after issuance (confirmed as short as ~16 minutes on a real cancel), so a missed poll window means
+the cancellation is unrecoverable. Because cancellations are always downgraded to
+`severity: Minor` (see below), a cancel message itself never sets or extends this window — only
+the original Watch issuance (or an `Update` that revises its duration) does.
+
 ```json
 "Polling": {
   "PollIntervalSeconds": 300,
@@ -266,7 +284,7 @@ ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook, HWO, and W
 |---|---|---|
 | `PollIntervalSeconds` | Idle poll interval in seconds — used when no active storm window is open | `300` |
 | `ActiveAlertPollIntervalSeconds` | Accelerated poll interval in seconds while an active storm window is open | `60` |
-| `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new NWS alert; resets on each new NWS alert. SPC outlooks/HWO do not affect the storm window. | `4` |
+| `ActiveAlertWindowHours` | Hours to stay in accelerated polling after the last new NWS alert; resets on each new NWS alert. SPC outlooks/HWO do not affect the storm window. Watches also get an independent expiry-based extension — see below. | `4` |
 | `ActiveAlertMinSeverity` | Minimum severity for a new alert to trigger or extend accelerated polling mode. Alerts below this threshold are still posted but do not engage the faster poll interval. Leave empty to have any new alert trigger active mode. | `"Severe,Extreme"` |
 
 ### Nws — the main alerts feed's own query filters
@@ -300,6 +318,13 @@ warnings/watches/advisories + SPS) — SPC Outlook, SPC MCD, HWO, and WPC ERO be
 feeds with their own severity values, gated only by each platform's own `MinSeverity`. For
 practical recommended combinations of these fields, see the README's
 [Alert Filtering](../README.md#alert-filtering) section.
+
+`Cancel` messages are fetched via a second, unconditional query with no severity/urgency/certainty
+filter (`FilterEventTypes` still applies to it). This exists because NWS downgrades every
+cancellation to `severity: Minor`, `urgency: Past`, `certainty: Observed` regardless of the
+original event's actual severity — a normal `FilterSeverity` that excludes `Minor` (true of every
+recommended config in the README except "everything") would otherwise silently drop every single
+cancellation before the bot ever saw it.
 
 Each platform block also accepts:
 

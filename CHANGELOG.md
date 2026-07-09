@@ -3,6 +3,34 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Fix: a long-running Watch's cancellation could be silently missed.** NWS only keeps a
+  cancellation message in its active-alerts feed for a few minutes after issuance (confirmed as
+  short as ~16 minutes on a real cancel) — if the bot had already dropped back to idle polling by
+  then, the cancellation was gone before the next poll and unrecoverable. This happened whenever a
+  Watch ran longer than `ActiveAlertWindowHours` (e.g. an 8h Severe Thunderstorm Watch vs. the 4h
+  default), since only the Watch's *issuance* was Severe enough to trigger accelerated polling —
+  the eventual cancellation is always downgraded to `severity: Minor` by NWS and couldn't
+  re-trigger it. Fixed: a storm-triggering alert whose event name contains "Watch" now also sets
+  an independent expiry-based window (`SocialMediaOrchestrator.RunAsync` returns the Watch's own
+  `ends`/`expires` time; `AlertPollingService` keeps accelerated polling going until that time,
+  regardless of `ActiveAlertWindowHours`). Warnings and every other event type are unaffected —
+  they still use the fixed window as before.
+- **Docs: trimmed developer/implementation rationale out of README.md.** Several spots explained
+  *why* the code works a certain way (rate-limit counters persisting because of redeploy
+  frequency, cancellations bypassing filters via a separate query, a Program.cs-only log-retention
+  setting) — README.md now states only the user-facing behavior; the implementation reasoning
+  moved to docs/TECHNICAL.md (Architecture, and the `Nws` config section) so it isn't lost, just
+  relocated to the doc aimed at people modifying the code. Also fixed a couple of pre-existing
+  typos in the Setup steps.
+- **Change: `scripts/update.ps1 -Tag` is now optional, defaulting to the latest release.** Running
+  `./update.ps1` with no arguments resolves the latest tag via GitHub's `releases/latest` API
+  (the same lookup `UpdateCheckService` already does) instead of requiring you to check the
+  releases page and type the tag yourself. `-Tag v1.2.3` still works to pin a specific version.
+- **Refactor: extracted the multi-recipient fan-out pattern into `PlatformHelpers.FanOutAsync`.**
+  `DiscordService`, `DiscordDmService`, `TwilioService`, and `VoipMsService` each repeated the same
+  `Task.WhenAll(...).Select(...)` + `.All(r => r)` pair after their own (differing) recipient-list
+  guard clauses. No behavior change — pure extraction, the second deferred item from the
+  duplication-cleanup review.
 - **Fix: `update.ps1` now automatically rolls back a bad release.** After restarting, it waits
   `-RollbackCheckDelaySeconds` (default 15s) and checks whether the new version is still
   running/active (`Start-BotService` reports how it was started — systemd, Windows Service, or a

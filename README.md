@@ -44,7 +44,7 @@ users want the first option — no .NET SDK or Visual Studio required.
 2. Extract it — it contains the executable, `appsettings.json`, `update.ps1`, and
    `setup-service.ps1`
 3. Make a copy of `appsettings.json` and name the new file `appsettings.Local.json` alongside it (see [Local AppSettings file](#local-appsettings-file)) with your real credentials
-4. Set `"Enabled": true` for each platform you want active see [API Credentials](#api-credentials) to set up.
+4. Set `"Enabled": true` for each platform you want active — see [API Credentials](#api-credentials) for how to set each one up.
 5. Run it directly (`./NwsAlertBot` on Linux/macOS — `chmod +x` first if needed — or
    `NwsAlertBot.exe` on Windows), or install it as a background service — see
    [Running the Bot](#running-the-bot) below
@@ -64,7 +64,7 @@ Requires the **.NET 10 SDK** and Visual Studio 2022 (recommended) or VS Code.
 
 ### Local AppSettings file
 
-`appsettings.json` is as a template — all sensitive values are
+`appsettings.json` is a template — all sensitive values are
 placeholders like `"YOUR_API_KEY"`. **Never put real credentials in `appsettings.json`.**
 
 Instead, create `appsettings.Local.json` in the project root. Override only the fields you need:
@@ -114,14 +114,12 @@ logs/nwsalertbot-20260626.log
 ...
 ```
 
-Logs are retained for **30 days** and then automatically deleted. The file format includes full timestamps and the source class name, making it easy to grep for specific services:
+Logs are retained for **30 days** and then automatically deleted. The file format includes full timestamps and the name of the service that logged each line, making it easy to search for a specific platform or feed:
 
 ```
 [2026-06-25 14:32:01 INF] NwsAlertBot.Services.AlertPollingService: Active storm mode engaged — polling every 60s for 4h.
 [2026-06-25 14:32:03 ERR] NwsAlertBot.Services.FacebookService: Facebook: Post failed. Status=400
 ```
-
-To change the log retention period, update `retainedFileCountLimit` in the `UseSerilog` call in `Program.cs`.
 
 ### Alert Deduplication
 The bot tracks posted alert IDs in `posted_alerts.txt` in the working directory. This file
@@ -185,16 +183,22 @@ enough — `pwsh` is a separate, newer install).
 - **`GitHubRepo`** (default `"MikeWills/NwsAlertBot"`) — change this if you're running your own
   fork with its own tags/releases.
 - **`ServiceName`** (default `"nwsalertbot"`) — passed to `update.ps1` as its `-ServiceName` so it
-  restarts the right service after swapping the executable. This is the **single source of
-  truth**: `setup-service.ps1` reads this same value automatically (if you don't pass
-  `-ServiceName` to it explicitly), so you only ever set the name in one place. Only matters if
-  you're [running more than one instance](#running-as-a-service) on the same machine — set each
-  instance's own `appsettings.json` to a distinct name before running `setup-service.ps1`.
+  restarts the right service after swapping the executable. You only need to set it here:
+  `setup-service.ps1` reads this same value automatically unless you pass `-ServiceName` to it
+  explicitly. Only matters if you're [running more than one instance](#running-as-a-service) on
+  the same machine — set each instance's own `appsettings.json` to a distinct name before running
+  `setup-service.ps1`.
 
 ### Running it manually
 
-With `AutoApply: false` (the default), nothing happens automatically — check
-[the releases page](https://github.com/MikeWills/NwsAlertBot/releases) yourself and run:
+With `AutoApply: false` (the default), nothing happens automatically. Run the script with no
+arguments to install whatever is currently the latest release:
+
+```bash
+./update.ps1
+```
+
+To install a specific version instead, pass `-Tag`:
 
 ```bash
 ./update.ps1 -Tag v1.2.3
@@ -204,7 +208,7 @@ To safely verify the script works on your machine (downloads, checksum-verifies,
 doesn't touch your install or restart anything) before trusting it with `AutoApply: true`:
 
 ```bash
-./update.ps1 -Tag v1.2.3 -DryRun
+./update.ps1 -DryRun
 ```
 
 See `Get-Help ./update.ps1 -Full` for all parameters (`-Repo`, `-ServiceName`, etc.).
@@ -220,7 +224,7 @@ before you turn on `AutoApply` unattended. Short version: start with `AutoApply:
 ## Basic Configuration
 
 All configuration lives in `appsettings.json`, overridden by `appsettings.Local.json` for your
-real values (see [Keeping Secrets Out of Git](#keeping-secrets-out-of-git)). The two settings
+real values (see [Local AppSettings file](#local-appsettings-file)). The two settings
 blocks every feed shares:
 
 ```json
@@ -248,7 +252,10 @@ how to find your codes. `TimeZone` is an IANA ID (e.g. `America/Chicago`, `Ameri
 `PollIntervalSeconds` (default 300 = 5 min) is the normal check interval. When a new Severe/Extreme
 NWS alert (or SPC MCD) comes in, the bot switches to the faster `ActiveAlertPollIntervalSeconds`
 (default 60s) for `ActiveAlertWindowHours` (default 4), so you get near-real-time updates during
-active weather without hammering the API the rest of the time.
+active weather without hammering the API the rest of the time. A Watch (Tornado Watch, Severe
+Thunderstorm Watch, etc.) automatically keeps the faster interval going for its own full duration,
+even if that's longer than `ActiveAlertWindowHours` — that way the bot is still checking closely
+when the Watch is eventually cancelled or expires.
 
 The main NWS alert feed's own severity/urgency/certainty/event-type filters are covered next, in
 [Alert Filtering](#alert-filtering). For the complete field-by-field reference (every setting,
@@ -336,8 +343,9 @@ comma-separated.
 
 ## Alert Filtering
 
-All filter fields are pushed directly to the NWS API — the bot does not pull all alerts and
-filter locally. This keeps API responses small and fast.
+All filter fields below are applied by the National Weather Service itself when the bot requests
+alerts — you're not filtering a big list after the fact, you're only ever asking for the alerts
+that already match.
 
 ### Message Types
 
@@ -354,11 +362,9 @@ Each message type has its own unique ID, so deduplication works correctly — an
 **Cancellations always bypass `FilterSeverity`/`FilterUrgency`/`FilterCertainty`.** NWS downgrades
 every cancel message to `severity: Minor`, `urgency: Past`, `certainty: Observed` regardless of
 the original event's actual severity — confirmed even for cancelled Tornado Warnings and Flash
-Flood Warnings. Because of that, `Cancel` messages are fetched via a separate, unconditional
-query with no severity/urgency/certainty filter (`FilterEventTypes` still applies). Without this,
-almost any `FilterSeverity` that excludes `Minor` — which includes every example in this README
-except the "everything" one — would silently drop every single cancellation, for every alert
-type, before the bot ever saw it.
+Flood Warnings. That means a cancellation always reaches you, even with a `FilterSeverity` that
+excludes `Minor` (which is every example in this README except the "everything" one).
+`FilterEventTypes` still applies, though — a cancellation for an event type you've excluded won't post.
 
 ### FilterSeverity
 
@@ -628,8 +634,7 @@ Uses the same Meta Developer app as Facebook.
   once reached, further posts are skipped and logged (`X: Monthly post quota reached...`)
   instead of burning requests X would reject anyway. Raise it to `3000` if you're on the Basic
   tier, or set it to `0` to disable the guard entirely. The counter persists across restarts in
-  `x_post_count.txt` (rolling 30-day window) — this bot redeploys on every push to master, so an
-  in-memory-only counter would reset far too often to track a real monthly quota.
+  `x_post_count.txt` (rolling 30-day window).
 - When a map image is available, it's downloaded and uploaded via the v1.1 media endpoint before
   the tweet posts — no extra credentials needed, same OAuth 1.0a tokens are reused.
 
@@ -791,8 +796,7 @@ At $0.0079/segment × 3 recipients = ~$0.047 per alert event for 3 people.
 rolling 24-hour window, counted per recipient (one alert to 3 `ToNumbers` counts as 3) — protects
 against runaway Twilio charges during a busy severe weather outbreak. Once reached, further sends
 are skipped and logged (`Twilio: Daily SMS cost guard reached...`). Set it to `0` to disable. The
-counter persists across restarts in `twilio_sms_count.txt`, since this bot redeploys on every push
-to master and an in-memory-only counter would reset too often to be a meaningful daily cap.
+counter persists across restarts in `twilio_sms_count.txt`.
 
 **MMS (map images):** When a `MapImageUrl` is available (Mapbox alert maps, SPC outlook maps —
 see [Map Images](#map-images-mapbox)), it's sent as `MediaUrl`, turning the message into MMS.
@@ -821,8 +825,8 @@ enabled. Uses the VoIP.ms REST API directly — no SDK required.
 3. Add your server's public IP address to the API allow list on the same page. Find your
    server's public IP with `curl -4 ifconfig.me` — **not** its Tailscale IP if you're using
    Tailscale for anything else. Requests from a non-allow-listed IP don't get a clean error —
-   the connection just hangs until `HttpClient`'s 100-second timeout, which looks identical to
-   a network/firewall problem in the logs.
+   the connection just hangs for about 100 seconds, which looks identical to a network/firewall
+   problem in the logs.
 4. Fill in `ApiUsername`, `ApiPassword`, `Did` (digits only, no `+` or punctuation), and
    `ToNumbers` in `appsettings.json`
 
