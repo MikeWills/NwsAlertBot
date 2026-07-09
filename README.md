@@ -359,6 +359,10 @@ weakest points matter most, since nobody's watching. Worth understanding before 
 - **No integrity check on downloaded releases** beyond HTTPS transport security — no
   checksum/signature verification against what `release.yml` actually built.
 
+See `docs/plans/auto-update-remaining-limitations.md` for a concrete write-up of both of these —
+how to actually verify the Windows-Service race live, and an implementation sketch (plus the
+honest scope of what it would and wouldn't protect against) for checksum verification.
+
 If you want the peace of mind this feature is meant to provide, start with `AutoApply: false` and
 run `update.ps1` by hand for a while, or watch the logs closely the first few times you enable it.
 
