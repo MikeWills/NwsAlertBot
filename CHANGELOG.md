@@ -3,6 +3,15 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Fix: `Map.Enabled: false` didn't actually stop Mapbox fallback calls.** `MapService.GetMapUrlAsync`
+  (the primary path) correctly checked `Enabled` first, but `GetMapboxFallbackUrlAsync` — called by
+  `SocialMediaOrchestrator.DownloadMapImageAsync` whenever the primary image is unavailable — only
+  checked whether `AccessToken` was non-empty. Since the shipped template's placeholder token
+  (`"YOUR_MAPBOX_ACCESS_TOKEN"`) is non-empty, every alert fired a doomed HTTP call to Mapbox and
+  logged a 401 warning even with Map fully disabled. Harmless functionally (falls back to
+  text-only either way) but pure log noise with the feature off. Confirmed live: before the fix,
+  every alert logged "trying Mapbox fallback" + a 401; after, it goes straight to "Image
+  unavailable" with no Mapbox call at all.
 - **Fix: a long-running Watch's cancellation could be silently missed.** NWS only keeps a
   cancellation message in its active-alerts feed for a few minutes after issuance (confirmed as
   short as ~16 minutes on a real cancel) — if the bot had already dropped back to idle polling by
