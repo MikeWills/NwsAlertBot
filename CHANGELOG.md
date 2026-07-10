@@ -3,6 +3,11 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Docs: README download step now links directly to each OS's release asset.** Previously it
+  pointed users at the Releases page to find the right file themselves; now each OS has a direct
+  `releases/latest/download/{asset}` link (a stable GitHub URL that always resolves to the newest
+  release, no version number to edit each time) plus copy-pasteable `curl`/`Invoke-WebRequest` +
+  extract commands.
 - **Fix: `dotnet publish` could bundle real credentials into the build output.** `appsettings.Local.json`
   is copied to the build output (`dotnet build`/`dotnet run`, F5 in Visual Studio) whenever it
   exists, for local dev convenience — but that same MSBuild rule also applied to `dotnet publish`,

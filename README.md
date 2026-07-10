@@ -38,10 +38,40 @@ users want the first option — no .NET SDK or Visual Studio required.
 
 ### Option 1: Download a release (recommended)
 
-1. Download the archive for your OS from the
-   [Releases page](https://github.com/MikeWills/NwsAlertBot/releases) — `NwsAlertBot-win-x64.zip`,
-   `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`, or `NwsAlertBot-osx-arm64.tar.gz`
-2. Extract it — it contains the executable, `appsettings.json`, `update.ps1`,
+1. Download and extract the archive for your OS. These links always point to the latest release:
+
+   | OS | Download | Extract |
+   |---|---|---|
+   | Windows | [NwsAlertBot-win-x64.zip](https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-win-x64.zip) | Right-click → Extract All, or `Expand-Archive NwsAlertBot-win-x64.zip` |
+   | Linux (x64) | [NwsAlertBot-linux-x64.tar.gz](https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-linux-x64.tar.gz) | `tar -xzf NwsAlertBot-linux-x64.tar.gz` |
+   | macOS (Intel) | [NwsAlertBot-osx-x64.tar.gz](https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-osx-x64.tar.gz) | `tar -xzf NwsAlertBot-osx-x64.tar.gz` |
+   | macOS (Apple Silicon) | [NwsAlertBot-osx-arm64.tar.gz](https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-osx-arm64.tar.gz) | `tar -xzf NwsAlertBot-osx-arm64.tar.gz` |
+
+   From the command line, download and extract in one go:
+
+   ```bash
+   # Linux
+   curl -LO https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-linux-x64.tar.gz
+   tar -xzf NwsAlertBot-linux-x64.tar.gz
+
+   # macOS (Intel)
+   curl -LO https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-osx-x64.tar.gz
+   tar -xzf NwsAlertBot-osx-x64.tar.gz
+
+   # macOS (Apple Silicon)
+   curl -LO https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-osx-arm64.tar.gz
+   tar -xzf NwsAlertBot-osx-arm64.tar.gz
+   ```
+
+   ```powershell
+   # Windows (PowerShell)
+   Invoke-WebRequest https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-win-x64.zip -OutFile NwsAlertBot-win-x64.zip
+   Expand-Archive NwsAlertBot-win-x64.zip
+   ```
+
+   All prior versions are also listed on the [Releases page](https://github.com/MikeWills/NwsAlertBot/releases)
+   if you need to download a specific one instead of the latest.
+2. The extracted folder contains the executable, `appsettings.json`, `update.ps1`,
    `setup-service.ps1`, and `uninstall-service.ps1`
 3. Make a copy of `appsettings.json` and name the new file `appsettings.Local.json` alongside it (see [Local AppSettings file](#local-appsettings-file)) with your real credentials
 4. Set `"Enabled": true` for each platform you want active — see [API Credentials](#api-credentials) for how to set each one up.
