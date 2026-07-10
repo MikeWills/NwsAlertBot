@@ -13,6 +13,21 @@ Notable changes to NwsAlertBot, most recent first. For setup and usage, see
   risk — its checkout never has this `.gitignore`d file.) Fixed by pinning
   `CopyToPublishDirectory` to `Never` on that item — verified `dotnet publish` now excludes it
   while `dotnet build`'s output (and F5) still includes it, unchanged.
+- **Fix: `Map.Enabled: false` didn't actually stop Mapbox fallback calls.** `MapService.GetMapUrlAsync`
+  (the primary path) correctly checked `Enabled` first, but `GetMapboxFallbackUrlAsync` — called by
+  `SocialMediaOrchestrator.DownloadMapImageAsync` whenever the primary image is unavailable — only
+  checked whether `AccessToken` was non-empty. Since the shipped template's placeholder token
+  (`"YOUR_MAPBOX_ACCESS_TOKEN"`) is non-empty, every alert fired a doomed HTTP call to Mapbox and
+  logged a 401 warning even with Map fully disabled. Harmless functionally (falls back to
+  text-only either way) but pure log noise with the feature off. Confirmed live: before the fix,
+  every alert logged "trying Mapbox fallback" + a 401; after, it goes straight to "Image
+  unavailable" with no Mapbox call at all.
+- **Add `scripts/uninstall-service.ps1`.** A thin, discoverably-named wrapper around
+  `setup-service.ps1 -Uninstall` — stops and removes the systemd unit / Windows Service
+  registration without touching `appsettings.json`, credentials, or any runtime state file.
+  `-Uninstall` already did this, but it required knowing the flag existed; this gives it its own
+  obvious file, bundled in every release archive and refreshed on self-update alongside
+  `update.ps1`/`setup-service.ps1`.
 - **Fix: a long-running Watch's cancellation could be silently missed.** NWS only keeps a
   cancellation message in its active-alerts feed for a few minutes after issuance (confirmed as
   short as ~16 minutes on a real cancel) — if the bot had already dropped back to idle polling by
