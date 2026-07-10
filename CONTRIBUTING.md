@@ -99,14 +99,15 @@ git push origin v1.0.0
 
 Produces `NwsAlertBot-win-x64.zip`, `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`,
 and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release, each also containing
-`scripts/update.ps1` (see [Auto-Update](docs/TECHNICAL.md#auto-update--full-reference)) and
-`scripts/setup-service.ps1`.
+`scripts/update.ps1` (see [Auto-Update](docs/TECHNICAL.md#auto-update--full-reference)),
+`scripts/setup-service.ps1`, and `scripts/uninstall-service.ps1`.
 
 ### Running a downloaded build
 
-Each archive contains the executable, `appsettings.json`, `update.ps1`, and `setup-service.ps1`.
-See the README's [Running the Bot](README.md#running-the-bot) section for how to set it up and run
-it — the archive layout is identical to what you'd get from building locally.
+Each archive contains the executable, `appsettings.json`, `update.ps1`, `setup-service.ps1`, and
+`uninstall-service.ps1`. See the README's [Running the Bot](README.md#running-the-bot) section for
+how to set it up and run it — the archive layout is identical to what you'd get from building
+locally.
 
 ---
 

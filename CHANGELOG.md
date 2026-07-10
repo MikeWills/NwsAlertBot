@@ -12,6 +12,12 @@ Notable changes to NwsAlertBot, most recent first. For setup and usage, see
   text-only either way) but pure log noise with the feature off. Confirmed live: before the fix,
   every alert logged "trying Mapbox fallback" + a 401; after, it goes straight to "Image
   unavailable" with no Mapbox call at all.
+- **Add `scripts/uninstall-service.ps1`.** A thin, discoverably-named wrapper around
+  `setup-service.ps1 -Uninstall` — stops and removes the systemd unit / Windows Service
+  registration without touching `appsettings.json`, credentials, or any runtime state file.
+  `-Uninstall` already did this, but it required knowing the flag existed; this gives it its own
+  obvious file, bundled in every release archive and refreshed on self-update alongside
+  `update.ps1`/`setup-service.ps1`.
 - **Fix: a long-running Watch's cancellation could be silently missed.** NWS only keeps a
   cancellation message in its active-alerts feed for a few minutes after issuance (confirmed as
   short as ~16 minutes on a real cancel) — if the bot had already dropped back to idle polling by
