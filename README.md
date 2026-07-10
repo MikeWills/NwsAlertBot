@@ -50,22 +50,25 @@ users want the first option — no .NET SDK or Visual Studio required.
    From the command line, download and extract in one go:
 
    ```bash
+   RELEASE_URL=https://github.com/MikeWills/NwsAlertBot/releases/latest/download
+
    # Linux
-   curl -LO https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-linux-x64.tar.gz
+   curl -LO "$RELEASE_URL/NwsAlertBot-linux-x64.tar.gz"
    tar -xzf NwsAlertBot-linux-x64.tar.gz
 
    # macOS (Intel)
-   curl -LO https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-osx-x64.tar.gz
+   curl -LO "$RELEASE_URL/NwsAlertBot-osx-x64.tar.gz"
    tar -xzf NwsAlertBot-osx-x64.tar.gz
 
    # macOS (Apple Silicon)
-   curl -LO https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-osx-arm64.tar.gz
+   curl -LO "$RELEASE_URL/NwsAlertBot-osx-arm64.tar.gz"
    tar -xzf NwsAlertBot-osx-arm64.tar.gz
    ```
 
    ```powershell
    # Windows (PowerShell)
-   Invoke-WebRequest https://github.com/MikeWills/NwsAlertBot/releases/latest/download/NwsAlertBot-win-x64.zip -OutFile NwsAlertBot-win-x64.zip
+   $releaseUrl = "https://github.com/MikeWills/NwsAlertBot/releases/latest/download"
+   Invoke-WebRequest "$releaseUrl/NwsAlertBot-win-x64.zip" -OutFile NwsAlertBot-win-x64.zip
    Expand-Archive NwsAlertBot-win-x64.zip
    ```
 
