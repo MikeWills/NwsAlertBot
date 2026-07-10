@@ -105,7 +105,10 @@ on either script — just remember it needs to match on both.
   set those up yourself first (see the README's [Setup](../README.md#setup) section).
 - `-Uninstall` stops and removes the service registration only — it doesn't delete the
   executable, config, or any runtime state file. Also removes the passwordless-sudo rule below,
-  if one was created.
+  if one was created. `scripts/uninstall-service.ps1` (bundled alongside `setup-service.ps1` in
+  every release archive) is a thin wrapper that just forwards its own `-ServiceName`/`-InstallDir`/
+  `-DryRun` to `setup-service.ps1 -Uninstall` — it exists purely so removal has its own
+  obviously-named script instead of requiring you to know the `-Uninstall` flag exists.
 - `-DryRun` reports exactly what would be created/removed without touching anything — safe to
   run without elevation.
 - Errors out upfront (before creating anything) if `appsettings.json` is missing from
