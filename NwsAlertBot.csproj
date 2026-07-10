@@ -38,9 +38,15 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <!-- Copy local overrides if present; optional so missing file is not an error -->
+    <!-- Copy local overrides if present; optional so missing file is not an error. Copied to the
+         build output (dotnet build/run, F5 in Visual Studio) but never to the publish output.
+         CopyToPublishDirectory otherwise inherits CopyToOutputDirectory's value, which would bundle
+         real credentials into a `dotnet publish` build, including a release cut locally by hand
+         per CONTRIBUTING.md. (CI's release.yml checkout never has this gitignored file, so it was
+         never at risk there, but a local publish was.) -->
     <None Update="appsettings.Local.json" Condition="Exists('appsettings.Local.json')">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 

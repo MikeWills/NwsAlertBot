@@ -3,6 +3,16 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Fix: `dotnet publish` could bundle real credentials into the build output.** `appsettings.Local.json`
+  is copied to the build output (`dotnet build`/`dotnet run`, F5 in Visual Studio) whenever it
+  exists, for local dev convenience — but that same MSBuild rule also applied to `dotnet publish`,
+  since `CopyToPublishDirectory` inherits `CopyToOutputDirectory`'s value unless set explicitly.
+  CONTRIBUTING.md's "cutting a release" instructions use plain `dotnet publish` locally, so anyone
+  building their own release from a checkout with real credentials in `appsettings.Local.json`
+  would unknowingly bundle them into the distributable output. (CI's `release.yml` was never at
+  risk — its checkout never has this `.gitignore`d file.) Fixed by pinning
+  `CopyToPublishDirectory` to `Never` on that item — verified `dotnet publish` now excludes it
+  while `dotnet build`'s output (and F5) still includes it, unchanged.
 - **Fix: `Map.Enabled: false` didn't actually stop Mapbox fallback calls.** `MapService.GetMapUrlAsync`
   (the primary path) correctly checked `Enabled` first, but `GetMapboxFallbackUrlAsync` — called by
   `SocialMediaOrchestrator.DownloadMapImageAsync` whenever the primary image is unavailable — only
