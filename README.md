@@ -190,8 +190,9 @@ sudo ./uninstall-service.ps1 -ServiceName nwsalertbot
 ./uninstall-service.ps1 -ServiceName nwsalertbot
 ```
 
-Running more than one instance on the same machine (e.g. one bot per Discord server), `-DryRun`,
-granting passwordless sudo for `Update.AutoApply`, and macOS status are all covered in
+Running more than one instance on the same machine (e.g. one bot per Discord server), running as a
+dedicated service account (`-User`, Linux only), `-DryRun`, granting passwordless sudo for
+`Update.AutoApply`, and macOS status are all covered in
 [docs/TECHNICAL.md — Running as a Service](docs/TECHNICAL.md#running-as-a-service--full-reference).
 
 ---

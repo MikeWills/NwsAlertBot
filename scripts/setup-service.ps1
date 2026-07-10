@@ -32,6 +32,13 @@
 .PARAMETER Description
     Human-readable service description. Defaults to a name derived from -ServiceName.
 
+.PARAMETER User
+    Linux only. The systemd unit's User=. Defaults to whoever runs this script (via `whoami`) --
+    pass this to run the service as a different, e.g. dedicated, account instead. The user must
+    already exist. Also chowns -InstallDir to it, since the account needs write access there for
+    logs/, posted_alerts.txt, and the other runtime state files -- without this the service would
+    install and immediately crash-loop with a permission-denied error trying to create logs/.
+
 .PARAMETER Uninstall
     Stops and removes the named service instead of creating it. Does not touch the executable,
     appsettings.json, or any runtime state file -- only the service registration itself.
@@ -63,11 +70,17 @@
 .EXAMPLE
     # Also grants passwordless "systemctl restart nwsalertbot-mainserver", needed for AutoApply
     sudo ./setup-service.ps1 -ServiceName nwsalertbot-mainserver -ConfigurePasswordlessSudo
+
+.EXAMPLE
+    # Linux only -- runs the service as the dedicated "nwsbot" account instead of whoever ran
+    # this script, and chowns -InstallDir to it so it can write logs/ and other state files.
+    sudo ./setup-service.ps1 -ServiceName nwsalertbot -User nwsbot
 #>
 param(
     [string]$ServiceName,
     [string]$InstallDir = $PSScriptRoot,
     [string]$Description,
+    [string]$User,
     [switch]$Uninstall,
     [switch]$DryRun,
     [switch]$ConfigurePasswordlessSudo
@@ -113,6 +126,11 @@ if (-not $ServiceName) {
 
 if (-not $Description) {
     $Description = "NWS Alert Bot ($ServiceName)"
+}
+
+if ($User -and -not $IsLinux) {
+    Write-Step "WARNING: -User has no effect outside Linux (Windows Services run under LocalSystem here) -- ignoring."
+    $User = $null
 }
 
 $exeName = if ($IsWindows) { "NwsAlertBot.exe" } elseif ($IsLinux -or $IsMacOS) { "NwsAlertBot" } else {
@@ -220,7 +238,18 @@ elseif ($IsLinux) {
         exit 1
     }
 
-    $currentUser = (whoami).Trim()
+    $serviceUser = if ($User) { $User } else { (whoami).Trim() }
+
+    # Catches a typo here before it becomes a cryptic systemd "user does not exist" failure
+    # well after this script has already exited.
+    if ($User) {
+        & id $User *> $null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "User '$User' does not exist on this system. Create it first (e.g. sudo useradd -r -s /usr/sbin/nologin $User), then re-run this script."
+            exit 1
+        }
+    }
+
     $unitContent = @"
 [Unit]
 Description=$Description
@@ -230,7 +259,7 @@ After=network.target
 Type=simple
 ExecStart=$exePath
 WorkingDirectory=$InstallDir
-User=$currentUser
+User=$serviceUser
 Restart=always
 RestartSec=10
 
@@ -241,6 +270,9 @@ WantedBy=multi-user.target
     if ($DryRun) {
         Write-Step "-DryRun: would write the following unit to $unitPath, then enable and start it:"
         Write-Host $unitContent
+        if ($User) {
+            Write-Step "-DryRun: would also chown $InstallDir to '$User'."
+        }
         if ($ConfigurePasswordlessSudo) {
             Write-Step "-DryRun: would also write a passwordless-sudo rule for 'systemctl restart $ServiceName' to $sudoersPath."
         }
@@ -250,6 +282,14 @@ WantedBy=multi-user.target
     Write-Step "Writing systemd unit to $unitPath (requires sudo)..."
     $unitContent | sudo tee $unitPath | Out-Null
     chmod +x $exePath
+
+    if ($User) {
+        # The service user needs write access to -InstallDir for logs/, posted_alerts.txt, and
+        # the other runtime state files -- without this it installs and immediately crash-loops
+        # with a permission-denied error the first time it tries to create logs/.
+        Write-Step "Granting '$User' ownership of $InstallDir..."
+        sudo chown -R "${User}" $InstallDir
+    }
 
     Write-Step "Enabling and starting '$ServiceName'..."
     sudo systemctl daemon-reload

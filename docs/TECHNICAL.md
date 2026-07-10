@@ -94,6 +94,24 @@ sudo ./setup-service.ps1 -InstallDir /opt/nwsalertbot-servertwo
 If you'd rather not touch `appsettings.json`, `-ServiceName` still works as an explicit override
 on either script — just remember it needs to match on both.
 
+### Running as a dedicated service account (Linux)
+
+By default the systemd unit's `User=` is whoever ran `setup-service.ps1`. Pass `-User` to run the
+service as a different account instead (e.g. a dedicated, unprivileged `nwsbot` account rather than
+your own login):
+
+```bash
+sudo ./setup-service.ps1 -ServiceName nwsalertbot -User nwsbot
+```
+
+The account must already exist (`-User` errors out upfront if it doesn't, rather than installing a
+unit that fails at start time with a confusing "user does not exist" message from systemd). The
+script also `chown`s `-InstallDir` to that user, since it needs write access there for `logs/`,
+`posted_alerts.txt`, and the other runtime state files — without this the service installs and
+starts, but immediately crash-loops with an unhandled `UnauthorizedAccessException` the first time
+it tries to create `logs/`. Ignored (with a warning) on Windows, where the service runs under
+`LocalSystem` regardless.
+
 ### What it does (and doesn't) do
 
 - Creates the service pointed at the executable in `-InstallDir` (default: this script's own

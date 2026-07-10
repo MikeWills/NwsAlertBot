@@ -3,6 +3,13 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Add `-User` to `scripts/setup-service.ps1` (Linux only).** Previously the systemd unit's
+  `User=` was always whoever ran the script (`whoami`), with no way to install the service under a
+  different, e.g. dedicated, account without literally running the script as that account.
+  `-User` now lets you specify it directly; the script validates the account exists first and
+  `chown`s `-InstallDir` to it, since running as a different user than whoever owns the install
+  directory otherwise causes an immediate crash-loop (`UnauthorizedAccessException` creating
+  `logs/`) — exactly the failure mode that prompted this.
 - **Docs: README download step now links directly to each OS's release asset.** Previously it
   pointed users at the Releases page to find the right file themselves; now each OS has a direct
   `releases/latest/download/{asset}` link (a stable GitHub URL that always resolves to the newest
