@@ -178,7 +178,7 @@ public class MapService
     /// </summary>
     public Task<string?> GetMapboxFallbackUrlAsync(NwsAlert alert)
     {
-        if (string.IsNullOrEmpty(_settings.AccessToken)) return Task.FromResult<string?>(null);
+        if (!_settings.Enabled || string.IsNullOrEmpty(_settings.AccessToken)) return Task.FromResult<string?>(null);
         return GetMapboxUrlAsync(alert);
     }
 

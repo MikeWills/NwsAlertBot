@@ -3,6 +3,15 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Fix: `Map.Enabled: false` didn't actually stop Mapbox fallback calls.** `MapService.GetMapUrlAsync`
+  (the primary path) correctly checked `Enabled` first, but `GetMapboxFallbackUrlAsync` — called by
+  `SocialMediaOrchestrator.DownloadMapImageAsync` whenever the primary image is unavailable — only
+  checked whether `AccessToken` was non-empty. Since the shipped template's placeholder token
+  (`"YOUR_MAPBOX_ACCESS_TOKEN"`) is non-empty, every alert fired a doomed HTTP call to Mapbox and
+  logged a 401 warning even with Map fully disabled. Harmless functionally (falls back to
+  text-only either way) but pure log noise with the feature off. Confirmed live: before the fix,
+  every alert logged "trying Mapbox fallback" + a 401; after, it goes straight to "Image
+  unavailable" with no Mapbox call at all.
 - **Add `scripts/uninstall-service.ps1`.** A thin, discoverably-named wrapper around
   `setup-service.ps1 -Uninstall` — stops and removes the systemd unit / Windows Service
   registration without touching `appsettings.json`, credentials, or any runtime state file.
