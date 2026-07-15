@@ -50,7 +50,7 @@ public class NwsAlert
     /// <summary>Downloaded bytes of the map image, populated by SocialMediaOrchestrator once before all platforms post. Null when no image URL or download failed.</summary>
     public byte[]? MapImageBytes { get; set; }
 
-    /// <summary>Link to the full alert detail record. Null when no such link is available. SMS services (Twilio/VoIP.ms) always include this and preserve it when truncating.</summary>
+    /// <summary>Link to the full alert detail record. Null when no such link is available. Included by every platform (via FormatPost, PushoverService.BuildBody, or PlatformHelpers.BuildSmsText) whenever it fits and isn't already duplicated in Instruction/HwoText.</summary>
     public string? DetailsUrl { get; set; }
 
     /// <summary>True when this alert was synthesized by SpcOutlookService rather than fetched from the NWS API.</summary>
@@ -149,6 +149,14 @@ public class NwsAlert
                 if (withAttribution.Length <= maxLength)
                     body = withAttribution;
             }
+        }
+
+        // Append the details link, unless SPC Outlook/MCD/ERO already baked it into Instruction.
+        if (!string.IsNullOrWhiteSpace(DetailsUrl) && !body.Contains(DetailsUrl, StringComparison.Ordinal))
+        {
+            string withDetails = body + $"\n\nDetails: {DetailsUrl}";
+            if (withDetails.Length <= maxLength)
+                body = withDetails;
         }
 
         // Truncate with ellipsis if still over limit

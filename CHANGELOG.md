@@ -3,6 +3,22 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Fix: "Details" links pointed at the raw `api.weather.gov` JSON API instead of a
+  human-readable webpage, and were SMS-only.** NWS alerts and HWO posts built their `DetailsUrl`
+  from `api.weather.gov/alerts/{id}` / `api.weather.gov/products/{uuid}` — link-preview generators
+  (confirmed on iOS SMS) fetch that URL and render the raw JSON body inline in the message, which
+  is unreadable and unhelpful. NWS alerts now link to `forecast.weather.gov/product.php`, built
+  from the already-parsed AFOS PIL (`parameters.AWIPSidentifier`) — a server-rendered page,
+  confirmed to show the actual formatted alert text — falling back to IEM's VTEC event browser
+  (built from the already-parsed VTEC fields) only if the PIL is missing/malformed. HWO now uses
+  the same `forecast.weather.gov` viewer built from its known WFO + fixed `HWO` product code. SPC
+  Outlook/MCD and WPC ERO were unaffected — they already linked to spc.noaa.gov/wpc.ncep.noaa.gov
+  human pages. Separately, `DetailsUrl` previously only reached Twilio/VoIP.ms SMS
+  (`PlatformHelpers.BuildSmsText`) — every other platform silently dropped it. `NwsAlert.FormatPost`
+  and `PushoverService.BuildBody` now append the same `Details: {url}` line (when it fits and isn't
+  already duplicated from Instruction), so X, Facebook, Discord, Discord DM, Telegram, Mastodon,
+  Bluesky, Instagram, and Pushover all get it too. See docs/TECHNICAL.md "Alert Details Links —
+  Internals".
 - **Add `-User` to `scripts/setup-service.ps1` (Linux only).** Previously the systemd unit's
   `User=` was always whoever ran the script (`whoami`), with no way to install the service under a
   different, e.g. dedicated, account without literally running the script as that account.

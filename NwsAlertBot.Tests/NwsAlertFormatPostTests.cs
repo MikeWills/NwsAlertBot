@@ -113,4 +113,42 @@ public class NwsAlertFormatPostTests
 
         Assert.Contains(expectedMarker, result);
     }
+
+    [Fact]
+    public void FormatPost_AppendsDetailsLinkWhenSet()
+    {
+        var alert = MakeAlert();
+        alert.DetailsUrl = "https://forecast.weather.gov/product.php?site=NWS&issuedby=DLH&product=NPW";
+
+        var result = alert.FormatPost(maxLength: 500);
+
+        Assert.Contains($"Details: {alert.DetailsUrl}", result);
+    }
+
+    [Fact]
+    public void FormatPost_OmitsDetailsLinkWhenItWouldNotFit()
+    {
+        var alert = MakeAlert();
+        alert.DetailsUrl = "https://forecast.weather.gov/product.php?site=NWS&issuedby=DLH&product=NPW";
+
+        var result = alert.FormatPost(maxLength: 30);
+
+        Assert.DoesNotContain(alert.DetailsUrl, result);
+    }
+
+    [Fact]
+    public void FormatPost_DoesNotDuplicateDetailsLinkAlreadyBakedIntoInstruction()
+    {
+        // SPC Outlook/MCD/ERO append their details URL directly into Instruction at construction
+        // time (so short-form platforms without a separate Details line still show it). FormatPost
+        // must not add a second "Details:" line for the same URL.
+        var alert = MakeAlert();
+        alert.DetailsUrl = "https://www.spc.noaa.gov/products/outlook/day1otlk.html";
+        alert.Instruction = $"Tornado: 5%\nFor more details: {alert.DetailsUrl}";
+
+        var result = alert.FormatPost(maxLength: 2000);
+
+        var occurrences = result.Split(alert.DetailsUrl).Length - 1;
+        Assert.Equal(1, occurrences);
+    }
 }

@@ -142,9 +142,6 @@ public class NwsAlertService
                 DisplayTimeZone = _timeZone,
             };
 
-            if (!string.IsNullOrWhiteSpace(alert.Id))
-                alert.DetailsUrl = $"https://api.weather.gov/alerts/{alert.Id}";
-
             if (feature.TryGetProperty("geometry", out var geo) && geo.ValueKind != JsonValueKind.Null)
                 alert.GeometryJson = geo.GetRawText();
 
@@ -198,6 +195,8 @@ public class NwsAlertService
                     if (wmoVal != null) alert.WmoIdentifier = wmoVal;
                 }
             }
+
+            alert.DetailsUrl = BuildDetailsUrl(alert);
 
             alerts.Add(alert);
         }
@@ -294,6 +293,35 @@ public class NwsAlertService
     private static readonly Regex VtecPattern = new(
         @"/[A-Z]\.(?<action>[A-Z]+)\.(?<wfo>[A-Z]{4})\.(?<phenom>[A-Z]{2})\.(?<sig>[A-Z])\.(?<etn>\d{4})\.",
         RegexOptions.Compiled);
+
+    // AWIPSidentifier (AFOS PIL), e.g. "NPWDLH": 3-char product category + 3-char WFO id.
+    private static readonly Regex AwipsIdPattern = new(@"^[A-Z]{6}$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Builds a human-readable "Details" link for the alert instead of the raw
+    /// api.weather.gov JSON endpoint (which iMessage/SMS link previews render as an
+    /// unreadable JSON dump). Prefers the NWS text-product viewer built from the AFOS PIL
+    /// (server-rendered HTML); falls back to IEM's VTEC event page (a JS single-page app —
+    /// worse link-preview quality, but still a real webpage) if the PIL is missing/malformed.
+    /// </summary>
+    internal static string? BuildDetailsUrl(NwsAlert alert)
+    {
+        if (alert.AfosId != null && AwipsIdPattern.IsMatch(alert.AfosId))
+        {
+            string product = alert.AfosId[..3];
+            string wfo = alert.AfosId[3..];
+            return $"https://forecast.weather.gov/product.php?site=NWS&issuedby={wfo}&product={product}&format=CI&version=1&glossary=0";
+        }
+
+        if (alert.VtecWfo != null && alert.VtecPhenomena != null && alert.VtecSignificance != null && alert.VtecEtn.HasValue)
+        {
+            return "https://mesonet.agron.iastate.edu/vtec/" +
+                   $"?wfo=K{alert.VtecWfo}&phenomena={alert.VtecPhenomena}&significance={alert.VtecSignificance}" +
+                   $"&eventid={alert.VtecEtn.Value:D4}&year={alert.Sent.Year}";
+        }
+
+        return null;
+    }
 
     internal static string NormalizeNwsText(string text)
     {

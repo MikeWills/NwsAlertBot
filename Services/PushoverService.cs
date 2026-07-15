@@ -90,13 +90,22 @@ public class PushoverService
         }
     }
 
-    private static string BuildBody(NwsAlert alert)
+    internal static string BuildBody(NwsAlert alert)
     {
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(alert.AreaDesc)) sb.AppendLine(alert.AreaDesc);
         var expiresAt = alert.Ends ?? alert.Expires;
         if (expiresAt.HasValue) sb.AppendLine($"Until: {expiresAt.Value.ToLocalTime():ddd h:mm tt zzz}");
         if (!string.IsNullOrWhiteSpace(alert.Instruction)) { sb.AppendLine(); sb.Append(alert.Instruction); }
+
+        // Append the details link, unless SPC Outlook/MCD/ERO already baked it into Instruction.
+        if (!string.IsNullOrWhiteSpace(alert.DetailsUrl) && !sb.ToString().Contains(alert.DetailsUrl, StringComparison.Ordinal))
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.Append($"Details: {alert.DetailsUrl}");
+        }
+
         return sb.ToString().Trim();
     }
 }

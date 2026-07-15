@@ -167,7 +167,7 @@ public class HwoService
                 SenderName      = officeName != null ? $"National Weather Service {officeName}" : "National Weather Service",
                 Sent            = issuanceTime,
                 HwoText         = CleanHwoText(text),
-                DetailsUrl      = $"https://api.weather.gov/products/{uuid}",
+                DetailsUrl      = $"https://forecast.weather.gov/product.php?site=NWS&issuedby={wfo}&product=HWO&format=CI&version=1&glossary=0",
                 IsHwo           = true,
                 DisplayTimeZone = _timeZone,
             };

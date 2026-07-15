@@ -673,6 +673,48 @@ For setup and the per-platform behavior table, see the README's
 
 ---
 
+## Alert Details Links — Internals
+
+Every alert's `DetailsUrl` is rendered as a `Details: {url}` line on every platform:
+`NwsAlert.FormatPost` appends it for X/Facebook/Discord/DiscordDm/Telegram/Mastodon/Bluesky/
+Instagram, `PushoverService.BuildBody` appends it for Pushover, and
+`PlatformHelpers.BuildSmsText` appends it for Twilio/VoIP.ms. All three skip appending it when
+the URL is already present verbatim in `Instruction` — SPC Outlook/MCD/ERO bake their details
+link directly into `Instruction` at construction time (see below) so it survives on platforms
+that only ever rendered `Instruction`; without this dedup check every alert from those three
+sources would show the link twice. All three also only append the line if it fits within the
+platform's character limit — never truncating the URL itself.
+
+`DetailsUrl` must be a server-rendered, human-readable webpage — not a JSON API endpoint.
+Sending a raw `api.weather.gov/alerts/{id}` or `api.weather.gov/products/{uuid}` link in an SMS
+causes iOS/Android link-preview generators to fetch and render the raw JSON body inline in the
+message thread, which is unreadable and was the original motivation for this design.
+
+- **NWS alerts** (`NwsAlertService.BuildDetailsUrl`): built from `parameters.AWIPSidentifier`
+  (AFOS PIL, e.g. `NPWDLH` — 3-char product category + 3-char WFO id) into
+  `https://forecast.weather.gov/product.php?site=NWS&issuedby={wfo}&product={product}&format=CI&version=1&glossary=0`
+  — the same text-product viewer used natively on weather.gov, confirmed server-rendered (no JS
+  required to show content). Falls back to IEM's VTEC event browser
+  (`https://mesonet.agron.iastate.edu/vtec/?wfo=K{wfo}&phenomena={phenom}&significance={sig}&eventid={etn}&year={year}`,
+  built from the already-parsed VTEC fields) only if the AFOS PIL is missing or fails
+  `AwipsIdPattern` (`^[A-Z]{6}$`). The IEM page is a JS single-page app — real content requires a
+  live browser, so it renders as a generic "not found" placeholder to anything that only fetches
+  the initial HTML (like a link-preview bot) — inferior for previews, but still a real page once
+  opened, unlike a JSON dump.
+- **HWO** (`HwoService.FetchLatestAsync`): same `forecast.weather.gov/product.php` viewer, built
+  directly from the already-resolved WFO and the fixed `HWO` product code — no AFOS-PIL parsing
+  needed since HWO's PIL is always `HWO{wfo}`.
+- **SPC Outlook / SPC MCD / WPC ERO**: link directly to the human-facing SPC/WPC product pages
+  (`spc.noaa.gov/products/outlook/...`, `spc.noaa.gov/products/md/...`,
+  `wpc.ncep.noaa.gov/qpf/ero.php...`) — these were never API endpoints, so no change was needed.
+
+Note that `forecast.weather.gov/product.php?...&version=1` shows the *latest* issuance of that
+AFOS PIL for that office, not necessarily the exact issuance instance tied to an older alert (e.g.
+if the same office has since issued a newer Tornado Warning under the same PIL). This is an
+accepted, minor gap — correct almost all of the time, and still far better than a raw JSON link.
+
+---
+
 ## References
 
 - NWS REST API documentation: https://www.weather.gov/documentation/services-web-api
