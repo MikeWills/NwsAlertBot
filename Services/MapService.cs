@@ -17,7 +17,9 @@ namespace NwsAlertBot.Services;
 /// warning polygon, county boundaries, and NEXRAD radar overlay. IEM's VTEC JSON API is
 /// checked first to confirm the event exists in their database; if not found, falls through
 /// to Mapbox. IEM silently serves a default demo image (HTTP 200) for unknown events, so
-/// the pre-flight JSON check is required to avoid posting wrong maps.
+/// the pre-flight JSON check is required to avoid posting wrong maps. IEM needs no
+/// account/token, so both IEM paths (#208 here and #217 for SPS) are always attempted
+/// regardless of Map.Enabled/AccessToken — only the Mapbox fallback below is gated by those.
 ///
 /// Mapbox fallback: Overlay geometry priority:
 ///   1. Alert's own GeoJSON polygon (when NWS provides one).
@@ -57,13 +59,13 @@ public class MapService
     }
 
     /// <summary>
-    /// Returns a map image URL for the alert, or null if map generation is disabled,
-    /// unconfigured, or no bounding box could be determined.
+    /// Returns a map image URL for the alert, or null if no image source is available.
+    /// IEM autoplot (both #217 and #208 below) needs no account/token and is always attempted
+    /// regardless of <see cref="MapSettings.Enabled"/> — that setting only gates the Mapbox
+    /// fallback, since Mapbox is the one source that requires a configured account.
     /// </summary>
     public async Task<string?> GetMapUrlAsync(NwsAlert alert)
     {
-        if (!_settings.Enabled) return null;
-
         // IEM autoplot #217: SPS-specific map image (non-VTEC). Takes the IEM product ID
         // constructed from AWIPSidentifier (AFOS PIL) and WMOidentifier parsed from the alert.
         // Pre-flight GeoJSON check required: IEM returns HTTP 200 with a demo image for unknown
@@ -110,8 +112,10 @@ public class MapService
         }
 
         // Fallback: Mapbox static image (used for non-VTEC events, CAN/EXP, or when IEM
-        // doesn't have the event in its VTEC database)
-        return await GetMapboxUrlAsync(alert);
+        // doesn't have the event in its VTEC database). Unlike IEM above, this does require
+        // Map.Enabled + a configured AccessToken — routed through GetMapboxFallbackUrlAsync so
+        // both entry points share the same "is Mapbox actually usable" check.
+        return await GetMapboxFallbackUrlAsync(alert);
     }
 
     // IEM sometimes uses a different phenomena code than NWS does in the VTEC string.
@@ -172,9 +176,11 @@ public class MapService
     }
 
     /// <summary>
-    /// Returns a Mapbox static map URL for the alert, bypassing the IEM check.
-    /// Called when the IEM image download fails after all retries.
-    /// Returns null if Mapbox is not configured or no bounding box is available.
+    /// Returns a Mapbox static map URL for the alert, bypassing the IEM check. Called both by
+    /// GetMapUrlAsync (when no IEM image is available at all) and by
+    /// SocialMediaOrchestrator.DownloadMapImageAsync (when an IEM image URL was returned but its
+    /// download then failed after all retries). Returns null if Map is disabled, no AccessToken
+    /// is configured, or no bounding box is available.
     /// </summary>
     public Task<string?> GetMapboxFallbackUrlAsync(NwsAlert alert)
     {

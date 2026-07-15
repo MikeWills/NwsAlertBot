@@ -626,13 +626,18 @@ filter fields were added beyond `IncludeEro` (see [Configuration Reference](#con
 
 ## Map Images — Internals
 
-When enabled, the bot generates a **Mapbox Static Images** URL for each NWS alert (warnings,
-watches, advisories) and attaches it via the alert's `MapImageUrl` field to every platform that
-supports images. SPC Convective Outlook and WPC ERO posts get their own image independently of
-this setting through the same `MapImageUrl` field, so the platform behavior table in the README's
+For each NWS alert (warnings, watches, advisories), `MapService.GetMapUrlAsync` generates an
+image URL and attaches it via the alert's `MapImageUrl` field to every platform that supports
+images. SPC Convective Outlook, SPC MCD, and WPC ERO posts get their own image independently of
+`MapService` entirely (built directly from spc.noaa.gov/wpc.ncep.noaa.gov by their own services)
+through the same `MapImageUrl` field, so the platform behavior table in the README's
 [Map Images](../README.md#map-images-mapbox) section applies to all of them.
 
-Map images are generated from two sources depending on the alert type:
+Map images are generated from two sources depending on the alert type. **`Map.Enabled` and
+`Map.AccessToken` only gate the Mapbox source** — the two IEM paths below need no account/token
+and are always attempted first, regardless of whether Mapbox is configured. (Before this was
+decoupled, `Map.Enabled: false` — the shipped default — silently skipped IEM too, so a fresh
+install with no Mapbox account got no map images at all for ordinary NWS alerts.)
 
 **IEM (primary — most NWS alerts):** The bot parses the VTEC code from each NWS alert
 (`parameters.VTEC`) and requests a pre-rendered PNG from Iowa State University's IEM Autoplot

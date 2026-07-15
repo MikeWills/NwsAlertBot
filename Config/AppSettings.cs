@@ -570,7 +570,7 @@ public class VoipMsSettings : IPlatformFilterSettings
 
 public class MapSettings
 {
-    /// <summary>Whether to generate Mapbox static map images for alert areas.</summary>
+    /// <summary>Whether to generate Mapbox static map images for alert areas. Only gates the Mapbox fallback — IEM autoplot maps (the primary source for most NWS alerts) need no account and are always attempted regardless of this setting.</summary>
     public bool Enabled { get; set; }
 
     /// <summary>
