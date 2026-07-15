@@ -990,14 +990,15 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 
 ## Map Images (Mapbox)
 
-When enabled, the bot generates a map image for each alert (NWS warnings/watches/advisories, plus
-SPC Outlook and WPC ERO posts) and attaches it to every platform that supports images. Most maps
-come from a free IEM service requiring no setup on your part; Mapbox is used as a fallback for
-alerts with no VTEC code. See
+The bot generates a map image for each alert (NWS warnings/watches/advisories, plus SPC Outlook,
+SPC MCD, and WPC ERO posts) and attaches it to every platform that supports images. Most maps come
+from a free IEM service that needs no account or setup on your part — this always runs, even
+without Mapbox configured. Mapbox is only used as a fallback, for the minority of alerts IEM can't
+provide a map for (no VTEC code, or not yet indexed by IEM), and requires the setup below. See
 [docs/TECHNICAL.md — Map Images](docs/TECHNICAL.md#map-images--internals) for how the bot decides
 which source to use.
 
-### Setup
+### Setup (Mapbox fallback only — optional)
 
 1. Create a free account at [account.mapbox.com](https://account.mapbox.com/)
 2. Copy your **default public token** (starts with `pk.`) from the Tokens page
@@ -1016,7 +1017,7 @@ which source to use.
 
 | Field | Description | Default |
 |---|---|---|
-| `Enabled` | Whether to generate map images | `false` |
+| `Enabled` | Whether to use Mapbox as a fallback when IEM has no map for an alert. Does not affect IEM, which is always attempted first regardless of this setting. | `false` |
 | `AccessToken` | Mapbox public token (starts with `pk.`) | `""` |
 | `Style` | Mapbox style ID, format `{username}/{style_id}` | `"mapbox/outdoors-v12"` |
 | `Width` | Image width in pixels (max 1280) | `600` |

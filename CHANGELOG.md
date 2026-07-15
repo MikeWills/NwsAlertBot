@@ -3,6 +3,17 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Fix: `Map.Enabled: false` (the shipped default) silently disabled free IEM map images too,
+  not just Mapbox.** `MapService.GetMapUrlAsync` gated its entire body — including both
+  no-account-needed IEM autoplot paths (#208 for VTEC alerts, #217 for SPS) — behind
+  `Map.Enabled`, a setting documented and named for Mapbox specifically. A fresh install that
+  never set up Mapbox (the shipped default) got zero map images for ordinary NWS
+  warnings/watches/advisories, even though IEM needs no signup. Confirmed live: a Discord post
+  for an Extreme Heat Warning had no image attached. IEM is now always attempted first regardless
+  of `Map.Enabled`; that setting (and `AccessToken`) only gate the Mapbox fallback, routed through
+  the existing `GetMapboxFallbackUrlAsync` so both call sites share one "is Mapbox usable" check.
+  SPC Outlook/MCD/ERO were already unaffected — they build their own image URLs independently of
+  `MapService`. See docs/TECHNICAL.md "Map Images — Internals".
 - **Fix: "Details" links pointed at the raw `api.weather.gov` JSON API instead of a
   human-readable webpage, and were SMS-only.** NWS alerts and HWO posts built their `DetailsUrl`
   from `api.weather.gov/alerts/{id}` / `api.weather.gov/products/{uuid}` — link-preview generators
