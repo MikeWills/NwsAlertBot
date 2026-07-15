@@ -152,6 +152,14 @@ All filters are query parameters to `api.weather.gov`. Do **not** pull all alert
 - `LogError` — failures (API errors, exceptions)
 - Platform name as first token: `"Facebook: Post failed. Status={Status}"`
 
+### 8. Always work on a branch and open a pull request — never push directly to `master`
+
+Even for a single small fix. Create a feature branch, commit there, push it, and open a PR with
+`gh pr create` — then stop and let the human merge it (or explicitly ask before merging). Do not
+push straight to `master`, and do not merge a PR yourself unless explicitly told to. `master`'s
+branch protection allows this repo's owner to bypass its required "test" status check, but
+bypassing it skips CI entirely — a PR is what actually runs `dotnet test` before anything lands.
+
 ---
 
 ## Key External APIs
