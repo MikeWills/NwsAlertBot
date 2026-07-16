@@ -250,6 +250,15 @@ elseif ($IsLinux) {
         }
     }
 
+    # KillMode=process (systemd default is "control-group") matters specifically for
+    # Update.AutoApply: UpdateCheckService spawns update.ps1 as a child process, then calls
+    # StopApplication() to exit so update.ps1 can swap the binary. Under the default
+    # control-group KillMode, stopping the service kills every process in its cgroup --
+    # including that just-spawned update.ps1 -- before it ever gets to run, so Restart=always
+    # just relaunches the same old binary, which immediately detects the same "newer version
+    # available" and repeats forever (confirmed live: a ~10-13s crash loop that never actually
+    # updates, RestartSec apart). KillMode=process limits the kill signal to the unit's main
+    # PID, letting update.ps1 survive to finish the swap and its own `systemctl restart`.
     $unitContent = @"
 [Unit]
 Description=$Description
@@ -262,6 +271,7 @@ WorkingDirectory=$InstallDir
 User=$serviceUser
 Restart=always
 RestartSec=10
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
