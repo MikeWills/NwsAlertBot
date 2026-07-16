@@ -160,6 +160,7 @@ ExecStart=/opt/nwsalertbot/NwsAlertBot
 Restart=always
 RestartSec=10
 KillSignal=SIGINT
+KillMode=process
 
 StandardOutput=journal
 StandardError=journal

@@ -3,6 +3,17 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Fix: `Update.AutoApply` could crash-loop forever on Linux, never actually applying the
+  update.** `setup-service.ps1`'s generated systemd unit now sets `KillMode=process`. Previously,
+  the default `KillMode=control-group` meant that when `UpdateCheckService` spawned `update.ps1`
+  as a child process and then stopped the app so it could swap the binary, systemd killed the
+  *entire cgroup* — including the just-spawned `update.ps1` — before it ever ran. `Restart=always`
+  then brought the old binary straight back up, which immediately re-detected the same newer
+  release and repeated, forever, ~10-13s apart, never once reaching the point of actually
+  fetching alerts. Confirmed live on a production instance. Existing installations must add
+  `KillMode=process` to their unit file by hand (or re-run `setup-service.ps1`) — this only
+  changes the generated template, not units already written to disk. See docs/TECHNICAL.md
+  "Known Limitations" (under Auto-Update).
 - **Fix: `Map.Enabled: false` (the shipped default) silently disabled free IEM map images too,
   not just Mapbox.** `MapService.GetMapUrlAsync` gated its entire body — including both
   no-account-needed IEM autoplot paths (#208 for VTEC alerts, #217 for SPS) — behind

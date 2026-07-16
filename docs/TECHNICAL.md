@@ -204,6 +204,16 @@ This feature is aimed at unattended, "set and forget" use — which is also exac
 weakest points matter most, since nobody's watching. Worth understanding before turning on
 `AutoApply` unattended:
 
+- ~~**Linux `Update.AutoApply` could crash-loop forever without ever actually updating.**~~
+  Fixed: `setup-service.ps1`'s systemd unit now sets `KillMode=process`. Previously, the default
+  `KillMode=control-group` meant that when `UpdateCheckService` spawned `update.ps1` as a child
+  process and then stopped the app so it could swap the binary, systemd killed the *entire
+  cgroup* — including the just-spawned `update.ps1` — before it ever ran. `Restart=always` then
+  brought the old binary straight back up, which immediately re-detected the same newer release
+  and repeated, forever, ~10-13s apart (`RestartSec=10` plus startup overhead), never once
+  reaching the point of actually fetching alerts. Confirmed live. Existing installations must
+  add `KillMode=process` to their unit file by hand (or re-run `setup-service.ps1`) — this fix
+  only changes the generated template, not units already written to disk.
 - **Linux auto-restart requires passwordless `sudo`.** After swapping the executable,
   `update.ps1` runs `sudo systemctl restart $ServiceName` non-interactively. If the account
   running the bot doesn't have a `NOPASSWD` sudoers rule for that command, this silently fails
