@@ -405,7 +405,8 @@ Each new MCD also triggers expedited polling (same as a severe/extreme NWS alert
 ```json
 "Hwo": {
   "Enabled": false,
-  "CheckIntervalSeconds": 300
+  "CheckIntervalSeconds": 300,
+  "SkipIfNoHazards": true
 }
 ```
 
@@ -413,6 +414,7 @@ Each new MCD also triggers expedited polling (same as a severe/extreme NWS alert
 |---|---|---|
 | `Enabled` | Whether to monitor the Hazardous Weather Outlook text product | `false` |
 | `CheckIntervalSeconds` | Minimum seconds between HWO checks | `300` |
+| `SkipIfNoHazards` | Skip posting an issuance whose Day One and Days Two-Seven sections both report no hazardous weather | `true` |
 
 Per-platform delivery is controlled by the separate `IncludeHwo` flag, which defaults to
 `false` (opt-in) since HWO is long-form text intended primarily for personal use.
@@ -568,6 +570,13 @@ for personal use rather than broad social media distribution.
   own character limit.
 - **Deduplication** uses the same `posted_alerts.txt` as everything else, keyed on the NWS
   product's UUID (`HWO-{wfo}-{uuid}`), so each new issuance posts exactly once.
+- **All-clear suppression** — `HwoSettings.SkipIfNoHazards` (default `true`) checks the raw
+  product text's `.DAY ONE...` and `.DAYS TWO THROUGH SEVEN...` sections; if both contain the
+  standard "No hazardous weather is expected at this time" boilerplate, the issuance is not
+  posted at all (`HwoService.ReportsNoHazards`). Most HWO issuances are routine all-clears, so
+  this keeps the feed limited to issuances that actually flag something. If either section can't
+  be located (unexpected product format), the issuance is posted rather than silently dropped.
+  Set `SkipIfNoHazards: false` to post every issuance regardless of content.
 - **No map image** — `DownloadMapImageAsync`/Mapbox fallback are skipped entirely for HWO
   since there's no geometry to plot.
 - **Per-platform opt-in** — controlled by `IncludeHwo` on each platform's settings, defaulting

@@ -3,6 +3,13 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **HWO: skip posting all-clear issuances.** New `Hwo.SkipIfNoHazards` setting (default `true`)
+  suppresses a Hazardous Weather Outlook issuance when both its `.DAY ONE...` and
+  `.DAYS TWO THROUGH SEVEN...` sections report "No hazardous weather is expected at this time" —
+  most issuances are routine all-clears, so the feed now only posts when something is actually
+  flagged. Set `SkipIfNoHazards: false` to restore posting every issuance. See
+  docs/TECHNICAL.md "Hazardous Weather Outlook (HWO) — How It Works".
+
 - **Fix: `Update.AutoApply` could crash-loop forever on Linux, never actually applying the
   update.** `setup-service.ps1`'s generated systemd unit now sets `KillMode=process`. Previously,
   the default `KillMode=control-group` meant that when `UpdateCheckService` spawned `update.ps1`

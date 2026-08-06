@@ -654,6 +654,14 @@ public class HwoSettings
     /// has no benefit. Default 300 (5 min) — matches the regular poll interval.
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// If true (default), an HWO issuance whose "DAY ONE" and "DAYS TWO THROUGH SEVEN" sections
+    /// both read "No hazardous weather is expected at this time" is not posted — most issuances
+    /// are routine all-clear boilerplate, so this keeps the feed limited to issuances that
+    /// actually flag a hazard. Set to false to post every issuance regardless of content.
+    /// </summary>
+    public bool SkipIfNoHazards { get; set; } = true;
 }
 
 public class EroSettings
