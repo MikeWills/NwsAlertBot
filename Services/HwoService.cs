@@ -43,6 +43,15 @@ public class HwoService
     private static readonly Regex OfficeNameRegex = new(
         @"National Weather Service (.+)", RegexOptions.Compiled);
 
+    // Captures each named section's body up to the next ".SECTION..." header or end of product,
+    // used to check whether Day One / Days Two-Seven report no hazards (see ReportsNoHazards).
+    private static readonly Regex DayOneSectionRegex = new(
+        @"\.DAY ONE\.\.\..*?(?=\n\.[A-Z]|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex DaysTwoSevenSectionRegex = new(
+        @"\.DAYS TWO THROUGH SEVEN\.\.\..*?(?=\n\.[A-Z]|\z)", RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex NoHazardsPhraseRegex = new(
+        @"No hazardous weather is expected", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public bool IsEnabled => _settings.Enabled;
 
     public HwoService(HttpClient http, HwoSettings settings, LocationSettings location, NwsZoneService zones, ILogger<HwoService> logger)
@@ -155,6 +164,13 @@ public class HwoService
             var text = await FetchProductTextAsync(uuid);
             if (text == null) return null;
 
+            if (_settings.SkipIfNoHazards && ReportsNoHazards(text))
+            {
+                _logger.LogInformation(
+                    "Hwo: {Wfo} issuance reports no hazardous weather for Day One or Days Two-Seven; skipping post.", wfo);
+                return null;
+            }
+
             var officeName = ParseOfficeName(text);
 
             return new NwsAlert
@@ -199,6 +215,21 @@ public class HwoService
     {
         var m = OfficeNameRegex.Match(text);
         return m.Success ? m.Groups[1].Value.Trim() : null;
+    }
+
+    /// <summary>
+    /// True only when both the Day One and Days Two-Seven sections are found and both contain
+    /// the standard "No hazardous weather is expected" boilerplate. If either section can't be
+    /// located (unexpected product format), returns false so the issuance is posted rather than
+    /// silently suppressed.
+    /// </summary>
+    internal static bool ReportsNoHazards(string text)
+    {
+        var dayOne = DayOneSectionRegex.Match(text);
+        var daysTwoSeven = DaysTwoSevenSectionRegex.Match(text);
+        if (!dayOne.Success || !daysTwoSeven.Success) return false;
+
+        return NoHazardsPhraseRegex.IsMatch(dayOne.Value) && NoHazardsPhraseRegex.IsMatch(daysTwoSeven.Value);
     }
 
     /// <summary>
