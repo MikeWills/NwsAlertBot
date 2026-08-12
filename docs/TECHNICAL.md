@@ -430,7 +430,7 @@ Per-platform delivery is controlled by the separate `IncludeHwo` flag, which def
 
 | Field | Description | Default |
 |---|---|---|
-| `Enabled` | Whether to monitor the WPC Excessive Rainfall Outlook Day 1/2/3 categorical risk | `false` |
+| `Enabled` | Whether to monitor the WPC Excessive Rainfall Outlook Day 1/2 categorical risk | `false` |
 | `CheckIntervalSeconds` | Minimum seconds between ERO checks | `1800` |
 
 Per-platform delivery is controlled by the separate `IncludeEro` flag (default `true`).
@@ -594,17 +594,18 @@ The event name for `EventTypes` filtering is `Hazardous Weather Outlook`.
 ## WPC Excessive Rainfall Outlook (ERO) — How It Works
 
 The bot can also monitor the [WPC (Weather Prediction Center) Excessive Rainfall Outlook](https://www.wpc.ncep.noaa.gov/qpf/excessive_rainfall_outlook_ero.php)
-(ERO) — Day 1, 2, and 3 forecasts of the probability that rainfall will exceed flash flood
+(ERO) — Day 1 and 2 forecasts of the probability that rainfall will exceed flash flood
 guidance near a point, categorized into four risk levels: Marginal (≥5%), Slight (≥15%),
 Moderate (≥40%), and High (≥70%). Note: despite living alongside the SPC-issued feeds in this
-bot, ERO is a **WPC** product, not SPC.
+bot, ERO is a **WPC** product, not SPC. Day 3 is intentionally not checked — WPC's Day 3
+outlook is low-confidence enough that it produced noisy, low-value alerts in practice.
 
 - **Locations monitored** reuse the same `Location.Zones`/`Location.Counties` centroids as
   SPC Outlook/MCD — resolved once at startup and cached for the life of the process.
 - **Categorical risk** (`Marginal` / `Slight` / `Moderate` / `High`) is checked independently
-  for Day 1, 2, and 3 against WPC's GeoJSON feeds
-  (`https://www.wpc.ncep.noaa.gov/exper/eromap/geojson/Day{1,2,3}_Latest.geojson`). A location
-  with no categorical match ("None"/sub-5%) never triggers an alert, on any day.
+  for Day 1 and 2 against WPC's GeoJSON feeds
+  (`https://www.wpc.ncep.noaa.gov/exper/eromap/geojson/Day{1,2}_Latest.geojson`). A location
+  with no categorical match ("None"/sub-5%) never triggers an alert, on either day.
 - **Checked every `Ero.CheckIntervalSeconds`** (default 1800s = 30 min) — independent of
   `Polling.PollIntervalSeconds`.
 - **Re-alerts on every new WPC issuance**, not only on a category change, the same as SPC
@@ -626,8 +627,7 @@ bot, ERO is a **WPC** product, not SPC.
 ERO alerts flow through each platform's existing `MinSeverity`/`EventTypes` dials — no new
 filter fields were added beyond `IncludeEro` (see [Configuration Reference](#configuration-reference)):
 
-- **Event names** — `WPC Day 1 Excessive Rainfall Outlook`, `WPC Day 2 Excessive Rainfall Outlook`,
-  and `WPC Day 3 Excessive Rainfall Outlook`.
+- **Event names** — `WPC Day 1 Excessive Rainfall Outlook` and `WPC Day 2 Excessive Rainfall Outlook`.
 - **Severity mapping** — WPC's own category names don't line up 1:1 in name with this bot's
   Severity scale, only in rank order:
 

@@ -3,6 +3,12 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **WPC ERO: dropped the Day 3 Excessive Rainfall Outlook check.** `WpcEroService` now only
+  checks Day 1 and Day 2 against WPC's categorical risk feeds — Day 3's outlook is low-confidence
+  enough that it was producing noisy, low-value alerts. `WPC Day 3 Excessive Rainfall Outlook`
+  will no longer be posted. See docs/TECHNICAL.md "WPC Excessive Rainfall Outlook (ERO) — How It
+  Works".
+
 - **HWO: skip posting all-clear issuances.** New `Hwo.SkipIfNoHazards` setting (default `true`)
   suppresses a Hazardous Weather Outlook issuance when both its `.DAY ONE...` and
   `.DAYS TWO THROUGH SEVEN...` sections report "No hazardous weather is expected at this time" —

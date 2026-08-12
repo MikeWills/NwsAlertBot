@@ -668,16 +668,16 @@ public class EroSettings
 {
     /// <summary>
     /// Whether to monitor the WPC (Weather Prediction Center) Excessive Rainfall Outlook (ERO)
-    /// Day 1/2/3 categorical risk for the locations derived from Location.Zones (or
+    /// Day 1/2 categorical risk for the locations derived from Location.Zones (or
     /// Location.Counties if Zones is empty). Alerts when a monitored location is in any
-    /// non-"None" categorical risk (Marginal or higher) on any of the three days. Note: despite
+    /// non-"None" categorical risk (Marginal or higher) on either day. Note: despite
     /// the "Spc"-prefixed sibling settings (Spc, SpcMcd), ERO is issued by WPC, not SPC.
     /// </summary>
     public bool Enabled { get; set; } = false;
 
     /// <summary>
     /// Minimum seconds between checks against the WPC ERO GeoJSON feeds. WPC re-issues Day 1
-    /// several times a day and Day 2/3 less often, so polling more than every few minutes has
+    /// several times a day and Day 2 less often, so polling more than every few minutes has
     /// no benefit. Default 1800 (30 min) — matches Spc.CheckIntervalSeconds.
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 1800;

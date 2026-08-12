@@ -7,7 +7,7 @@ using NwsAlertBot.Models;
 namespace NwsAlertBot.Services;
 
 /// <summary>
-/// Polls the WPC (Weather Prediction Center) Excessive Rainfall Outlook (ERO) Day 1/2/3 GeoJSON
+/// Polls the WPC (Weather Prediction Center) Excessive Rainfall Outlook (ERO) Day 1/2 GeoJSON
 /// feeds and checks each monitored location (derived from Location.Zones/Location.Counties)
 /// against the categorical risk polygons (Marginal/Slight/Moderate/High). Produces one synthetic
 /// NwsAlert per day that is in any non-"None" categorical risk, with a categorical outlook map
@@ -64,7 +64,7 @@ public class WpcEroService
 
     /// <summary>
     /// Returns synthetic alerts for every monitored location currently in a non-"None"
-    /// categorical ERO risk on Day 1, 2, or 3. Returns an empty list (no HTTP calls) if
+    /// categorical ERO risk on Day 1 or 2. Returns an empty list (no HTTP calls) if
     /// called before CheckIntervalSeconds has elapsed since the last check.
     /// </summary>
     public async Task<List<NwsAlert>> GetEroAlertsAsync()
@@ -83,7 +83,7 @@ public class WpcEroService
         }
 
         var results = new List<NwsAlert>();
-        foreach (var day in new[] { 1, 2, 3 })
+        foreach (var day in new[] { 1, 2 })
         {
             var alert = await CheckDayAsync(day, locations);
             if (alert != null) results.Add(alert);
