@@ -592,7 +592,7 @@ and per-platform severity-mapping tables for each are in docs/TECHNICAL.md, link
 | **SPC Convective Outlook** | Day 1/2 severe thunderstorm risk (tornado/wind/hail %) for your area | `"Spc": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#spc-convective-outlook-monitoring--how-it-works) |
 | **SPC Mesoscale Discussion (MCD)** | Short-fuse (1–3h) severe weather potential, ahead of/alongside active watches | `"SpcMcd": { "Enabled": true, "CheckIntervalSeconds": 300 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#spc-mesoscale-discussion-monitoring--how-it-works) |
 | **Hazardous Weather Outlook (HWO)** | Plain-text 7-day hazard summary from your local NWS office | `"Hwo": { "Enabled": true, "CheckIntervalSeconds": 300 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#hazardous-weather-outlook-hwo--how-it-works) |
-| **WPC Excessive Rainfall Outlook (ERO)** | Day 1/2/3 flash-flood-guidance-exceedance risk | `"Ero": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#wpc-excessive-rainfall-outlook-ero--how-it-works) |
+| **WPC Excessive Rainfall Outlook (ERO)** | Day 1/2 flash-flood-guidance-exceedance risk | `"Ero": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#wpc-excessive-rainfall-outlook-ero--how-it-works) |
 
 HWO is long-form text (no map image) intended primarily for personal use — its per-platform flag,
 `IncludeHwo`, defaults to `false` (opt-in) rather than `true` like the other three. A common setup
