@@ -713,12 +713,18 @@ product, which is why they're not the data source here). Day 3 is intentionally 
 - **Checked every `Pwpf.CheckIntervalSeconds`** (default 1800s = 30 min) — independent of
   `Polling.PollIntervalSeconds`. WPC only issues twice a day, so nothing is gained by polling
   faster.
-- **Outlook map image** — WPC's static CONUS-wide Winter Weather Desk graphics
+- **Outlook map image** — the same zoomed-in Mapbox area map NWS alerts get. The triggering
+  threshold's probability ring (the `PwpfBand`-level contour polygon(s)) is unioned, clipped to
+  a box around the configured zones/counties padded by half the area's size on each side
+  (minimum 0.25°), and handed to `MapService` via `alert.GeometryJson` — so
+  `GetMapboxFallbackUrlAsync`'s "priority 1: alert geometry" path draws it exactly like a
+  warning polygon, zoomed to the monitored area with the ring's edge visible where it crosses.
+  This requires `Map.Enabled` + `Map.AccessToken` (Mapbox); IEM has no autoplot for PWPF and WPC
+  offers no per-region render. Without Mapbox, or if the ring can't be clipped, the post falls
+  back to WPC's static CONUS-wide Winter Weather Desk graphic
   (`https://www.wpc.ncep.noaa.gov/wwd/day{n}_psnow_gt_{04|08|12}_conus.gif`,
-  `day{n}_pice_gt_25_conus.gif`); thresholds without a dedicated image (≥1/2/6/18" snow,
-  ≥0.01/0.10/0.50" ice) use `day{n}_composite_conus.gif`. These are national-scale — WPC offers
-  no per-region render of this product and IEM has no autoplot for it, so unlike ERO the image
-  is not cropped to the location's WFO.
+  `day{n}_pice_gt_25_conus.gif`, or `day{n}_composite_conus.gif` for thresholds without a
+  dedicated image).
 - **Details link** — each post links to WPC's interactive PWPF page pre-filtered to the
   triggering threshold (`.../pwpf/wwd_accum_probs.php?fpd=24&ptype=snow&amt=4&day=1`).
 - **Alaska/Hawaii** are not covered — the PWPF grid is CONUS-only.

@@ -204,6 +204,35 @@ public class WpcPwpfServiceTests
         Assert.Equal(expected, WpcPwpfService.MapSeverity(ptype, threshold));
     }
 
+    [Fact]
+    public void BuildOverlayGeoJson_ClipsBandRingToPaddedArea()
+    {
+        var contour = WpcPwpfService.ParseKml(SampleKml);
+        // Monitored area: a small box in the SW corner of the 10% ring (-94..-92 x 44..46),
+        // padded by max(0.5*size, 0.25°) = 0.25° on each side -> -94.05..-93.05 x 44.05..45.05.
+        var area = new NetTopologySuite.Geometries.Envelope(-93.8, -93.3, 44.3, 44.8);
+
+        var json = WpcPwpfService.BuildOverlayGeoJson(contour.Polygons, 10, area);
+
+        Assert.NotNull(json);
+        var geom = NwsAlertBot.Services.PolygonGeometry.Parse(json!);
+        Assert.NotNull(geom);
+        var env = geom!.EnvelopeInternal;
+        // Clipped to the padded view, not the full 10% ring.
+        Assert.True(env.MaxX <= -93.05 + 1e-9 && env.MinX >= -94.0 - 1e-9, $"lon {env.MinX}..{env.MaxX}");
+        Assert.True(env.MaxY <= 45.05 + 1e-9 && env.MinY >= 44.0 - 1e-9, $"lat {env.MinY}..{env.MaxY}");
+    }
+
+    [Fact]
+    public void BuildOverlayGeoJson_ReturnsNullWhenRingMissesArea()
+    {
+        var contour = WpcPwpfService.ParseKml(SampleKml);
+        var farAway = new NetTopologySuite.Geometries.Envelope(-80.0, -79.0, 40.0, 41.0);
+
+        Assert.Null(WpcPwpfService.BuildOverlayGeoJson(contour.Polygons, 40, farAway));
+        Assert.Null(WpcPwpfService.BuildOverlayGeoJson(contour.Polygons, 70, new NetTopologySuite.Geometries.Envelope(-93.1, -92.9, 44.9, 45.1))); // no 70% ring
+    }
+
     [Theory]
     [InlineData(PrecipType.Snow, 1,  "day1_composite_conus.gif")]
     [InlineData(PrecipType.Snow, 8,  "day1_psnow_gt_08_conus.gif")]

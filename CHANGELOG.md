@@ -12,8 +12,10 @@ Notable changes to NwsAlertBot, most recent first. For setup and usage, see
   forecast goes *up* (higher threshold qualifies, or the same threshold's probability band
   rises) — unchanged or downgraded cycles stay silent. Severity keys off the highest qualifying
   threshold (1–2" Minor, 4–6" Moderate, 8" Severe, 12"+ Extreme; ice 0.01/0.10/0.25/0.50
-  likewise). New per-platform `IncludePwpf` flag (default `true`). Attaches WPC's national
-  CONUS outlook graphic. Closes #33. See docs/TECHNICAL.md "WPC Winter Weather Outlook (PWPF) —
+  likewise). New per-platform `IncludePwpf` flag (default `true`). Map image is the same
+  zoomed-in Mapbox area map NWS alerts get, with the triggering probability ring shaded over the
+  configured zones (falls back to WPC's national CONUS graphic when Mapbox isn't configured).
+  Closes #33. See docs/TECHNICAL.md "WPC Winter Weather Outlook (PWPF) —
   How It Works".
 
 - **WPC ERO: dropped the Day 3 Excessive Rainfall Outlook check.** `WpcEroService` now only

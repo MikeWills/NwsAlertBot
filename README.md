@@ -995,7 +995,10 @@ The bot generates a map image for each alert (NWS warnings/watches/advisories, p
 SPC MCD, WPC ERO, and WPC PWPF posts) and attaches it to every platform that supports images. Most maps come
 from a free IEM service that needs no account or setup on your part — this always runs, even
 without Mapbox configured. Mapbox is only used as a fallback, for the minority of alerts IEM can't
-provide a map for (no VTEC code, or not yet indexed by IEM), and requires the setup below. See
+provide a map for (no VTEC code, or not yet indexed by IEM), and requires the setup below. The one
+exception is the WPC PWPF winter outlook feed, which draws its snow/ice probability area over your
+configured zones with Mapbox directly (IEM has no map for that product) — without Mapbox it posts
+WPC's national outlook graphic instead. See
 [docs/TECHNICAL.md — Map Images](docs/TECHNICAL.md#map-images--internals) for how the bot decides
 which source to use.
 

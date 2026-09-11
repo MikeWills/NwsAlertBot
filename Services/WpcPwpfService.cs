@@ -27,6 +27,7 @@ public class WpcPwpfService
     private readonly LocationSettings _location;
     private readonly NwsZoneService _zones;
     private readonly AlertTrackerService _tracker;
+    private readonly MapSettings _map;
     private readonly ILogger<WpcPwpfService> _logger;
 
     private const string BaseUrl = "https://www.wpc.ncep.noaa.gov/pwpf/latest_kml/";
@@ -42,17 +43,21 @@ public class WpcPwpfService
     internal static readonly double[] AvailableIceThresholds = { 0.01, 0.10, 0.25, 0.50 };
 
     private List<(string Code, double Lat, double Lon)>? _locations;
+
+    /// <summary>Bounding envelope of every resolved zone/county geometry — the map view for regional overlays.</summary>
+    private Envelope? _areaEnvelope;
     private DateTimeOffset _lastCheckedUtc = DateTimeOffset.MinValue;
     private readonly TimeZoneInfo _timeZone;
 
     public WpcPwpfService(HttpClient http, PwpfSettings settings, LocationSettings location, NwsZoneService zones,
-        AlertTrackerService tracker, ILogger<WpcPwpfService> logger)
+        AlertTrackerService tracker, MapSettings map, ILogger<WpcPwpfService> logger)
     {
         _http = http;
         _settings = settings;
         _location = location;
         _zones = zones;
         _tracker = tracker;
+        _map = map;
         _logger = logger;
         _timeZone = ResolveTimeZone(location.TimeZone, logger);
     }
@@ -146,6 +151,13 @@ public class WpcPwpfService
             }
 
             resolved.Add((code, centroid.Value.Lat, centroid.Value.Lon));
+
+            var geom = PolygonGeometry.Parse(info.Geometry.GetRawText());
+            if (geom != null)
+            {
+                _areaEnvelope ??= new Envelope();
+                _areaEnvelope.ExpandToInclude(geom.EnvelopeInternal);
+            }
         }
 
         _locations = resolved;
@@ -196,6 +208,7 @@ public class WpcPwpfService
             // Fetch every configured threshold for this day so the post can list all of them,
             // not just the one that triggered it.
             var bands = new List<(double Threshold, int Band)>();
+            var contours = new Dictionary<double, PwpfContour>();
             DateTimeOffset? validStart = null, validEnd = null, issued = null;
 
             foreach (var threshold in thresholds)
@@ -203,6 +216,7 @@ public class WpcPwpfService
                 var file = BuildFileName(ptype, threshold, day);
                 var contour = await FetchContourAsync(file);
                 if (contour == null) return null; // logged in FetchContourAsync; try again next interval
+                contours[threshold] = contour;
 
                 int band = 0;
                 foreach (var loc in locations)
@@ -222,6 +236,24 @@ public class WpcPwpfService
                 _logger.LogInformation("Pwpf: Day {Day} {Type} forecast has not risen since last post (≥{Threshold}\" at {Band}%); not re-posting.",
                     day, ptype, FormatInches(alert.PwpfThreshold), alert.PwpfBand);
                 return null;
+            }
+
+            // Regional map, like NWS alert maps: the triggering threshold's probability ring,
+            // clipped to a padded box around the configured zones, drawn by MapService's Mapbox
+            // path (GeometryJson takes priority there). Needs Mapbox configured; otherwise the
+            // national WPC gif from BuildAlert stays as the image.
+            if (_map.Enabled && !string.IsNullOrEmpty(_map.AccessToken) && _areaEnvelope != null)
+            {
+                var overlay = BuildOverlayGeoJson(contours[alert.PwpfThreshold].Polygons, alert.PwpfBand, _areaEnvelope);
+                if (overlay != null)
+                {
+                    alert.GeometryJson = overlay;
+                    alert.MapImageUrl  = null;
+                }
+                else
+                {
+                    _logger.LogWarning("Pwpf: Could not clip the {Band}% contour to the monitored area; using WPC's national image instead.", alert.PwpfBand);
+                }
             }
 
             return alert;
@@ -414,6 +446,34 @@ public class WpcPwpfService
             }
         }
         return best;
+    }
+
+    /// <summary>
+    /// GeoJSON of the <paramref name="band"/>-level contour ring(s), clipped to the monitored
+    /// area's envelope padded by half its size on every side (at least 0.25°) so the map shows
+    /// where the ring's edge falls relative to the configured zones. Null if the ring doesn't
+    /// reach the area at all or the geometry can't be computed.
+    /// </summary>
+    internal static string? BuildOverlayGeoJson(List<(int Level, Polygon Polygon)> polygons, int band, Envelope area)
+    {
+        try
+        {
+            var rings = polygons.Where(p => p.Level == band).Select(p => (Geometry)p.Polygon).ToList();
+            if (rings.Count == 0) return null;
+
+            double padX = Math.Max(area.Width * 0.5, 0.25);
+            double padY = Math.Max(area.Height * 0.5, 0.25);
+            var view = new Envelope(area.MinX - padX, area.MaxX + padX, area.MinY - padY, area.MaxY + padY);
+
+            var factory = rings[0].Factory;
+            var union = factory.BuildGeometry(rings).Union();
+            var clipped = union.Intersection(factory.ToGeometry(view));
+            return clipped.IsEmpty ? null : PolygonGeometry.ToGeoJson(clipped);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>Human label for a contour band: "40–50%", "≥95%", or "&lt;1%" for none.</summary>
