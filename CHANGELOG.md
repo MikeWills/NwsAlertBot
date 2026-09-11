@@ -3,6 +3,11 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Removed the `claude-code-review` and `claude` (`@claude` mention responder) GitHub Actions
+  workflows.** Both failed on every trigger (`Claude Code is not installed on this repository` — the
+  GitHub App was never installed and no API key was configured) and never produced a review or
+  reply. The required `test` check in `ci.yml` is unchanged.
+
 - **New feed: WPC Winter Weather Outlook (PWPF).** New `Pwpf` settings block and
   `WpcPwpfService` monitor WPC's Probabilistic Winter Precipitation Forecast contour KMZ files for
   Day 1/2 — the chance of ≥1/4/8/12" of snow (`SnowThresholds`, configurable from WPC's
