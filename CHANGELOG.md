@@ -3,6 +3,21 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **New feed: WPC Winter Weather Outlook (PWPF).** New `Pwpf` settings block and
+  `WpcPwpfService` monitor WPC's Probabilistic Winter Precipitation Forecast contour KMZ files for
+  Day 1/2 — the chance of ≥1/4/8/12" of snow (`SnowThresholds`, configurable from WPC's
+  1/2/4/6/8/12/18) and ≥0.10/0.25" of freezing rain (`IceThresholds`, from 0.01/0.10/0.25/0.50)
+  in 24 hours at any configured `Location.Zones`/`Counties` centroid. Posts once a threshold's
+  probability reaches `MinProbabilityPercent` (default 40), and re-posts a given day only when the
+  forecast goes *up* (higher threshold qualifies, or the same threshold's probability band
+  rises) — unchanged or downgraded cycles stay silent. Severity keys off the highest qualifying
+  threshold (1–2" Minor, 4–6" Moderate, 8" Severe, 12"+ Extreme; ice 0.01/0.10/0.25/0.50
+  likewise). New per-platform `IncludePwpf` flag (default `true`). Map image is the same
+  zoomed-in Mapbox area map NWS alerts get, with the triggering probability ring shaded over the
+  configured zones (falls back to WPC's national CONUS graphic when Mapbox isn't configured).
+  Closes #33. See docs/TECHNICAL.md "WPC Winter Weather Outlook (PWPF) —
+  How It Works".
+
 - **WPC ERO: dropped the Day 3 Excessive Rainfall Outlook check.** `WpcEroService` now only
   checks Day 1 and Day 2 against WPC's categorical risk feeds — Day 3's outlook is low-confidence
   enough that it was producing noisy, low-value alerts. `WPC Day 3 Excessive Rainfall Outlook`

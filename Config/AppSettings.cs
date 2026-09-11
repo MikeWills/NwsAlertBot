@@ -147,6 +147,7 @@ public interface IPlatformFilterSettings
     bool IncludeSpcMcd { get; }
     bool IncludeHwo { get; }
     bool IncludeEro { get; }
+    bool IncludePwpf { get; }
 }
 
 public class FacebookSettings : IPlatformFilterSettings
@@ -187,6 +188,12 @@ public class FacebookSettings : IPlatformFilterSettings
     /// Requires Ero.Enabled = true.
     /// </summary>
     public bool IncludeEro { get; set; } = true;
+
+    /// <summary>
+    /// Whether to post WPC Probabilistic Winter Precipitation Forecast (PWPF) snow/freezing-rain
+    /// outlook alerts to this platform. Requires Pwpf.Enabled = true.
+    /// </summary>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class InstagramSettings : IPlatformFilterSettings
@@ -217,6 +224,9 @@ public class InstagramSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class XSettings : IPlatformFilterSettings
@@ -244,6 +254,9 @@ public class XSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 
     /// <summary>
     /// Quota guard: max posts per rolling 30-day window, matching X's free-tier limit (500
@@ -278,6 +291,9 @@ public class BlueskySettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class MastodonSettings : IPlatformFilterSettings
@@ -303,6 +319,9 @@ public class MastodonSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class PushoverSettings : IPlatformFilterSettings
@@ -362,6 +381,9 @@ public class PushoverSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class TwilioSettings : IPlatformFilterSettings
@@ -401,6 +423,9 @@ public class TwilioSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 
     /// <summary>
     /// Cost/quota guard: max SMS sends per rolling 24-hour window, counted per individual message
@@ -447,6 +472,9 @@ public class DiscordDmSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class DiscordSettings : IPlatformFilterSettings
@@ -484,6 +512,9 @@ public class DiscordSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class TelegramSettings : IPlatformFilterSettings
@@ -520,6 +551,9 @@ public class TelegramSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class VoipMsSettings : IPlatformFilterSettings
@@ -566,6 +600,9 @@ public class VoipMsSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludeEro"/>
     public bool IncludeEro { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
+    public bool IncludePwpf { get; set; } = true;
 }
 
 public class MapSettings
@@ -681,6 +718,47 @@ public class EroSettings
     /// no benefit. Default 1800 (30 min) — matches Spc.CheckIntervalSeconds.
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 1800;
+}
+
+public class PwpfSettings
+{
+    /// <summary>
+    /// Whether to monitor the WPC (Weather Prediction Center) Probabilistic Winter Precipitation
+    /// Forecast (PWPF) — Day 1/2 probability of 24-hour snow and freezing-rain accumulation
+    /// exceeding set thresholds — for the locations derived from Location.Zones/Location.Counties.
+    /// Posts when a monitored location sits inside a probability contour of at least
+    /// MinProbabilityPercent for any configured threshold, and re-posts for a given day only when
+    /// the forecast goes up (a higher threshold qualifies, or the same threshold's probability rises).
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Minimum seconds between checks against the WPC PWPF KMZ files. WPC issues PWPF twice a
+    /// day (00Z and 12Z cycles), so polling more often than every 30 min has no benefit.
+    /// Default 1800 (30 min) — matches Ero.CheckIntervalSeconds.
+    /// </summary>
+    public int CheckIntervalSeconds { get; set; } = 1800;
+
+    /// <summary>
+    /// Minimum probability (percent) a location must be inside before a threshold counts.
+    /// WPC draws contours at 1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90 and 95 — a value between
+    /// two of those behaves like the next one up. Default 40.
+    /// </summary>
+    public int MinProbabilityPercent { get; set; } = 40;
+
+    /// <summary>
+    /// Comma-separated 24-hour snowfall thresholds (inches) to check. WPC only publishes
+    /// contours for 1, 2, 4, 6, 8, 12 and 18; anything else is ignored with a warning. Leave
+    /// empty to skip snow entirely. Default "1,4,8,12".
+    /// </summary>
+    public string SnowThresholds { get; set; } = "1,4,8,12";
+
+    /// <summary>
+    /// Comma-separated 24-hour freezing-rain (ice accretion) thresholds (inches) to check. WPC
+    /// only publishes contours for 0.01, 0.10, 0.25 and 0.50; anything else is ignored with a
+    /// warning. Leave empty to skip freezing rain entirely. Default "0.10,0.25".
+    /// </summary>
+    public string IceThresholds { get; set; } = "0.10,0.25";
 }
 
 /// <summary>

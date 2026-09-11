@@ -68,6 +68,15 @@ public class NwsAlert
     /// <summary>True when this alert was synthesized by WpcEroService (WPC Excessive Rainfall Outlook).</summary>
     public bool IsEro { get; set; }
 
+    /// <summary>True when this alert was synthesized by WpcPwpfService (WPC Probabilistic Winter Precipitation Forecast).</summary>
+    public bool IsPwpf { get; set; }
+
+    /// <summary>PWPF only: the highest accumulation threshold (inches) that met Pwpf.MinProbabilityPercent — the one that triggered the post.</summary>
+    public double PwpfThreshold { get; set; }
+
+    /// <summary>PWPF only: the probability contour band (1/5/10/20…95) at PwpfThreshold.</summary>
+    public int PwpfBand { get; set; }
+
     /// <summary>Time zone used to format Valid/Expires on SPC outlook posts. Set from Spc.TimeZone config.</summary>
     public TimeZoneInfo? DisplayTimeZone { get; set; }
 

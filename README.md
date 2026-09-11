@@ -22,7 +22,7 @@ history of changes, see [CHANGELOG.md](CHANGELOG.md).
 7. [Alert Filtering](#alert-filtering)
 8. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
 9. [Recommended Filter Configurations](#recommended-filter-configurations)
-10. [Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO](#additional-alert-feeds-spc-outlooks-spc-mcds-hwo-wpc-ero)
+10. [Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO, WPC PWPF](#additional-alert-feeds-spc-outlooks-spc-mcds-hwo-wpc-ero-wpc-pwpf)
 11. [API Credentials — Social Media](#api-credentials)
 12. [Push / SMS Notifications](#push--sms-notifications)
 13. [Startup Confirmation](#startup-confirmation)
@@ -282,7 +282,7 @@ blocks every feed shares:
 ```
 
 `Zones`/`Counties` control which geographic area every feed (NWS alerts, SPC Outlook/MCD, HWO,
-WPC ERO) monitors — see [Geographic Filtering](#geographic-filtering-zones-and-counties) below for
+WPC ERO, WPC PWPF) monitors — see [Geographic Filtering](#geographic-filtering-zones-and-counties) below for
 how to find your codes. `TimeZone` is an IANA ID (e.g. `America/Chicago`, `America/New_York`,
 `America/Denver`, `America/Los_Angeles`) used to format Issued/Valid/Expires times on every post.
 
@@ -306,7 +306,7 @@ when the Watch is eventually cancelled or expires.
 The main NWS alert feed's own severity/urgency/certainty/event-type filters are covered next, in
 [Alert Filtering](#alert-filtering). For the complete field-by-field reference (every setting,
 every default, including the per-platform `MinSeverity`/`EventTypes`/`Include*` fields and the
-`Spc`/`SpcMcd`/`Hwo`/`Ero` blocks), see
+`Spc`/`SpcMcd`/`Hwo`/`Ero`/`Pwpf` blocks), see
 [docs/TECHNICAL.md — Configuration Reference](docs/TECHNICAL.md#configuration-reference).
 
 ---
@@ -578,9 +578,9 @@ Posts: Tornado Warnings, Flash Flood Emergencies, Storm Surge Warnings, Tsunami 
 
 ---
 
-## Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO
+## Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO, WPC PWPF
 
-Beyond regular NWS warnings/watches/advisories, the bot can monitor four more NOAA products for
+Beyond regular NWS warnings/watches/advisories, the bot can monitor five more NOAA products for
 your configured `Location.Zones`/`Counties`. Each is independently `Enabled`, self-throttled by
 its own `CheckIntervalSeconds`, and delivered through the same per-platform pipeline as everything
 else — gated by a per-platform `Include*` flag (see
@@ -593,9 +593,10 @@ and per-platform severity-mapping tables for each are in docs/TECHNICAL.md, link
 | **SPC Mesoscale Discussion (MCD)** | Short-fuse (1–3h) severe weather potential, ahead of/alongside active watches | `"SpcMcd": { "Enabled": true, "CheckIntervalSeconds": 300 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#spc-mesoscale-discussion-monitoring--how-it-works) |
 | **Hazardous Weather Outlook (HWO)** | Plain-text 7-day hazard summary from your local NWS office | `"Hwo": { "Enabled": true, "CheckIntervalSeconds": 300 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#hazardous-weather-outlook-hwo--how-it-works) |
 | **WPC Excessive Rainfall Outlook (ERO)** | Day 1/2 flash-flood-guidance-exceedance risk | `"Ero": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#wpc-excessive-rainfall-outlook-ero--how-it-works) |
+| **WPC Winter Weather Outlook (PWPF)** | Day 1/2 probability of ≥1/4/8/12" of snow (and ≥0.10/0.25" of freezing rain) in 24 hours; posts when the chance reaches 40% and re-posts only if the forecast goes up | `"Pwpf": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#wpc-winter-weather-outlook-pwpf--how-it-works) |
 
 HWO is long-form text (no map image) intended primarily for personal use — its per-platform flag,
-`IncludeHwo`, defaults to `false` (opt-in) rather than `true` like the other three. A common setup
+`IncludeHwo`, defaults to `false` (opt-in) rather than `true` like the other four. A common setup
 is enabling it only on a personal Discord DM or Telegram chat:
 
 ```json
@@ -991,10 +992,13 @@ If nothing is enabled, it logs a warning and exits without posting anything.
 ## Map Images (Mapbox)
 
 The bot generates a map image for each alert (NWS warnings/watches/advisories, plus SPC Outlook,
-SPC MCD, and WPC ERO posts) and attaches it to every platform that supports images. Most maps come
+SPC MCD, WPC ERO, and WPC PWPF posts) and attaches it to every platform that supports images. Most maps come
 from a free IEM service that needs no account or setup on your part — this always runs, even
 without Mapbox configured. Mapbox is only used as a fallback, for the minority of alerts IEM can't
-provide a map for (no VTEC code, or not yet indexed by IEM), and requires the setup below. See
+provide a map for (no VTEC code, or not yet indexed by IEM), and requires the setup below. The one
+exception is the WPC PWPF winter outlook feed, which draws its snow/ice probability area over your
+configured zones with Mapbox directly (IEM has no map for that product) — without Mapbox it posts
+WPC's national outlook graphic instead. See
 [docs/TECHNICAL.md — Map Images](docs/TECHNICAL.md#map-images--internals) for how the bot decides
 which source to use.
 
