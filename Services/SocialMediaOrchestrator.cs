@@ -16,6 +16,7 @@ public class SocialMediaOrchestrator
     private readonly SpcMcdService _spcMcd;
     private readonly HwoService _hwo;
     private readonly WpcEroService _ero;
+    private readonly WpcPwpfService _pwpf;
     private readonly AlertTrackerService _tracker;
     private readonly MapService _map;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -39,6 +40,7 @@ public class SocialMediaOrchestrator
         SpcMcdService spcMcd,
         HwoService hwo,
         WpcEroService ero,
+        WpcPwpfService pwpf,
         AlertTrackerService tracker,
         MapService map,
         IHttpClientFactory httpClientFactory,
@@ -61,6 +63,7 @@ public class SocialMediaOrchestrator
         _spcMcd           = spcMcd;
         _hwo              = hwo;
         _ero              = ero;
+        _pwpf             = pwpf;
         _tracker          = tracker;
         _map              = map;
         _httpClientFactory = httpClientFactory;
@@ -149,6 +152,9 @@ public class SocialMediaOrchestrator
         if (_ero.IsEnabled)
             await CheckEroAsync(ct);
 
+        if (_pwpf.IsEnabled)
+            await CheckPwpfAsync(ct);
+
         return (stormCount, watchExpiresUtc);
     }
 
@@ -233,6 +239,24 @@ public class SocialMediaOrchestrator
         }
     }
 
+    private async Task CheckPwpfAsync(CancellationToken ct)
+    {
+        var pwpfAlerts = await _pwpf.GetPwpfAlertsAsync();
+
+        foreach (var alert in pwpfAlerts)
+        {
+            if (ct.IsCancellationRequested) break;
+            if (_tracker.HasBeenPosted(alert.Id)) continue;
+
+            _logger.LogInformation("New WPC PWPF: [{Severity}] {Event} — {Headline}",
+                alert.Severity, alert.Event, alert.Headline);
+
+            await DownloadMapImageAsync(alert);
+            await PostToAllPlatformsAsync(alert);
+            _tracker.MarkPosted(alert.Id);
+        }
+    }
+
     private async Task PostToAllPlatformsAsync(NwsAlert alert)
     {
         var all = new (string Name, bool Enabled, IPlatformFilterSettings Filter, Func<Task<bool>> Action)[]
@@ -256,6 +280,7 @@ public class SocialMediaOrchestrator
                 (alert.IsSpcMcd && !p.Filter.IncludeSpcMcd) ||
                 (alert.IsHwo && !p.Filter.IncludeHwo) ||
                 (alert.IsEro && !p.Filter.IncludeEro) ||
+                (alert.IsPwpf && !p.Filter.IncludePwpf) ||
                 !PassesFilter(alert.Severity, p.Filter.MinSeverity) ||
                 !PassesFilter(alert.Event, p.Filter.EventTypes)))
             .Select(p => p.Name)
@@ -270,6 +295,7 @@ public class SocialMediaOrchestrator
                 !(alert.IsSpcMcd && !p.Filter.IncludeSpcMcd) &&
                 !(alert.IsHwo && !p.Filter.IncludeHwo) &&
                 !(alert.IsEro && !p.Filter.IncludeEro) &&
+                !(alert.IsPwpf && !p.Filter.IncludePwpf) &&
                 PassesFilter(alert.Severity, p.Filter.MinSeverity) &&
                 PassesFilter(alert.Event, p.Filter.EventTypes))
             .Select(p => WrapPost(p.Name, p.Action))

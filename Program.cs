@@ -72,6 +72,7 @@ var host = Host.CreateDefaultBuilder(args)
         var spcMcdSettings    = cfg.GetSection("SpcMcd").Get<SpcMcdSettings>()       ?? new SpcMcdSettings();
         var hwoSettings       = cfg.GetSection("Hwo").Get<HwoSettings>()             ?? new HwoSettings();
         var eroSettings       = cfg.GetSection("Ero").Get<EroSettings>()             ?? new EroSettings();
+        var pwpfSettings      = cfg.GetSection("Pwpf").Get<PwpfSettings>()           ?? new PwpfSettings();
         var updateSettings    = cfg.GetSection("Update").Get<UpdateSettings>()       ?? new UpdateSettings();
 
         // Register settings as singletons
@@ -94,10 +95,12 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton(spcMcdSettings);
         services.AddSingleton(hwoSettings);
         services.AddSingleton(eroSettings);
+        services.AddSingleton(pwpfSettings);
+        services.AddSingleton(pwpfSettings);
         services.AddSingleton(updateSettings);
 
         // HttpClients — each service gets its own typed client.
-        // The read-only weather/mapping feeds (NWS, SPC, HWO, WPC ERO, IEM, Mapbox) get a
+        // The read-only weather/mapping feeds (NWS, SPC, HWO, WPC ERO/PWPF, IEM, Mapbox) get a
         // standard resilience handler (retry + circuit breaker + timeouts) since they're all
         // idempotent GETs against occasionally-flaky government/free-tier APIs polled every few
         // minutes anyway — a transient failure just means waiting for the next poll otherwise.
@@ -146,6 +149,10 @@ var host = Host.CreateDefaultBuilder(args)
         {
             client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
             client.DefaultRequestHeaders.Add("Accept", "application/geo+json");
+        }).AddStandardResilienceHandler();
+        services.AddHttpClient<WpcPwpfService>(client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "NwsAlertBot/1.0 (contact@yourorg.com)");
         }).AddStandardResilienceHandler();
 
         // Named client for MapService's read-only IEM pre-flight checks (ResolveIemPhenomenaAsync,

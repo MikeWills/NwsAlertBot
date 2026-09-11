@@ -18,8 +18,9 @@ release, see [CONTRIBUTING.md](../CONTRIBUTING.md). For a running history of cha
 6. [SPC Mesoscale Discussion Monitoring — How It Works](#spc-mesoscale-discussion-monitoring--how-it-works)
 7. [Hazardous Weather Outlook (HWO) — How It Works](#hazardous-weather-outlook-hwo--how-it-works)
 8. [WPC Excessive Rainfall Outlook (ERO) — How It Works](#wpc-excessive-rainfall-outlook-ero--how-it-works)
-9. [Map Images — Internals](#map-images--internals)
-10. [References](#references)
+9. [WPC Winter Weather Outlook (PWPF) — How It Works](#wpc-winter-weather-outlook-pwpf--how-it-works)
+10. [Map Images — Internals](#map-images--internals)
+11. [References](#references)
 
 ---
 
@@ -41,11 +42,12 @@ drives the main loop:
 5. `NwsAlert.FormatPost(maxLength)` formats and truncates the alert text for each platform's
    character limit.
 6. After the main NWS loop, the same `RunAsync` cycle also checks `SpcOutlookService`,
-   `SpcMcdService`, `HwoService`, and `WpcEroService` (if each is individually `Enabled`) —
-   separate synthetic-alert feeds with their own severity assignment (not the NWS `Filter*` gate),
-   each self-throttled by its own `CheckIntervalSeconds` in `appsettings.json` rather than the main
-   `PollIntervalSeconds`. Posted through the same per-platform pipeline as NWS alerts, gated by each
-   platform's own `IncludeSpcOutlooks`/`IncludeSpcMcd`/`IncludeHwo`/`IncludeEro` flags.
+   `SpcMcdService`, `HwoService`, `WpcEroService`, and `WpcPwpfService` (if each is individually
+   `Enabled`) — separate synthetic-alert feeds with their own severity assignment (not the NWS
+   `Filter*` gate), each self-throttled by its own `CheckIntervalSeconds` in `appsettings.json`
+   rather than the main `PollIntervalSeconds`. Posted through the same per-platform pipeline as
+   NWS alerts, gated by each platform's own
+   `IncludeSpcOutlooks`/`IncludeSpcMcd`/`IncludeHwo`/`IncludeEro`/`IncludePwpf` flags.
 
 **DI pattern**: Settings classes are bound once in `Program.cs` and registered as singletons. Every
 platform service receives its typed `{Platform}Settings` singleton via constructor injection. All
@@ -242,13 +244,13 @@ run `update.ps1` by hand for a while, or watch the logs closely the first few ti
 ## Configuration Reference
 
 All configuration lives in `appsettings.json`. Settings are grouped by what they govern:
-`Location` and `Polling` are shared across every alert feed; `Nws`, `Spc`, `SpcMcd`, `Hwo`, and
-`Ero` are each one specific feed's own settings; everything else is a delivery platform.
+`Location` and `Polling` are shared across every alert feed; `Nws`, `Spc`, `SpcMcd`, `Hwo`, `Ero`,
+and `Pwpf` are each one specific feed's own settings; everything else is a delivery platform.
 
 ### Location — shared by every feed
 
 `Zones`/`Counties`/`TimeZone` are resolved once and used identically by the NWS alerts feed,
-SPC Outlook, SPC MCD, HWO, WPC ERO, and the Mapbox bounding-box fallback. None of those feeds
+SPC Outlook, SPC MCD, HWO, WPC ERO, WPC PWPF, and the Mapbox bounding-box fallback. None of those feeds
 carry their own copy of this — if you add a new feed in the future, it should read from here too.
 
 ```json
@@ -263,12 +265,12 @@ carry their own copy of this — if you add a new feed in the future, it should 
 |---|---|---|
 | `Zones` | NWS forecast zone codes (see the README's [Geographic Filtering](../README.md#geographic-filtering-zones-and-counties)) | `[]` |
 | `Counties` | NWS county codes (see the README's [Geographic Filtering](../README.md#geographic-filtering-zones-and-counties)) | `[]` |
-| `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS, SPC, HWO, and ERO). Works on Windows and Linux. | `"America/Chicago"` |
+| `TimeZone` | IANA timezone ID for formatting Issued/Valid/Expires on all alert posts (NWS, SPC, HWO, ERO, and PWPF). Works on Windows and Linux. | `"America/Chicago"` |
 
 **Geographic filter:** `Zones` and `Counties` are combined into a single query — both sets of
 UGC codes are always sent together, for every feed. `Nws.State` (below) is a fallback used
-**only** by the main NWS alerts feed when both are empty — SPC Outlook, SPC MCD, HWO, and WPC
-ERO always require explicit `Zones`/`Counties` and do not fall back to a whole state.
+**only** by the main NWS alerts feed when both are empty — SPC Outlook, SPC MCD, HWO, WPC ERO,
+and WPC PWPF always require explicit `Zones`/`Counties` and do not fall back to a whole state.
 
 **US IANA timezone IDs:**
 
@@ -286,7 +288,8 @@ ERO always require explicit `Zones`/`Counties` and do not fall back to a whole s
 
 Drives how often the orchestrator checks all feeds. Each feed still self-gates on its own
 `CheckIntervalSeconds` below; this only controls the overall tick. Only NWS alerts and SPC MCDs
-ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook, HWO, and WPC ERO never do.
+ever trigger the accelerated (`ActiveAlert*`) window — SPC Outlook, HWO, WPC ERO, and WPC PWPF
+never do.
 
 **Watches get their own expiry-based extension, independent of `ActiveAlertWindowHours`.** A
 storm-triggering NWS alert whose `event` contains "Watch" (e.g. "Severe Thunderstorm Watch",
@@ -345,8 +348,8 @@ directly to `api.weather.gov` as query parameters, so anything excluded here is 
 returned to the bot. Nothing downstream (per-platform `MinSeverity`/`EventTypes`) can un-filter
 it. `AdditionalEventTypes` is the one exception — it's additive, not restrictive, which is why
 it doesn't get the `Filter` prefix. This only governs the main NWS alerts feed (regular
-warnings/watches/advisories + SPS) — SPC Outlook, SPC MCD, HWO, and WPC ERO below are separate
-feeds with their own severity values, gated only by each platform's own `MinSeverity`. For
+warnings/watches/advisories + SPS) — SPC Outlook, SPC MCD, HWO, WPC ERO, and WPC PWPF below are
+separate feeds with their own severity values, gated only by each platform's own `MinSeverity`. For
 practical recommended combinations of these fields, see the README's
 [Alert Filtering](../README.md#alert-filtering) section.
 
@@ -367,6 +370,7 @@ Each platform block also accepts:
 | `IncludeSpcMcd` | Whether SPC Mesoscale Discussion alerts are posted to this platform. Requires `SpcMcd.Enabled = true`. | `true` |
 | `IncludeHwo` | Whether Hazardous Weather Outlook text posts are sent to this platform. Requires `Hwo.Enabled = true`. Defaults to `false` — HWO is long-form text intended for personal use, enable it selectively (e.g. a Discord DM or Telegram chat). | `false` |
 | `IncludeEro` | Whether WPC Excessive Rainfall Outlook alerts are posted to this platform. Requires `Ero.Enabled = true`. | `true` |
+| `IncludePwpf` | Whether WPC Winter Weather Outlook (PWPF snow/freezing-rain probability) alerts are posted to this platform. Requires `Pwpf.Enabled = true`. | `true` |
 
 `Spc` (see [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring--how-it-works)):
 
@@ -436,6 +440,28 @@ Per-platform delivery is controlled by the separate `IncludeHwo` flag, which def
 Per-platform delivery is controlled by the separate `IncludeEro` flag (default `true`).
 Note: despite sitting alongside `Spc`/`SpcMcd` in this list, ERO is a WPC (Weather Prediction
 Center) product, not SPC.
+
+`Pwpf` (see [WPC Winter Weather Outlook (PWPF)](#wpc-winter-weather-outlook-pwpf--how-it-works)):
+
+```json
+"Pwpf": {
+  "Enabled": false,
+  "CheckIntervalSeconds": 1800,
+  "MinProbabilityPercent": 40,
+  "SnowThresholds": "1,4,8,12",
+  "IceThresholds": "0.10,0.25"
+}
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `Enabled` | Whether to monitor the WPC Probabilistic Winter Precipitation Forecast Day 1/2 snow and freezing-rain probability contours | `false` |
+| `CheckIntervalSeconds` | Minimum seconds between PWPF checks. WPC issues twice a day (00Z/12Z), so faster polling gains nothing. | `1800` |
+| `MinProbabilityPercent` | A threshold only counts when a monitored location is inside a contour of at least this probability. WPC draws contours at 1/5/10/20/30/40/50/60/70/80/90/95 — a value between two of those behaves like the next one up. | `40` |
+| `SnowThresholds` | Comma-separated 24-hour snowfall thresholds (inches) to check. WPC only publishes 1, 2, 4, 6, 8, 12 and 18 — anything else is ignored with a warning. Empty string skips snow. | `"1,4,8,12"` |
+| `IceThresholds` | Comma-separated 24-hour freezing-rain thresholds (inches) to check. WPC only publishes 0.01, 0.10, 0.25 and 0.50. Empty string skips freezing rain. | `"0.10,0.25"` |
+
+Per-platform delivery is controlled by the separate `IncludePwpf` flag (default `true`).
 
 ---
 
@@ -643,11 +669,91 @@ filter fields were added beyond `IncludeEro` (see [Configuration Reference](#con
 
 ---
 
+## WPC Winter Weather Outlook (PWPF) — How It Works
+
+The bot can also monitor the [WPC Probabilistic Winter Precipitation Forecast](https://www.wpc.ncep.noaa.gov/pwpf/wwd_accum_probs.php)
+(PWPF) — Day 1 and Day 2 probabilities that 24-hour snowfall will reach ≥1/2/4/6/8/12/18" and
+that 24-hour freezing-rain accretion will reach ≥0.01/0.10/0.25/0.50". This is the gridded,
+WPC-ensemble-derived product behind the "Winter Weather Forecasts" page, not the
+forecaster-drawn Winter Weather Desk graphics (those only exist for ≥4/8/12" and have no ≥1"
+product, which is why they're not the data source here). Day 3 is intentionally not checked.
+
+- **Locations monitored** reuse the same `Location.Zones`/`Location.Counties` centroids as
+  SPC Outlook/MCD/ERO — resolved once at startup and cached for the life of the process.
+- **Data source** — one KMZ per threshold and forecast hour from
+  `https://www.wpc.ncep.noaa.gov/pwpf/latest_kml/`, named
+  `prb_24hsnow_ge{04}_f{024}_cntr_latest.kmz` (snow, zero-padded whole inches) or
+  `prb_24hicez_ge{.25}_f{024}_cntr_latest.kmz` (ice, leading-dot fraction). `f024` is Day 1,
+  `f048` is Day 2 — the 24-hour period ending 24/48 h after WPC's latest 00Z or 12Z cycle. Each
+  KMZ is a zip holding one KML whose `<Placemark>`s are probability contour rings: the
+  placemark `<name>` is the contour level (1, 5, 10, 20 … 95) and its `<Polygon>` the ring.
+  Placemarks without a `<Polygon>` are just the map labels and are skipped. No extra NuGet
+  package is needed — `System.IO.Compression` + `System.Xml.Linq` + the existing
+  NetTopologySuite handle it. The document `<snippet>` (`Valid 00Z 09/12/2026 - 00Z 09/13/2026`)
+  supplies the valid window.
+- **Probability band** — contours are isolines, so a location inside the 40% ring is also inside
+  the 10% and 20% rings. `WpcPwpfService.FindBand` therefore takes the *highest* level whose
+  polygon covers the location's centroid (0 = outside every contour, <1%). One band per
+  threshold per day, taking the max across all monitored locations.
+- **When it posts** — for each day and precipitation type, the highest configured threshold whose
+  band is ≥ `Pwpf.MinProbabilityPercent` triggers the alert; the post body lists every checked
+  threshold with its band (`≥1": 90–95%`, `≥4": 60–70%`, `≥8": 20–30%`, `≥12": <1%`). Snow
+  and freezing rain are separate alerts (`WPC Day {n} Snowfall Outlook` /
+  `WPC Day {n} Freezing Rain Outlook`).
+- **Re-posts only when the forecast goes up.** The dedup ID is
+  `WPC-PWPF-Day{n}-{Snow|Ice}-{validStartUtcDate}-ge{threshold}-p{band}`. Before returning an
+  alert, the service asks `AlertTrackerService` whether any ID for the same day/type/valid date
+  at a *higher* threshold (any qualifying band) or the *same* threshold at the same-or-higher
+  band is already in `posted_alerts.txt`; if so, nothing is posted. A forecast that is
+  unchanged or downgraded between WPC's 00Z and 12Z cycles is therefore silent; one that climbs
+  from `≥4" at 40%` to `≥4" at 60%` or to `≥8" at 40%` posts again. The check reads the
+  persisted tracker file, so a restart does not re-post. Because the key includes the valid
+  start *date*, tomorrow's Day 1 (a new date) gets its own fresh post even for the same storm
+  already announced as today's Day 2 — matching how ERO treats Day 1 and Day 2 as separate.
+- **Checked every `Pwpf.CheckIntervalSeconds`** (default 1800s = 30 min) — independent of
+  `Polling.PollIntervalSeconds`. WPC only issues twice a day, so nothing is gained by polling
+  faster.
+- **Outlook map image** — WPC's static CONUS-wide Winter Weather Desk graphics
+  (`https://www.wpc.ncep.noaa.gov/wwd/day{n}_psnow_gt_{04|08|12}_conus.gif`,
+  `day{n}_pice_gt_25_conus.gif`); thresholds without a dedicated image (≥1/2/6/18" snow,
+  ≥0.01/0.10/0.50" ice) use `day{n}_composite_conus.gif`. These are national-scale — WPC offers
+  no per-region render of this product and IEM has no autoplot for it, so unlike ERO the image
+  is not cropped to the location's WFO.
+- **Details link** — each post links to WPC's interactive PWPF page pre-filtered to the
+  triggering threshold (`.../pwpf/wwd_accum_probs.php?fpd=24&ptype=snow&amt=4&day=1`).
+- **Alaska/Hawaii** are not covered — the PWPF grid is CONUS-only.
+
+> **Caveat:** Same as SPC Outlook/ERO — each location is reduced to a single centroid point, so a
+> location straddling a contour may not perfectly reflect the polygon boundary. WPC's own KML
+> notes that a contour nested *inside* a higher one means "less than" rather than "more than";
+> that inversion is rare and is ignored (the higher enclosing level wins).
+
+### Filtering PWPF posts per platform
+
+PWPF alerts flow through each platform's existing `MinSeverity`/`EventTypes` dials — no new
+filter fields were added beyond `IncludePwpf` (see [Configuration Reference](#configuration-reference)):
+
+- **Event names** — `WPC Day 1 Snowfall Outlook`, `WPC Day 2 Snowfall Outlook`,
+  `WPC Day 1 Freezing Rain Outlook`, `WPC Day 2 Freezing Rain Outlook`.
+- **Severity mapping** — keyed to the highest threshold that met `MinProbabilityPercent`:
+
+  | Snow threshold | Ice threshold | Mapped Severity |
+  |---|---|---|
+  | ≥12" or ≥18" | ≥0.50" | Extreme |
+  | ≥8" | ≥0.25" | Severe |
+  | ≥4" or ≥6" | ≥0.10" | Moderate |
+  | ≥1" or ≥2" | ≥0.01" | Minor |
+
+  For example, a platform configured with `"MinSeverity": "Severe,Extreme"` only hears about
+  ≥8" snow / ≥0.25" ice and up.
+
+---
+
 ## Map Images — Internals
 
 For each NWS alert (warnings, watches, advisories), `MapService.GetMapUrlAsync` generates an
 image URL and attaches it via the alert's `MapImageUrl` field to every platform that supports
-images. SPC Convective Outlook, SPC MCD, and WPC ERO posts get their own image independently of
+images. SPC Convective Outlook, SPC MCD, WPC ERO, and WPC PWPF posts get their own image independently of
 `MapService` entirely (built directly from spc.noaa.gov/wpc.ncep.noaa.gov by their own services)
 through the same `MapImageUrl` field, so the platform behavior table in the README's
 [Map Images](../README.md#map-images-mapbox) section applies to all of them.
@@ -703,9 +809,9 @@ Every alert's `DetailsUrl` is rendered as a `Details: {url}` line on every platf
 `NwsAlert.FormatPost` appends it for X/Facebook/Discord/DiscordDm/Telegram/Mastodon/Bluesky/
 Instagram, `PushoverService.BuildBody` appends it for Pushover, and
 `PlatformHelpers.BuildSmsText` appends it for Twilio/VoIP.ms. All three skip appending it when
-the URL is already present verbatim in `Instruction` — SPC Outlook/MCD/ERO bake their details
+the URL is already present verbatim in `Instruction` — SPC Outlook/MCD/ERO/PWPF bake their details
 link directly into `Instruction` at construction time (see below) so it survives on platforms
-that only ever rendered `Instruction`; without this dedup check every alert from those three
+that only ever rendered `Instruction`; without this dedup check every alert from those four
 sources would show the link twice. All three also only append the line if it fits within the
 platform's character limit — never truncating the URL itself.
 
@@ -728,9 +834,10 @@ message thread, which is unreadable and was the original motivation for this des
 - **HWO** (`HwoService.FetchLatestAsync`): same `forecast.weather.gov/product.php` viewer, built
   directly from the already-resolved WFO and the fixed `HWO` product code — no AFOS-PIL parsing
   needed since HWO's PIL is always `HWO{wfo}`.
-- **SPC Outlook / SPC MCD / WPC ERO**: link directly to the human-facing SPC/WPC product pages
+- **SPC Outlook / SPC MCD / WPC ERO / WPC PWPF**: link directly to the human-facing SPC/WPC product pages
   (`spc.noaa.gov/products/outlook/...`, `spc.noaa.gov/products/md/...`,
-  `wpc.ncep.noaa.gov/qpf/ero.php...`) — these were never API endpoints, so no change was needed.
+  `wpc.ncep.noaa.gov/qpf/ero.php...`, `wpc.ncep.noaa.gov/pwpf/wwd_accum_probs.php...`) — these
+  were never API endpoints, so no change was needed.
 
 Note that `forecast.weather.gov/product.php?...&version=1` shows the *latest* issuance of that
 AFOS PIL for that office, not necessarily the exact issuance instance tied to an older alert (e.g.

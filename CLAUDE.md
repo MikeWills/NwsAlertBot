@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**NwsAlertBot** is a .NET 10 C# console application (Generic Host / BackgroundService pattern) that polls the NWS REST API for active weather alerts — plus four separate synthetic-alert feeds (SPC Convective Outlooks, SPC Mesoscale Discussions, Hazardous Weather Outlooks, WPC Excessive Rainfall Outlooks) — and distributes them concurrently to social media (Facebook, Instagram, X, Bluesky, Mastodon, Discord, Discord DM, Telegram), push notifications (Pushover), and SMS (Twilio, VoIP.ms).
+**NwsAlertBot** is a .NET 10 C# console application (Generic Host / BackgroundService pattern) that polls the NWS REST API for active weather alerts — plus five separate synthetic-alert feeds (SPC Convective Outlooks, SPC Mesoscale Discussions, Hazardous Weather Outlooks, WPC Excessive Rainfall Outlooks, WPC Probabilistic Winter Precipitation Forecasts) — and distributes them concurrently to social media (Facebook, Instagram, X, Bluesky, Mastodon, Discord, Discord DM, Telegram), push notifications (Pushover), and SMS (Twilio, VoIP.ms).
 
 ---
 
@@ -57,7 +57,7 @@ currently `private`, change it to `internal` (not `public`) and it becomes visib
 3. Each `SocialMediaOrchestrator` cycle: fetches active alerts from `NwsAlertService` → filters via `AlertTrackerService.HasBeenPosted()` → posts new alerts to all platforms concurrently via `Task.WhenAll()` → marks each posted alert via `AlertTrackerService.MarkPosted()`.
 4. `NwsAlertService.BuildUrl()` pushes all filters (zone/county/state, severity, urgency, certainty, event type) to the NWS API as query parameters — no client-side filtering.
 5. `NwsAlert.FormatPost(maxLength)` formats and truncates the alert text for each platform's character limit.
-6. After the main NWS loop, the same `RunAsync` cycle also checks `SpcOutlookService`, `SpcMcdService`, `HwoService`, and `WpcEroService` (if each is individually `Enabled`) — separate synthetic-alert feeds with their own severity assignment (not the NWS `Filter*` gate), each self-throttled by its own `CheckIntervalSeconds` in `appsettings.json` rather than the main `PollIntervalSeconds`. Posted through the same per-platform pipeline as NWS alerts, gated by each platform's own `IncludeSpcOutlooks`/`IncludeSpcMcd`/`IncludeHwo`/`IncludeEro` flags.
+6. After the main NWS loop, the same `RunAsync` cycle also checks `SpcOutlookService`, `SpcMcdService`, `HwoService`, `WpcEroService`, and `WpcPwpfService` (if each is individually `Enabled`) — separate synthetic-alert feeds with their own severity assignment (not the NWS `Filter*` gate), each self-throttled by its own `CheckIntervalSeconds` in `appsettings.json` rather than the main `PollIntervalSeconds`. Posted through the same per-platform pipeline as NWS alerts, gated by each platform's own `IncludeSpcOutlooks`/`IncludeSpcMcd`/`IncludeHwo`/`IncludeEro`/`IncludePwpf` flags.
 
 **DI pattern**: Settings classes are bound once in `Program.cs` and registered as singletons. Every platform service receives its typed `{Platform}Settings` singleton via constructor injection. All platform `HttpClient`s are registered with `AddHttpClient<T>()`.
 
@@ -121,8 +121,8 @@ Adding a well-justified third-party package is fine — flag it and explain the 
 Every new platform must:
 
 1. Have a `{Platform}Settings` class in `Config/AppSettings.cs` with `Enabled` bool first, XML doc
-   comments on every property, and implementing `IPlatformFilterSettings` (its six members —
-   `MinSeverity`, `EventTypes`, `IncludeSpcOutlooks`, `IncludeSpcMcd`, `IncludeHwo`, `IncludeEro` —
+   comments on every property, and implementing `IPlatformFilterSettings` (its seven members —
+   `MinSeverity`, `EventTypes`, `IncludeSpcOutlooks`, `IncludeSpcMcd`, `IncludeHwo`, `IncludeEro`, `IncludePwpf` —
    already match every existing platform's property names, so this is a one-line `: IPlatformFilterSettings`).
 2. Have a `{Platform}Service.cs` in `Services/` with:
    - Constructor: `HttpClient`, `{Platform}Settings`, `ILogger<{Platform}Service>`
@@ -203,7 +203,7 @@ bypassing it skips CI entirely — a PR is what actually runs `dotnet test` befo
 
 ## Common Pitfalls
 
-- **HTTP resilience is scoped to read-only weather/mapping clients only** — `Program.cs` adds `.AddStandardResilienceHandler()` to `NwsAlertService`, `NwsZoneService`, `SpcOutlookService`, `SpcMcdService`, `HwoService`, `WpcEroService`, and the named `"WeatherImagery"`/`"WeatherImageryPrimary"` clients (MapService's IEM pre-flight checks; `SocialMediaOrchestrator`'s map image download). Do **not** add it to `XService` — its OAuth1.0a signature includes a per-request timestamp/nonce, so an automatic retry resending an identical signed request looks like a replay to X's API. Do **not** add it to `BlueskyService` either — it already has its own hand-rolled 401-reauth retry (see below); a generic retry layered on top risks double-retrying auth failures.
+- **HTTP resilience is scoped to read-only weather/mapping clients only** — `Program.cs` adds `.AddStandardResilienceHandler()` to `NwsAlertService`, `NwsZoneService`, `SpcOutlookService`, `SpcMcdService`, `HwoService`, `WpcEroService`, `WpcPwpfService`, and the named `"WeatherImagery"`/`"WeatherImageryPrimary"` clients (MapService's IEM pre-flight checks; `SocialMediaOrchestrator`'s map image download). Do **not** add it to `XService` — its OAuth1.0a signature includes a per-request timestamp/nonce, so an automatic retry resending an identical signed request looks like a replay to X's API. Do **not** add it to `BlueskyService` either — it already has its own hand-rolled 401-reauth retry (see below); a generic retry layered on top risks double-retrying auth failures.
 - **Instagram requires an image** — text-only posts are not supported. If `ImageUrl` is not set, the service logs a warning and skips.
 - **Facebook personal profiles** — Graph API cannot post to personal profiles (deprecated since 2018). Pages only.
 - **Facebook Business Manager System User tokens can fail with OAuthException #200** even with correct scopes (`pages_read_engagement`, `pages_manage_posts`) and Full control on the Page — confirmed in production debugging. The fix that worked: derive the Page token from a personal long-lived **User** Access Token (`GET /{page-id}?fields=access_token`) instead of generating one via Business Settings → System Users. See README.md "Facebook Page" setup section for the full gotcha writeup before assuming a config/code bug.
