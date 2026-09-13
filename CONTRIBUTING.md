@@ -71,7 +71,7 @@ for Windows, Linux, and macOS (both Intel and Apple Silicon) whenever you push a
 
 ### How it works
 
-- **Trigger:** push a tag matching `v*` (e.g. `v1.0.0`). No manual dispatch — cutting a release
+- **Trigger:** push a tag matching `v*` (e.g. `v2026.09.0`). No manual dispatch — cutting a release
   is always tied to a version tag.
 - **Build:** all four platforms are cross-compiled from a single `ubuntu-latest` runner —
   `dotnet publish` fetches the target runtime pack via NuGet regardless of host OS, so no
@@ -87,18 +87,35 @@ for Windows, Linux, and macOS (both Intel and Apple Silicon) whenever you push a
   created via the GitHub CLI (`gh release create`) using the built-in `GITHUB_TOKEN` — no
   third-party release-management action required.
 - **Versioning:** the tag (minus its leading `v`) is passed to `dotnet publish` as
-  `-p:Version=X.Y.Z`, so the running executable knows its own version — this is what
+  `-p:Version=YYYY.MM.PATCH`, so the running executable knows its own version — this is what
   [Auto-Update](docs/TECHNICAL.md#auto-update--full-reference) compares against GitHub Releases.
+
+### Version scheme: `vYYYY.MM.PATCH` (calendar versioning)
+
+Tags are `v` + four-digit year + two-digit month + a per-month counter starting at `0`:
+`v2026.09.0` is the first release cut in September 2026, `v2026.09.1` the second, and the
+first October release resets to `v2026.10.0`. The month is when the release is *cut*, not when
+the work was done. Keep the leading zero on the month in the tag (`09`, not `9`) so tags sort
+correctly as plain strings in `git tag` / the GitHub UI.
+
+Why this works with Auto-Update: `UpdateCheckService` compares `System.Version` values, which
+are numeric per component — `2026.09.0` parses as `2026.9.0`, and `2026.10.0` > `2026.9.1` >
+`2026.9.0` > the last SemVer tag `0.4.0`. The only visible side effect is that the running
+binary reports itself without the zero (`NWS Alert Bot v2026.9.0 started`), because
+`Assembly.GetName().Version` is numeric; the tag and GitHub Release keep the `09`.
+
+Releases before this scheme (`v0.3.x`, `v0.4.0`) were SemVer and are left as-is — every CalVer
+tag compares as newer than all of them, so Auto-Update moves instances forward from either.
 
 ### Cutting a release
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v2026.09.0
+git push origin v2026.09.0
 ```
 
 Produces `NwsAlertBot-win-x64.zip`, `NwsAlertBot-linux-x64.tar.gz`, `NwsAlertBot-osx-x64.tar.gz`,
-and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v1.0.0` release, each also containing
+and `NwsAlertBot-osx-arm64.tar.gz` attached to the `v2026.09.0` release, each also containing
 `scripts/update.ps1` (see [Auto-Update](docs/TECHNICAL.md#auto-update--full-reference)),
 `scripts/setup-service.ps1`, and `scripts/uninstall-service.ps1`.
 

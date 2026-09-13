@@ -19,7 +19,7 @@
     relying on anyone keeping two separately-typed values in sync). Can also be run manually (omit
     -WaitForPid) to upgrade by hand when Update.AutoApply is false -- omit -Tag to install
     whatever is currently the latest release (resolved the same way UpdateCheckService does, via
-    GitHub's releases/latest API), or pass -Tag with a specific version, e.g. "v1.2.3", to pin to
+    GitHub's releases/latest API), or pass -Tag with a specific version, e.g. "v2026.09.0", to pin to
     that release instead. -ServiceName can still be omitted, since it's resolved from
     Update.ServiceName the same way if not passed explicitly.
 
@@ -36,7 +36,7 @@
     GitHub "owner/repo" to download the release from.
 
 .PARAMETER Tag
-    Release tag to install, e.g. "v1.2.3". If omitted, resolves and installs the latest release
+    Release tag to install, e.g. "v2026.09.0". If omitted, resolves and installs the latest release
     automatically via GitHub's releases/latest API -- pass this only to pin to a specific version.
 
 .PARAMETER InstallDir
@@ -68,7 +68,7 @@
     ./update.ps1 -DryRun
 
 .EXAMPLE
-    ./update.ps1 -Repo MikeWills/NwsAlertBot -Tag v1.2.3 -DryRun
+    ./update.ps1 -Repo MikeWills/NwsAlertBot -Tag v2026.09.0 -DryRun
 #>
 param(
     [string]$Repo = "MikeWills/NwsAlertBot",

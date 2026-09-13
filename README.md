@@ -247,7 +247,7 @@ arguments to install whatever is currently the latest release:
 To install a specific version instead, pass `-Tag`:
 
 ```bash
-./update.ps1 -Tag v1.2.3
+./update.ps1 -Tag v2026.09.0
 ```
 
 To safely verify the script works on your machine (downloads, checksum-verifies, and extracts, but

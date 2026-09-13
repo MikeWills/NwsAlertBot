@@ -6,7 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>NwsAlertBot</RootNamespace>
-    <!-- Overridden by release.yml via -p:Version=X.Y.Z (stripped from the pushed git tag) so
+    <!-- Overridden by release.yml via -p:Version=YYYY.MM.PATCH (stripped from the pushed git tag, e.g.
+         v2026.09.0 -> 2026.09.0; MSBuild normalizes the assembly version to 2026.9.0.0) so
          UpdateCheckService can compare its own running version against GitHub Releases. Local/dev
          builds keep this default, which always compares as "older than any real release". -->
     <Version>0.0.0</Version>
