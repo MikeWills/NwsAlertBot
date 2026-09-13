@@ -3,6 +3,12 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Release tags now use calendar versioning: `vYYYY.MM.PATCH`** (`v2026.09.0`, `v2026.09.1`,
+  `v2026.10.0` …) instead of SemVer. `v0.4.0` was the last SemVer tag; Auto-Update keeps working
+  across the switch because `System.Version` compares numerically and `2026.9.x` sorts after
+  every `0.x.y`. The running binary reports the month without its leading zero
+  (`v2026.9.0`). See CONTRIBUTING.md "Version scheme".
+
 - **Removed the `claude-code-review` and `claude` (`@claude` mention responder) GitHub Actions
   workflows.** Both failed on every trigger (`Claude Code is not installed on this repository` — the
   GitHub App was never installed and no API key was configured) and never produced a review or
