@@ -3,6 +3,16 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **New feed: WPC Winter Storm Severity Index (WSSI).** `WpcWssiService` queries WPC's WSSI
+  ArcGIS MapServer with a multipoint spatial query of every configured zone/county centroid
+  (15 requests per check: 5 components × Day 1/2/3). Posts one combined alert listing the highest
+  impact per component (Overall, Snow Amount, Snow Load, Ice Accumulation, Blowing Snow) at or
+  above `Wssi.MinImpact` (default `Minor`). Severity: Minor/Moderate same name, Major → Severe,
+  Extreme → Extreme. Posts once per day and again only when the highest impact level changes (WSSI
+  re-issues every 2 hours, so the dedup ID skips `issue_time`). Map image is WPC's per-office
+  `WSSI_OVERALL_{WFO}.png`. New `Wssi` settings block and per-platform `IncludeWssi` flag (default
+  `true`). Also removed a duplicate `AddSingleton(pwpfSettings)` in `Program.cs`.
+
 - **Release tags now use calendar versioning: `vYYYY.MM.PATCH`** (`v2026.09.0`, `v2026.09.1`,
   `v2026.10.0` …) instead of SemVer. `v0.4.0` was the last SemVer tag; Auto-Update keeps working
   across the switch because `System.Version` compares numerically and `2026.9.x` sorts after

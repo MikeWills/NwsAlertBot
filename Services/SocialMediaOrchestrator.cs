@@ -17,6 +17,7 @@ public class SocialMediaOrchestrator
     private readonly HwoService _hwo;
     private readonly WpcEroService _ero;
     private readonly WpcPwpfService _pwpf;
+    private readonly WpcWssiService _wssi;
     private readonly AlertTrackerService _tracker;
     private readonly MapService _map;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -41,6 +42,7 @@ public class SocialMediaOrchestrator
         HwoService hwo,
         WpcEroService ero,
         WpcPwpfService pwpf,
+        WpcWssiService wssi,
         AlertTrackerService tracker,
         MapService map,
         IHttpClientFactory httpClientFactory,
@@ -64,6 +66,7 @@ public class SocialMediaOrchestrator
         _hwo              = hwo;
         _ero              = ero;
         _pwpf             = pwpf;
+        _wssi             = wssi;
         _tracker          = tracker;
         _map              = map;
         _httpClientFactory = httpClientFactory;
@@ -154,6 +157,9 @@ public class SocialMediaOrchestrator
 
         if (_pwpf.IsEnabled)
             await CheckPwpfAsync(ct);
+
+        if (_wssi.IsEnabled)
+            await CheckWssiAsync(ct);
 
         return (stormCount, watchExpiresUtc);
     }
@@ -257,6 +263,23 @@ public class SocialMediaOrchestrator
         }
     }
 
+    private async Task CheckWssiAsync(CancellationToken ct)
+    {
+        var wssiAlerts = await _wssi.GetWssiAlertsAsync();
+
+        foreach (var alert in wssiAlerts)
+        {
+            if (ct.IsCancellationRequested) break;
+            if (_tracker.HasBeenPosted(alert.Id)) continue;
+
+            _logger.LogInformation("New WPC WSSI: [{Severity}] {Headline}", alert.Severity, alert.Headline);
+
+            await DownloadMapImageAsync(alert);
+            await PostToAllPlatformsAsync(alert);
+            _tracker.MarkPosted(alert.Id);
+        }
+    }
+
     private async Task PostToAllPlatformsAsync(NwsAlert alert)
     {
         var all = new (string Name, bool Enabled, IPlatformFilterSettings Filter, Func<Task<bool>> Action)[]
@@ -281,6 +304,7 @@ public class SocialMediaOrchestrator
                 (alert.IsHwo && !p.Filter.IncludeHwo) ||
                 (alert.IsEro && !p.Filter.IncludeEro) ||
                 (alert.IsPwpf && !p.Filter.IncludePwpf) ||
+                (alert.IsWssi && !p.Filter.IncludeWssi) ||
                 !PassesFilter(alert.Severity, p.Filter.MinSeverity) ||
                 !PassesFilter(alert.Event, p.Filter.EventTypes)))
             .Select(p => p.Name)
@@ -296,6 +320,7 @@ public class SocialMediaOrchestrator
                 !(alert.IsHwo && !p.Filter.IncludeHwo) &&
                 !(alert.IsEro && !p.Filter.IncludeEro) &&
                 !(alert.IsPwpf && !p.Filter.IncludePwpf) &&
+                !(alert.IsWssi && !p.Filter.IncludeWssi) &&
                 PassesFilter(alert.Severity, p.Filter.MinSeverity) &&
                 PassesFilter(alert.Event, p.Filter.EventTypes))
             .Select(p => WrapPost(p.Name, p.Action))

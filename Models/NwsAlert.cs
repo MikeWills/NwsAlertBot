@@ -71,6 +71,9 @@ public class NwsAlert
     /// <summary>True when this alert was synthesized by WpcPwpfService (WPC Probabilistic Winter Precipitation Forecast).</summary>
     public bool IsPwpf { get; set; }
 
+    /// <summary>True when this alert was synthesized by WpcWssiService (WPC Winter Storm Severity Index).</summary>
+    public bool IsWssi { get; set; }
+
     /// <summary>PWPF only: the highest accumulation threshold (inches) that met Pwpf.MinProbabilityPercent — the one that triggered the post.</summary>
     public double PwpfThreshold { get; set; }
 
