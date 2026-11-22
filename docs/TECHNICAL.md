@@ -19,6 +19,7 @@ release, see [CONTRIBUTING.md](../CONTRIBUTING.md). For a running history of cha
 7. [Hazardous Weather Outlook (HWO) — How It Works](#hazardous-weather-outlook-hwo--how-it-works)
 8. [WPC Excessive Rainfall Outlook (ERO) — How It Works](#wpc-excessive-rainfall-outlook-ero--how-it-works)
 9. [WPC Winter Weather Outlook (PWPF) — How It Works](#wpc-winter-weather-outlook-pwpf--how-it-works)
+   - [WPC Winter Storm Severity Index (WSSI) — How It Works](#wpc-winter-storm-severity-index-wssi--how-it-works)
 10. [Map Images — Internals](#map-images--internals)
 11. [References](#references)
 
@@ -42,12 +43,12 @@ drives the main loop:
 5. `NwsAlert.FormatPost(maxLength)` formats and truncates the alert text for each platform's
    character limit.
 6. After the main NWS loop, the same `RunAsync` cycle also checks `SpcOutlookService`,
-   `SpcMcdService`, `HwoService`, `WpcEroService`, and `WpcPwpfService` (if each is individually
+   `SpcMcdService`, `HwoService`, `WpcEroService`, `WpcPwpfService`, and `WpcWssiService` (if each is individually
    `Enabled`) — separate synthetic-alert feeds with their own severity assignment (not the NWS
    `Filter*` gate), each self-throttled by its own `CheckIntervalSeconds` in `appsettings.json`
    rather than the main `PollIntervalSeconds`. Posted through the same per-platform pipeline as
    NWS alerts, gated by each platform's own
-   `IncludeSpcOutlooks`/`IncludeSpcMcd`/`IncludeHwo`/`IncludeEro`/`IncludePwpf` flags.
+   `IncludeSpcOutlooks`/`IncludeSpcMcd`/`IncludeHwo`/`IncludeEro`/`IncludePwpf`/`IncludeWssi` flags.
 
 **DI pattern**: Settings classes are bound once in `Program.cs` and registered as singletons. Every
 platform service receives its typed `{Platform}Settings` singleton via constructor injection. All
@@ -371,6 +372,7 @@ Each platform block also accepts:
 | `IncludeHwo` | Whether Hazardous Weather Outlook text posts are sent to this platform. Requires `Hwo.Enabled = true`. Defaults to `false` — HWO is long-form text intended for personal use, enable it selectively (e.g. a Discord DM or Telegram chat). | `false` |
 | `IncludeEro` | Whether WPC Excessive Rainfall Outlook alerts are posted to this platform. Requires `Ero.Enabled = true`. | `true` |
 | `IncludePwpf` | Whether WPC Winter Weather Outlook (PWPF snow/freezing-rain probability) alerts are posted to this platform. Requires `Pwpf.Enabled = true`. | `true` |
+| `IncludeWssi` | Whether WPC Winter Storm Severity Index alerts are posted to this platform. Requires `Wssi.Enabled = true`. | `true` |
 
 `Spc` (see [SPC Convective Outlook Monitoring](#spc-convective-outlook-monitoring--how-it-works)):
 
@@ -462,6 +464,24 @@ Center) product, not SPC.
 | `IceThresholds` | Comma-separated 24-hour freezing-rain thresholds (inches) to check. WPC only publishes 0.01, 0.10, 0.25 and 0.50. Empty string skips freezing rain. | `"0.10,0.25"` |
 
 Per-platform delivery is controlled by the separate `IncludePwpf` flag (default `true`).
+
+`Wssi` (see [WPC Winter Storm Severity Index (WSSI)](#wpc-winter-storm-severity-index-wssi--how-it-works)):
+
+```json
+"Wssi": {
+  "Enabled": false,
+  "CheckIntervalSeconds": 1800,
+  "MinImpact": "Minor"
+}
+```
+
+| Field | Description | Default |
+|---|---|---|
+| `Enabled` | Whether to monitor the WPC Winter Storm Severity Index (all five components, Days 1-3) | `false` |
+| `CheckIntervalSeconds` | Minimum seconds between WSSI checks. WPC updates WSSI every 2 hours. | `1800` |
+| `MinImpact` | Lowest impact level that counts: `Winter Weather Area`, `Minor`, `Moderate`, `Major`, or `Extreme`. An unknown value falls back to `Minor` with a warning. | `"Minor"` |
+
+Per-platform delivery is controlled by the separate `IncludeWssi` flag (default `true`).
 
 ---
 
@@ -752,6 +772,61 @@ filter fields were added beyond `IncludePwpf` (see [Configuration Reference](#co
 
   For example, a platform configured with `"MinSeverity": "Severe,Extreme"` only hears about
   ≥8" snow / ≥0.25" ice and up.
+
+---
+
+## WPC Winter Storm Severity Index (WSSI) — How It Works
+
+`WpcWssiService` monitors WPC's Winter Storm Severity Index — expected winter-storm *impact*
+(not just amounts) for Days 1-3, rated on five tiers: Winter Weather Area, Minor, Moderate, Major,
+Extreme.
+
+- **Data source** — WPC's ArcGIS MapServer
+  (`https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/wpc_wssi/MapServer`), linked
+  from the "REST Service Links" on WPC's WSSI page. It has no WFO/zone field, so the service sends a
+  spatial query: every configured zone/county centroid goes in one `esriGeometryMultipoint`
+  (`inSR=4326`, `esriSpatialRelIntersects`). That's 15 requests per check regardless of how many
+  zones are configured — 5 components × Day 1/2/3 layers:
+
+  | Component | Day 1/2/3 layer IDs |
+  |---|---|
+  | Overall | 1, 2, 3 |
+  | Snow Amount | 6, 7, 8 |
+  | Snow Load | 11, 12, 13 |
+  | Ice Accumulation | 16, 17, 18 |
+  | Blowing Snow | 24, 25, 26 |
+
+  Layers 0/5/10/15/23 are group layers (querying them returns a 400) and 4/9/14/19/27 are the
+  Days 1-3 combined layers, which duplicate the per-day ones.
+- **Polygons are nested** — a point inside a Moderate polygon also intersects the Minor and Winter
+  Weather Area polygons. The service keeps the highest impact per component.
+- **One combined post** listing each component at or above `Wssi.MinImpact`, highest first
+  (e.g. `Snow Amount: Major Impacts` / `Overall: Moderate Impacts`). Headline uses the single
+  highest impact. `Expires` is the latest `end_time` among qualifying polygons.
+- **Time formats** — `issue_time` is `"2026-11-22 0114Z"`, `start_time`/`end_time` are
+  `"00Z 11/22/26"`. Both UTC strings, not ArcGIS date fields.
+- **Dedup ID** — `WPC-WSSI-{issueUtcDate}-{highestImpact}`, deliberately *not* the full
+  `issue_time`: WSSI re-issues every 2 hours, so keying on it would repost the same storm about 12
+  times a day. The result posts once per day and again only when the highest impact level changes.
+- **Map image** — WPC's per-office static graphic,
+  `https://www.wpc.ncep.noaa.gov/wwd/wssi/images/WSSI_OVERALL_{WFO}.png` (WFO from the first
+  resolved zone), with the usual Mapbox fallback if it fails to download.
+- **Details link** — `https://www.wpc.ncep.noaa.gov/wwd/wssi/wssi.php?id={WFO}`.
+- **Alaska/Hawaii** are not covered — WSSI is CONUS-only.
+
+> **Caveat:** Same as SPC Outlook/ERO/PWPF — each location is reduced to a single centroid point.
+
+### Filtering WSSI posts per platform
+
+- **Event name** — `WPC Winter Storm Severity Index`.
+- **Severity mapping** (highest impact across all components):
+
+  | WSSI impact | Mapped Severity |
+  |---|---|
+  | Extreme | Extreme |
+  | Major | Severe |
+  | Moderate | Moderate |
+  | Minor / Winter Weather Area | Minor |
 
 ---
 

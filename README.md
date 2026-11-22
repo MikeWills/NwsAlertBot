@@ -22,7 +22,7 @@ history of changes, see [CHANGELOG.md](CHANGELOG.md).
 7. [Alert Filtering](#alert-filtering)
 8. [Complete NWS Event Type Reference](#complete-nws-event-type-reference)
 9. [Recommended Filter Configurations](#recommended-filter-configurations)
-10. [Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO, WPC PWPF](#additional-alert-feeds-spc-outlooks-spc-mcds-hwo-wpc-ero-wpc-pwpf)
+10. [Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO, WPC PWPF, WPC WSSI](#additional-alert-feeds-spc-outlooks-spc-mcds-hwo-wpc-ero-wpc-pwpf-wpc-wssi)
 11. [API Credentials — Social Media](#api-credentials)
 12. [Push / SMS Notifications](#push--sms-notifications)
 13. [Startup Confirmation](#startup-confirmation)
@@ -578,9 +578,9 @@ Posts: Tornado Warnings, Flash Flood Emergencies, Storm Surge Warnings, Tsunami 
 
 ---
 
-## Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO, WPC PWPF
+## Additional Alert Feeds: SPC Outlooks, SPC MCDs, HWO, WPC ERO, WPC PWPF, WPC WSSI
 
-Beyond regular NWS warnings/watches/advisories, the bot can monitor five more NOAA products for
+Beyond regular NWS warnings/watches/advisories, the bot can monitor six more NOAA products for
 your configured `Location.Zones`/`Counties`. Each is independently `Enabled`, self-throttled by
 its own `CheckIntervalSeconds`, and delivered through the same per-platform pipeline as everything
 else — gated by a per-platform `Include*` flag (see
@@ -594,9 +594,10 @@ and per-platform severity-mapping tables for each are in docs/TECHNICAL.md, link
 | **Hazardous Weather Outlook (HWO)** | Plain-text 7-day hazard summary from your local NWS office | `"Hwo": { "Enabled": true, "CheckIntervalSeconds": 300 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#hazardous-weather-outlook-hwo--how-it-works) |
 | **WPC Excessive Rainfall Outlook (ERO)** | Day 1/2 flash-flood-guidance-exceedance risk | `"Ero": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#wpc-excessive-rainfall-outlook-ero--how-it-works) |
 | **WPC Winter Weather Outlook (PWPF)** | Day 1/2 probability of ≥1/4/8/12" of snow (and ≥0.10/0.25" of freezing rain) in 24 hours; posts when the chance reaches 40% and re-posts only if the forecast goes up | `"Pwpf": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#wpc-winter-weather-outlook-pwpf--how-it-works) |
+| **WPC Winter Storm Severity Index (WSSI)** | How much impact a winter storm is expected to have over the next 3 days (Minor → Extreme), for overall impact plus snow amount, snow load, ice, and blowing snow — one post listing each | `"Wssi": { "Enabled": true, "CheckIntervalSeconds": 1800 }` | [docs/TECHNICAL.md](docs/TECHNICAL.md#wpc-winter-storm-severity-index-wssi--how-it-works) |
 
 HWO is long-form text (no map image) intended primarily for personal use — its per-platform flag,
-`IncludeHwo`, defaults to `false` (opt-in) rather than `true` like the other four. A common setup
+`IncludeHwo`, defaults to `false` (opt-in) rather than `true` like the others. A common setup
 is enabling it only on a personal Discord DM or Telegram chat:
 
 ```json

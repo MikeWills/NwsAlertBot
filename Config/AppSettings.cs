@@ -1,11 +1,11 @@
 namespace NwsAlertBot.Config;
 
 /// <summary>
-/// Geographic area and time zone shared by every feed (Nws, Spc, SpcMcd, Hwo, Ero, and the map
-/// image bounding-box fallback in MapService). None of the five alert feeds have their own
-/// notion of location — they all resolve WFOs/centroids/geometry from these same Zones and
-/// Counties. Adding a new feed in the future should inject LocationSettings, not duplicate
-/// its own copy of these fields.
+/// Geographic area and time zone shared by every feed (Nws, Spc, SpcMcd, Hwo, Ero, Wssi, and the
+/// map image bounding-box fallback in MapService). None of the alert feeds have their own notion
+/// of location — they all resolve WFOs/centroids/geometry from these same Zones and Counties.
+/// Adding a new feed in the future should inject LocationSettings, not duplicate its own copy of
+/// these fields.
 /// </summary>
 public class LocationSettings
 {
@@ -134,10 +134,10 @@ public class NwsSettings
 }
 
 /// <summary>
-/// The six per-platform alert-filtering properties every delivery-platform settings class
-/// exposes (MinSeverity/EventTypes plus the four synthetic-feed opt-ins). Implemented by
-/// every {Platform}Settings class below so SocialMediaOrchestrator can read them through one
-/// `Filter` property per service instead of six separate pass-through properties.
+/// The per-platform alert-filtering properties every delivery-platform settings class exposes
+/// (MinSeverity/EventTypes plus the synthetic-feed opt-ins). Implemented by every
+/// {Platform}Settings class below so SocialMediaOrchestrator can read them through one
+/// `Filter` property per service instead of separate pass-through properties.
 /// </summary>
 public interface IPlatformFilterSettings
 {
@@ -148,6 +148,7 @@ public interface IPlatformFilterSettings
     bool IncludeHwo { get; }
     bool IncludeEro { get; }
     bool IncludePwpf { get; }
+    bool IncludeWssi { get; }
 }
 
 public class FacebookSettings : IPlatformFilterSettings
@@ -194,6 +195,12 @@ public class FacebookSettings : IPlatformFilterSettings
     /// outlook alerts to this platform. Requires Pwpf.Enabled = true.
     /// </summary>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <summary>
+    /// Whether to post WPC Winter Storm Severity Index (WSSI) alerts to this platform.
+    /// Requires Wssi.Enabled = true.
+    /// </summary>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class InstagramSettings : IPlatformFilterSettings
@@ -227,6 +234,9 @@ public class InstagramSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class XSettings : IPlatformFilterSettings
@@ -257,6 +267,9 @@ public class XSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 
     /// <summary>
     /// Quota guard: max posts per rolling 30-day window, matching X's free-tier limit (500
@@ -294,6 +307,9 @@ public class BlueskySettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class MastodonSettings : IPlatformFilterSettings
@@ -322,6 +338,9 @@ public class MastodonSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class PushoverSettings : IPlatformFilterSettings
@@ -384,6 +403,9 @@ public class PushoverSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class TwilioSettings : IPlatformFilterSettings
@@ -426,6 +448,9 @@ public class TwilioSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 
     /// <summary>
     /// Cost/quota guard: max SMS sends per rolling 24-hour window, counted per individual message
@@ -475,6 +500,9 @@ public class DiscordDmSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class DiscordSettings : IPlatformFilterSettings
@@ -515,6 +543,9 @@ public class DiscordSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class TelegramSettings : IPlatformFilterSettings
@@ -554,6 +585,9 @@ public class TelegramSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class VoipMsSettings : IPlatformFilterSettings
@@ -603,6 +637,9 @@ public class VoipMsSettings : IPlatformFilterSettings
 
     /// <inheritdoc cref="FacebookSettings.IncludePwpf"/>
     public bool IncludePwpf { get; set; } = true;
+
+    /// <inheritdoc cref="FacebookSettings.IncludeWssi"/>
+    public bool IncludeWssi { get; set; } = true;
 }
 
 public class MapSettings
@@ -759,6 +796,34 @@ public class PwpfSettings
     /// warning. Leave empty to skip freezing rain entirely. Default "0.10,0.25".
     /// </summary>
     public string IceThresholds { get; set; } = "0.10,0.25";
+}
+
+public class WssiSettings
+{
+    /// <summary>
+    /// Whether to monitor the WPC (Weather Prediction Center) Winter Storm Severity Index (WSSI)
+    /// for the locations derived from Location.Zones/Location.Counties. WSSI rates overall winter
+    /// storm impact plus four sub-components (Snow Amount, Snow Load, Ice Accumulation, Blowing
+    /// Snow) on a five-tier scale: Winter Weather Area, Minor, Moderate, Major, Extreme. Posts a
+    /// single combined alert per issuance showing the highest impact across all five components.
+    /// Data source: WPC WSSI ArcGIS MapServer (spatial query by configured zone/county centroids).
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Minimum seconds between checks against the WPC WSSI MapServer. WSSI updates every 2 hours,
+    /// so polling more than every 30 min has no benefit. Default 1800 (30 min) — matches
+    /// Ero.CheckIntervalSeconds.
+    /// </summary>
+    public int CheckIntervalSeconds { get; set; } = 1800;
+
+    /// <summary>
+    /// Minimum impact level required before posting. Only impacts at or above this threshold
+    /// trigger an alert. Valid values (ascending): "Winter Weather Area", "Minor", "Moderate",
+    /// "Major", "Extreme". Default "Minor" — skips the lowest-tier "Winter Weather Area" to
+    /// reduce noise, since that category covers a broad area with minimal impact.
+    /// </summary>
+    public string MinImpact { get; set; } = "Minor";
 }
 
 /// <summary>
