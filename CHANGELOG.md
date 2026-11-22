@@ -3,6 +3,11 @@
 Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 [README.md](README.md); for architecture and internals, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+- **Fixed `update.ps1` failing with "Text file busy" when run by hand on Linux/macOS** while the
+  bot was running. It now stages the new binary as `NwsAlertBot.new` and renames it over the old
+  one instead of copying into it. Automatic updates were unaffected (the bot exits first). Windows
+  manual updates still need the bot stopped first.
+
 - **New feed: WPC Winter Storm Severity Index (WSSI).** `WpcWssiService` queries WPC's WSSI
   ArcGIS MapServer with a multipoint spatial query of every configured zone/county centroid
   (15 requests per check: 5 components × Day 1/2/3). Posts one combined alert listing the highest
