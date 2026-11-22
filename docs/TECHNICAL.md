@@ -176,6 +176,14 @@ configuration and history survive every update. The old executable is backed up 
 `NwsAlertBot.bak` (or `NwsAlertBot.exe.bak` on Windows) before being replaced, in case something
 goes wrong.
 
+**Replacing a running binary:** on Linux/macOS the new executable is copied to
+`NwsAlertBot.new` in the install directory and then renamed over `NwsAlertBot`
+(`[System.IO.File]::Move(..., overwrite: true)` → `rename(2)`). Copying straight over it fails
+with "Text file busy" while the bot is running — which a manual run (no `-WaitForPid`) always hits.
+Renaming is allowed: the running process keeps the old file until the restart step replaces it.
+Windows still copies directly, since Windows can neither write to nor rename over a running `.exe`;
+a manual run there needs the bot stopped first.
+
 **Restart behavior:** if a systemd service (Linux) or Windows Service matching `Update.ServiceName`
 exists (see [Running as a Service](#running-as-a-service--full-reference)), it's restarted via
 `systemctl`/`Restart-Service`. Otherwise the new executable is just launched directly — this

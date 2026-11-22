@@ -251,9 +251,18 @@ try {
     }
 
     Write-Step "Installing new executable to $currentExePath"
-    Copy-Item -Path $newExePath -Destination $currentExePath -Force
-    if (-not $IsWindows) {
-        chmod +x $currentExePath
+    if ($IsWindows) {
+        Copy-Item -Path $newExePath -Destination $currentExePath -Force
+    }
+    else {
+        # Linux refuses to write into a running executable ("Text file busy"), which a manual
+        # run without -WaitForPid hits. Renaming over it is allowed: the running process keeps
+        # the old inode, and the restart below picks up the new file. The staging file sits in
+        # $InstallDir so the rename stays on one filesystem (File.Move -> rename(2)).
+        $stagedExePath = "$currentExePath.new"
+        Copy-Item -Path $newExePath -Destination $stagedExePath -Force
+        chmod +x $stagedExePath
+        [System.IO.File]::Move($stagedExePath, $currentExePath, $true)
     }
 
     $newScriptPath = Join-Path $extractDir "update.ps1"

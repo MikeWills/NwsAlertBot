@@ -244,6 +244,8 @@ arguments to install whatever is currently the latest release:
 ./update.ps1
 ```
 
+On Linux and macOS you can run it while the bot is running. On Windows, stop the bot first.
+
 To install a specific version instead, pass `-Tag`:
 
 ```bash
