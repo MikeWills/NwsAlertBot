@@ -153,6 +153,21 @@ This writes a narrowly-scoped rule to `/etc/sudoers.d/<ServiceName>-update` gran
 Off by default: modifying sudoers is a real security-relevant change and shouldn't happen as a
 silent side effect of installing a service.
 
+**Existing installs.** `-ConfigurePasswordlessSudo` only runs as part of a fresh install —
+re-running the script against an existing unit fails with "Unit ... already exists" — and the rule
+it writes is granted to whoever *ran the script* (`whoami`), so `sudo pwsh ./setup-service.ps1 ...`
+would grant it to root, not the service account. For an install that already exists, write the rule
+by hand for the account the unit runs as (`User=` in the unit file; `nwsalertbot` here), one line per
+service, validating before installing:
+
+```bash
+printf 'nwsalertbot ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nwsalertbot
+' > /tmp/nwsalertbot-update   && sudo visudo -c -f /tmp/nwsalertbot-update   && sudo install -m 0440 -o root -g root /tmp/nwsalertbot-update /etc/sudoers.d/nwsalertbot-update   && rm /tmp/nwsalertbot-update
+```
+
+Add one `printf` line per instance when several share a host (e.g. `nwsalertbot` and
+`nwsalertbot-brown`). Check it with `sudo -u nwsalertbot sudo -n -l`.
+
 ### macOS
 
 Not supported by this script yet — run the executable directly, or set up a `launchd` `.plist`
@@ -225,6 +240,13 @@ weakest points matter most, since nobody's watching. Worth understanding before 
   reaching the point of actually fetching alerts. Confirmed live. Existing installations must
   add `KillMode=process` to their unit file by hand (or re-run `setup-service.ps1`) — this fix
   only changes the generated template, not units already written to disk.
+- **A root-owned `NwsAlertBot.bak` blocks every update.** `update.ps1` backs up the current
+  executable to `NwsAlertBot.bak` in the install directory before swapping it. If that file is
+  owned by another user (typically root, left by an earlier `sudo`-run update), the service account
+  can't overwrite it and the update aborts at the backup step with "Access to the path ...
+  NwsAlertBot.bak is denied" — with `Restart=always` that shows up as repeated restarts. Fix:
+  `sudo chown <service user>:<service user> NwsAlertBot.bak`. Run updates as the service account,
+  not root.
 - **Linux auto-restart requires passwordless `sudo`.** After swapping the executable,
   `update.ps1` runs `sudo systemctl restart $ServiceName` non-interactively. If the account
   running the bot doesn't have a `NOPASSWD` sudoers rule for that command, this silently fails
