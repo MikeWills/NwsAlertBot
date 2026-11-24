@@ -178,6 +178,9 @@ sudo ./setup-service.ps1 -ServiceName nwsalertbot
 ./setup-service.ps1 -ServiceName nwsalertbot
 ```
 
+On Linux, add `-ConfigurePasswordlessSudo` to the command if you plan to turn on
+[Auto-Update](#auto-update)'s `AutoApply` — it lets the bot restart itself after an update.
+
 To remove the service later (e.g. you've decided you don't want the bot anymore), run
 `uninstall-service.ps1` from the same directory — it stops and removes the service registration
 only, leaving `appsettings.json`, your credentials, and any runtime state files untouched:

@@ -6,7 +6,8 @@ Notable changes to NwsAlertBot, most recent first. For setup and usage, see
 - **Docs: Auto-Update fixes for existing Linux installs.** `docs/TECHNICAL.md` now covers adding the
   passwordless-sudo rule to an install that already exists (`-ConfigurePasswordlessSudo` only works
   on a fresh install and grants the rule to whoever ran the script) and the root-owned
-  `NwsAlertBot.bak` failure that stops updates at the backup step.
+  `NwsAlertBot.bak` failure that stops updates at the backup step. `README.md` now tells Linux users
+  to add `-ConfigurePasswordlessSudo` when installing the service if they plan to use `AutoApply`.
 
 - **Fixed `update.ps1` failing with "Text file busy" when run by hand on Linux/macOS** while the
   bot was running. It now stages the new binary as `NwsAlertBot.new` and renames it over the old
